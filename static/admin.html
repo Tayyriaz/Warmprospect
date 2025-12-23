@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarmProspect - Business Configuration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    .header h1 { font-size: 28px; margin-bottom: 8px; }
+    .header p { opacity: 0.9; font-size: 14px; }
+    .content {
+      padding: 40px;
+    }
+    .form-group {
+      margin-bottom: 24px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #374151;
+      font-size: 14px;
+    }
+    .required { color: #ef4444; }
+    input[type="text"],
+    input[type="email"],
+    input[type="url"],
+    input[type="color"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .help-text {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .btn {
+      padding: 14px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+    .alert {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+    .alert-success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #6ee7b7;
+    }
+    .alert-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+    .alert-info {
+      background: #dbeafe;
+      color: #1e40af;
+      border: 1px solid #93c5fd;
+    }
+    .hidden { display: none; }
+    .preview-section {
+      margin-top: 40px;
+      padding-top: 40px;
+      border-top: 2px solid #e5e7eb;
+    }
+    .preview-section h2 {
+      margin-bottom: 20px;
+      color: #374151;
+    }
+    .code-block {
+      background: #1f2937;
+      color: #f9fafb;
+      padding: 20px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+    .business-list {
+      margin-top: 20px;
+    }
+    .business-card {
+      background: #f9fafb;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .business-card h3 {
+      font-size: 16px;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .business-card p {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .business-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 Chatbot Configuration</h1>
+      <p>Configure your business chatbot settings</p>
+    </div>
+    
+    <div class="content">
+      <div id="alertContainer"></div>
+      
+      <form id="businessForm">
+        <div class="form-group">
+          <label>Business ID <span class="required">*</span></label>
+          <input type="text" id="business_id" name="business_id" required 
+                 placeholder="e.g., my-company-123" />
+          <div class="help-text">Unique identifier for your business (used in API calls)</div>
+        </div>
+        
+        <div class="form-group">
+          <label>Business Name <span class="required">*</span></label>
+          <input type="text" id="business_name" name="business_name" required 
+                 placeholder="e.g., My Company" />
+        </div>
+        
+        <div class="form-group">
+          <label>System Prompt / Instructions <span class="required">*</span></label>
+          <textarea id="system_prompt" name="system_prompt" required
+                    placeholder="Describe your business, services, products, and how the chatbot should behave. Be specific about what information to share and how to interact with customers."></textarea>
+          <div class="help-text">This is the main customization - describe your business, services, and chatbot behavior</div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Primary Goal</label>
+            <input type="text" id="primary_goal" name="primary_goal" 
+                   placeholder="e.g., Generate more leads" />
+          </div>
+          
+          <div class="form-group">
+            <label>Personality</label>
+            <input type="text" id="personality" name="personality" 
+                   placeholder="e.g., Friendly and professional" />
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Greeting Message</label>
+          <input type="text" id="greeting_message" name="greeting_message" 
+                 placeholder="e.g., Hi! How can we help you today?" />
+          <div class="help-text">Initial message shown when chat opens</div>
+        </div>
+        
+        <div class="form-group">
+          <label>Appointment/Booking Link</label>
+          <input type="url" id="appointment_link" name="appointment_link" 
+                 placeholder="https://example.com/book" />
+          <div class="help-text">URL for booking appointments or scheduling</div>
+        </div>
+        
+        <div class="form-group">
+          <label>Privacy Statement</label>
+          <textarea id="privacy_statement" name="privacy_statement"
+                    placeholder="We collect your information only to provide better service..."></textarea>
+          <div class="help-text">Shown when collecting customer information</div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Theme Color</label>
+            <input type="color" id="theme_color" name="theme_color" value="#2563eb" />
+          </div>
+          
+          <div class="form-group">
+            <label>Widget Position</label>
+            <select id="widget_position" name="widget_position">
+              <option value="center">Center</option>
+              <option value="bottom-right">Bottom Right</option>
+              <option value="bottom-left">Bottom Left</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Website URL</label>
+            <input type="url" id="website_url" name="website_url" 
+                   placeholder="https://example.com" />
+          </div>
+          
+          <div class="form-group">
+            <label>Contact Email</label>
+            <input type="email" id="contact_email" name="contact_email" 
+                   placeholder="contact@example.com" />
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Contact Phone</label>
+          <input type="text" id="contact_phone" name="contact_phone" 
+                 placeholder="+1 (555) 123-4567" />
+        </div>
+        
+        <div class="btn-group">
+          <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
+          <button type="button" class="btn btn-secondary" onclick="loadBusinesses()">📋 View All Businesses</button>
+          <button type="button" class="btn btn-secondary" onclick="clearForm()">🔄 Clear Form</button>
+        </div>
+      </form>
+      
+      <div class="preview-section">
+        <h2>📋 Configured Businesses</h2>
+        <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px; background: #f0f9ff; padding: 12px; border-radius: 8px; border-left: 4px solid #2563eb;">
+          💡 <strong>How it works:</strong> Fill the form above with your business information → Click "Save Configuration" → Your chatbot is automatically created! Click "Test Chatbot" button to see it in action. All your settings (name, colors, greeting, system prompt) are automatically applied.
+        </p>
+        <div id="businessList" class="business-list"></div>
+      </div>
+      
+      <div class="preview-section">
+        <h2>🔗 Integration Code</h2>
+        <p style="margin-bottom: 12px; color: #6b7280;">Use this code in your website to embed the chatbot:</p>
+        <div class="code-block" id="integrationCode">
+          &lt;script&gt;
+            const CHATBOT_CONFIG = {
+              businessId: "<span id="code_business_id">your-business-id</span>"
+            };
+          &lt;/script&gt;
+          &lt;iframe src="http://localhost:8000/?business_id=<span id="code_business_id2">your-business-id</span>" 
+                   style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Use localhost:8000 if opened via file:// protocol, otherwise use current origin
+    const API_BASE = window.location.protocol === 'file:' 
+      ? 'http://localhost:8000'
+      : window.location.origin;
+    
+    function showAlert(message, type = 'info') {
+      const container = document.getElementById('alertContainer');
+      container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+      setTimeout(() => {
+        container.innerHTML = '';
+      }, 5000);
+    }
+    
+    function clearForm() {
+      document.getElementById('businessForm').reset();
+      document.getElementById('theme_color').value = '#2563eb';
+    }
+    
+    async function loadBusinesses() {
+      try {
+        console.log('Loading businesses from:', `${API_BASE}/admin/business`);
+        const res = await fetch(`${API_BASE}/admin/business`);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+        
+        const data = await res.json();
+        console.log('Businesses loaded:', data);
+        
+        const listEl = document.getElementById('businessList');
+        if (!data.businesses || Object.keys(data.businesses).length === 0) {
+          listEl.innerHTML = '<p style="color: #6b7280;">No businesses configured yet.</p>';
+          return;
+        }
+        
+        listEl.innerHTML = Object.values(data.businesses).map(business => `
+          <div class="business-card">
+            <div>
+              <h3>${business.business_name || business.business_id}</h3>
+              <p>ID: ${business.business_id} • Updated: ${new Date(business.updated_at).toLocaleString()}</p>
+            </div>
+            <div class="business-actions">
+              <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.business_id}')">Edit</button>
+              <a href="${API_BASE}/?business_id=${business.business_id}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
+              <button class="btn btn-danger btn-small" onclick="deleteBusiness('${business.business_id}')">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('Error loading businesses:', err);
+        showAlert('Failed to load businesses: ' + err.message, 'error');
+      }
+    }
+    
+    async function loadBusiness(businessId) {
+      try {
+        console.log('Loading business:', businessId);
+        const res = await fetch(`${API_BASE}/admin/business/${businessId}`);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+        
+        const data = await res.json();
+        const config = data.config;
+        console.log('Business config loaded:', config);
+        
+        // Populate form
+        document.getElementById('business_id').value = config.business_id || '';
+        document.getElementById('business_name').value = config.business_name || '';
+        document.getElementById('system_prompt').value = config.system_prompt || '';
+        document.getElementById('primary_goal').value = config.primary_goal || '';
+        document.getElementById('personality').value = config.personality || '';
+        document.getElementById('greeting_message').value = config.greeting_message || '';
+        document.getElementById('appointment_link').value = config.appointment_link || '';
+        document.getElementById('privacy_statement').value = config.privacy_statement || '';
+        document.getElementById('theme_color').value = config.theme_color || '#2563eb';
+        document.getElementById('widget_position').value = config.widget_position || 'center';
+        document.getElementById('website_url').value = config.website_url || '';
+        document.getElementById('contact_email').value = config.contact_email || '';
+        document.getElementById('contact_phone').value = config.contact_phone || '';
+        
+        // Update integration code
+        updateIntegrationCode(config.business_id);
+        
+        showAlert('Business configuration loaded! <a href="' + API_BASE + '/?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
+      } catch (err) {
+        console.error('Error loading business:', err);
+        showAlert('Failed to load business: ' + err.message, 'error');
+      }
+    }
+    
+    async function deleteBusiness(businessId) {
+      if (!confirm(`Are you sure you want to delete business "${businessId}"?`)) {
+        return;
+      }
+      
+      try {
+        console.log('Deleting business:', businessId);
+        const res = await fetch(`${API_BASE}/admin/business/${businessId}`, {
+          method: 'DELETE'
+        });
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+        
+        const data = await res.json();
+        console.log('Delete response:', data);
+        
+        if (data.success) {
+          showAlert('Business deleted successfully!', 'success');
+          loadBusinesses();
+        } else {
+          showAlert('Failed to delete: ' + (data.detail || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error deleting business:', err);
+        showAlert('Failed to delete business: ' + err.message, 'error');
+      }
+    }
+    
+    function updateIntegrationCode(businessId) {
+      document.getElementById('code_business_id').textContent = businessId;
+      document.getElementById('code_business_id2').textContent = businessId;
+    }
+    
+    document.getElementById('businessForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData.entries());
+      
+      // Validate required fields
+      if (!data.business_id || !data.business_name || !data.system_prompt) {
+        showAlert('❌ Please fill in all required fields (Business ID, Name, and System Prompt)', 'error');
+        return;
+      }
+      
+      try {
+        console.log('Saving business:', data.business_id);
+        const res = await fetch(`${API_BASE}/admin/business`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`HTTP ${res.status}: ${errorText}`);
+        }
+        
+        const result = await res.json();
+        console.log('Save response:', result);
+        
+        if (result.success) {
+          showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+          updateIntegrationCode(data.business_id);
+          loadBusinesses();
+        } else {
+          showAlert('❌ Failed to save: ' + (result.detail || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Error saving business:', err);
+        showAlert('❌ Error: ' + err.message, 'error');
+      }
+    });
+    
+    // Update integration code when business_id changes
+    document.getElementById('business_id').addEventListener('input', (e) => {
+      updateIntegrationCode(e.target.value || 'your-business-id');
+    });
+    
+    // Load businesses on page load
+    loadBusinesses();
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: warmprospect-concierge
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: MAX_HISTORY_TURNS
+        value: "20"
+      - key: PORT
+        fromService:
+          type: web
+          name: warmprospect-concierge
+          property: port
+

@@ -1,0 +1,12 @@
+google-genai
+fastapi
+uvicorn
+python-dotenv
+requests
+beautifulsoup4
+faiss-cpu
+numpy
+redis
+sqlalchemy
+psycopg2-binary
+alembic
