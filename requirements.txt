@@ -9,4 +9,5 @@ numpy
 redis
 sqlalchemy
 psycopg2-binary
+pandas
 alembic
