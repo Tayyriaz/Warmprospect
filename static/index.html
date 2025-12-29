@@ -144,6 +144,31 @@
       box-shadow: 0 10px 25px rgba(37, 99, 235, 0.25);
     }
     .send-btn:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+    .mic-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 50%;
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mic-btn:hover { background: #f3f4f6; color: var(--accent); border-color: var(--accent); }
+    .mic-btn.recording {
+      background: #fee2e2;
+      color: #ef4444;
+      border-color: #ef4444;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
     .hint-row {
       display: flex;
       justify-content: space-between;
@@ -200,6 +225,9 @@
     <div class="input-shell">
       <div class="input-area">
         <input id="message" class="input-box" placeholder="Type a question or say hi to start..." />
+        <button id="micBtn" class="mic-btn" title="Hold to speak">
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+        </button>
         <button id="sendBtn" class="send-btn" disabled>Send</button>
         <input id="userId" class="hidden" value="demo-user" />
       </div>
@@ -217,6 +245,24 @@
     const urlParams = new URLSearchParams(window.location.search);
     const businessId = urlParams.get('business_id') || 'demo-business';
     
+    const DEFAULT_PRIMARY_CTAS = [
+      { label: "Book an Appointment", action: "send" },
+      { label: "Speak to Sales", action: "send" },
+      { label: "Send More Information", action: "show_secondary" },
+    ];
+
+    const DEFAULT_SECONDARY_CTAS = [
+      { label: "Website Design Services", action: "send" },
+      { label: "Digital Agency Services", action: "send" },
+      { label: "Business Growth Services", action: "send" },
+      { label: "CRM Software Platform", action: "send" },
+      {
+        label: "All of the Above",
+        action: "send",
+        message: "Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?",
+      },
+    ];
+
     // Default configuration (will be overridden by API if business exists)
     let CHATBOT_CONFIG = {
       businessId: businessId,
@@ -229,6 +275,8 @@
       themeColor: "#2563eb",
       widgetPosition: "center",
       appointmentLink: "https://example.com/book",
+      primaryCtas: DEFAULT_PRIMARY_CTAS,
+      secondaryCtas: DEFAULT_SECONDARY_CTAS,
     };
     
     // Generate avatar initials from business name
@@ -283,10 +331,16 @@
             themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
             widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
             appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
+            primaryCtas: config.primaryCtas || CHATBOT_CONFIG.primaryCtas,
+            secondaryCtas: config.secondaryCtas || CHATBOT_CONFIG.secondaryCtas,
           };
           // Apply config immediately
           applyConfig();
           updateBusinessBranding();
+          ctaConfig = {
+            primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
+            secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
+          };
         }
       } catch (err) {
         console.log('Using default config (business not found or API error):', err.message);
@@ -300,11 +354,201 @@
     const inputEl = document.getElementById("message");
     const userIdEl = document.getElementById("userId");
     const sendBtn = document.getElementById("sendBtn");
+    // micBtn is declared later with the recording logic
     const quickOptionsEl = null;
     let typingNode = null;
+    let ctaConfig = {
+      primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
+      secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
+    };
+
+    // --- Voice Recording Logic (WAV Encoding) ---
+    const micBtn = document.getElementById("micBtn");
+    let isRecording = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      micBtn.addEventListener("mousedown", startRecording);
+      micBtn.addEventListener("mouseup", stopRecording);
+      micBtn.addEventListener("mouseleave", () => {
+        if (isRecording) stopRecording();
+      });
+      micBtn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        startRecording();
+      });
+      micBtn.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        stopRecording();
+      });
+    } else {
+      micBtn.style.display = "none";
+      console.warn("MediaDevices API not supported.");
+    }
+
+    async function startRecording() {
+        if (isRecording) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = async () => {
+                const webmBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                // Convert to WAV
+                const arrayBuffer = await webmBlob.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                const wavBlob = audioBufferToWav(audioBuffer);
+
+                sendVoiceMessage(wavBlob);
+                
+                // Stop all tracks
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            micBtn.classList.add("recording");
+            inputEl.placeholder = "Listening...";
+        } catch (err) {
+            console.error("Mic Error:", err);
+            addMessage("Could not access microphone.", "error");
+        }
+    }
+
+    function stopRecording() {
+        if (!isRecording) return;
+        isRecording = false;
+        micBtn.classList.remove("recording");
+        inputEl.placeholder = "Type a question or say hi to start...";
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
+    }
+
+    // Function to convert AudioBuffer to WAV
+    function audioBufferToWav(buffer, opt) {
+        opt = opt || {};
+        var numChannels = buffer.numberOfChannels;
+        var sampleRate = buffer.sampleRate;
+        var format = opt.float32 ? 3 : 1;
+        var bitDepth = format === 3 ? 32 : 16;
+        var result;
+        if (numChannels === 2) result = interleave(buffer.getChannelData(0), buffer.getChannelData(1));
+        else result = buffer.getChannelData(0);
+        return encodeWAV(result, format, sampleRate, numChannels, bitDepth);
+    }
+
+    function interleave(inputL, inputR) {
+        var length = inputL.length + inputR.length;
+        var result = new Float32Array(length);
+        var index = 0, inputIndex = 0;
+        while (index < length) {
+            result[index++] = inputL[inputIndex];
+            result[index++] = inputR[inputIndex++];
+        }
+        return result;
+    }
+
+    function encodeWAV(samples, format, sampleRate, numChannels, bitDepth) {
+        var bytesPerSample = bitDepth / 8;
+        var blockAlign = numChannels * bytesPerSample;
+        var buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+        var view = new DataView(buffer);
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * blockAlign, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, samples.length * bytesPerSample, true);
+        if (format === 1) floatTo16BitPCM(view, 44, samples);
+        else writeFloat32(view, 44, samples);
+        return new Blob([view], { type: 'audio/wav' });
+    }
+
+    function floatTo16BitPCM(output, offset, input) {
+        for (var i = 0; i < input.length; i++, offset += 2) {
+            var s = Math.max(-1, Math.min(1, input[i]));
+            output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+    }
+
+    function writeFloat32(output, offset, input) {
+        for (var i = 0; i < input.length; i++, offset += 4) {
+            output.setFloat32(offset, input[i], true);
+        }
+    }
+
+    function writeString(view, offset, string) {
+        for (var i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    async function sendVoiceMessage(audioBlob) {
+      showTyping();
+      const formData = new FormData();
+      // Filename is important for backend to detect type if needed, though we handle generic bytes
+      formData.append("file", audioBlob, "recording.wav"); 
+
+      try {
+        addMessage("🎤 Audio sent...", "user");
+        
+        // Use absolute URL if opened via file:// protocol
+        const voiceUrl = window.location.protocol === 'file:' 
+          ? `http://localhost:8000/api/voice/chat`
+          : `/api/voice/chat`;
+
+        const res = await fetch(voiceUrl, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Server error: ${res.status} - ${errorText}`);
+        }
+
+        // The response is a WAV file blob
+        const wavBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(wavBlob);
+        
+        // Play the audio response
+        const audio = new Audio(audioUrl);
+        audio.play();
+        
+        hideTyping();
+        addMessage("🎤 (Audio Response Playing)", "bot");
+        
+        // Note: Voice endpoint currently returns ONLY audio. 
+        // If you want text transcript + CTAs, the backend endpoint needs to return JSON with { audio_b64, text, ctas }
+        // For now, this meets the specific requirement of "voice endpoint integration".
+        
+      } catch (err) {
+        hideTyping();
+        console.error("Voice chat error:", err);
+        addMessage("Error sending voice message.", "error");
+      }
+    }
+    // -----------------------------
 
     // Apply theme + position based on config
-    (function applyConfig() {
+    function applyConfig() {
       // Theme color
       if (CHATBOT_CONFIG.themeColor) {
         document.documentElement.style.setProperty("--accent", CHATBOT_CONFIG.themeColor);
@@ -324,7 +568,10 @@
         document.body.style.justifyContent =
           CHATBOT_CONFIG.widgetPosition === "bottom-right" ? "flex-end" : "flex-start";
       }
-    })();
+    }
+
+    // Apply immediately with defaults
+    applyConfig();
     let lastRenderedSecondary = 0;
     let primaryRendered = false;
     let secondaryRendered = false;
@@ -338,20 +585,6 @@
       secondaryRendered = false;
       lastOptionsNode = null;
     }
-
-    const primaryOptions = [
-      { label: "Book an Appointment", icon: "📅" },
-      { label: "Speak to Sales", icon: "💬" },
-      { label: "Send More Information", icon: "📦" },
-    ];
-
-    const secondaryOptions = [
-      { label: "Website Design Services", icon: "🎨" },
-      { label: "Digital Agency Services", icon: "📈" },
-      { label: "Business Growth Services", icon: "🚀" },
-      { label: "CRM Software Platform", icon: "⚙️" },
-      { label: "All of the Above", icon: "⭐" },
-    ];
 
     function addMessage(text, role = "bot") {
       const div = document.createElement("div");
@@ -381,6 +614,7 @@
     }
 
     function addOptionChips(options, type) {
+      if (!options || !options.length) return;
       // remove previous option block to avoid duplicates
       if (lastOptionsNode && lastOptionsNode.parentNode) {
         lastOptionsNode.parentNode.removeChild(lastOptionsNode);
@@ -396,24 +630,24 @@
       wrap.className = "msg bot";
       const row = document.createElement("div");
       row.className = "chips";
-      options.forEach(({ label, icon }) => {
+      options.forEach((option) => {
+        const label = option.label || "";
+        const action = option.action || "send";
+        const message = option.message || label;
+        const icon = option.icon;
+        if (!label) return;
         const btn = document.createElement("button");
         btn.className = "chip";
         btn.type = "button";
-        btn.textContent = `${icon} ${label}`;
+        btn.textContent = icon ? `${icon} ${label}` : label;
         btn.addEventListener("click", () => {
-          if (label === "Send More Information") {
+          if (action === "show_secondary") {
             lastRenderedSecondary = Date.now();
             secondaryRendered = false;
-            addOptionChips(secondaryOptions, "secondary");
-            // Do not send "Send More Information" as user input; just swap options
+            addOptionChips(ctaConfig.secondary, "secondary");
             return;
           }
-          if (label === "All of the Above") {
-            sendMessage("Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?");
-          } else {
-            sendMessage(label);
-          }
+          sendMessage(message);
         });
         row.appendChild(btn);
       });
@@ -515,11 +749,22 @@
         hideTyping();
         addMessage(displayText, "bot");
 
-        // If the bot is prompting with main options, render chips inline in chat
-        const normalized = text.toLowerCase();
-        const hasPrimary = ["book an appointment", "speak to sales", "send more information"].every(t => normalized.includes(t));
-        if (hasPrimary && !primaryRendered) {
-          addOptionChips(primaryOptions, "primary");
+        // Render CTAs from the backend if provided
+        if (data.ctas && Array.isArray(data.ctas.primary)) {
+          ctaConfig = {
+            primary: data.ctas.primary || [],
+            secondary: data.ctas.secondary || [],
+          };
+          primaryRendered = false;
+          secondaryRendered = false;
+          addOptionChips(ctaConfig.primary, "primary");
+        } else {
+          // Fallback: detect the prompt and use configured CTAs
+          const normalized = text.toLowerCase();
+          const hasPrimary = ["book an appointment", "speak to sales", "send more information"].every(t => normalized.includes(t));
+          if (hasPrimary && !primaryRendered) {
+            addOptionChips(ctaConfig.primary, "primary");
+          }
         }
       } catch (err) {
         hideTyping();
@@ -574,4 +819,3 @@
   </script>
 </body>
 </html>
-

@@ -8,6 +8,7 @@ Important:
 """
 
 import os
+import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer
@@ -53,11 +54,24 @@ class BusinessConfig(Base):
     website_url = Column(String(500))
     contact_email = Column(String(255))
     contact_phone = Column(String(50))
+    primary_ctas = Column(Text)
+    secondary_ctas = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary."""
+        def _parse_ctas(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return value
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else None
+            except Exception:
+                return None
+
         return {
             "business_id": self.business_id,
             "business_name": self.business_name,
@@ -72,6 +86,8 @@ class BusinessConfig(Base):
             "website_url": self.website_url,
             "contact_email": self.contact_email,
             "contact_phone": self.contact_phone,
+            "primary_ctas": _parse_ctas(self.primary_ctas),
+            "secondary_ctas": _parse_ctas(self.secondary_ctas),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -123,8 +139,20 @@ class BusinessConfigDB:
         website_url: str = None,
         contact_email: str = None,
         contact_phone: str = None,
+        primary_ctas = None,
+        secondary_ctas = None,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
+        def _serialize_ctas(value):
+            if value is None:
+                return None
+            if isinstance(value, str):
+                return value
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return None
+
         db = self._get_session()
         try:
             # Check if business exists
@@ -146,6 +174,8 @@ class BusinessConfigDB:
                 existing.website_url = website_url
                 existing.contact_email = contact_email
                 existing.contact_phone = contact_phone
+                existing.primary_ctas = _serialize_ctas(primary_ctas)
+                existing.secondary_ctas = _serialize_ctas(secondary_ctas)
                 existing.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(existing)
@@ -166,6 +196,8 @@ class BusinessConfigDB:
                     website_url=website_url,
                     contact_email=contact_email,
                     contact_phone=contact_phone,
+                    primary_ctas=_serialize_ctas(primary_ctas),
+                    secondary_ctas=_serialize_ctas(secondary_ctas),
                 )
                 db.add(new_business)
                 db.commit()

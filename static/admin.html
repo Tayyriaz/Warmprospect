@@ -253,6 +253,20 @@
                     placeholder="We collect your information only to provide better service..."></textarea>
           <div class="help-text">Shown when collecting customer information</div>
         </div>
+
+        <div class="form-group">
+          <label>Primary CTAs (JSON)</label>
+          <textarea id="primary_ctas" name="primary_ctas"
+                    placeholder='[{"label":"Book an Appointment","action":"send"}]'></textarea>
+          <div class="help-text">JSON array of CTA objects: label, action (send/show_secondary), message (optional)</div>
+        </div>
+
+        <div class="form-group">
+          <label>Secondary CTAs (JSON)</label>
+          <textarea id="secondary_ctas" name="secondary_ctas"
+                    placeholder='[{"label":"Website Design Services","action":"send"}]'></textarea>
+          <div class="help-text">Shown after clicking a CTA with action show_secondary</div>
+        </div>
         
         <div class="form-row">
           <div class="form-group">
@@ -326,6 +340,29 @@
     const API_BASE = window.location.protocol === 'file:' 
       ? 'http://localhost:8000'
       : window.location.origin;
+
+    const DEFAULT_PRIMARY_CTAS = [
+      { label: "Book an Appointment", action: "send" },
+      { label: "Speak to Sales", action: "send" },
+      { label: "Send More Information", action: "show_secondary" },
+    ];
+
+    const DEFAULT_SECONDARY_CTAS = [
+      { label: "Website Design Services", action: "send" },
+      { label: "Digital Agency Services", action: "send" },
+      { label: "Business Growth Services", action: "send" },
+      { label: "CRM Software Platform", action: "send" },
+      {
+        label: "All of the Above",
+        action: "send",
+        message: "Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?",
+      },
+    ];
+
+    function setDefaultCtas() {
+      document.getElementById('primary_ctas').value = JSON.stringify(DEFAULT_PRIMARY_CTAS, null, 2);
+      document.getElementById('secondary_ctas').value = JSON.stringify(DEFAULT_SECONDARY_CTAS, null, 2);
+    }
     
     function showAlert(message, type = 'info') {
       const container = document.getElementById('alertContainer');
@@ -338,6 +375,7 @@
     function clearForm() {
       document.getElementById('businessForm').reset();
       document.getElementById('theme_color').value = '#2563eb';
+      setDefaultCtas();
     }
     
     async function loadBusinesses() {
@@ -406,6 +444,16 @@
         document.getElementById('website_url').value = config.website_url || '';
         document.getElementById('contact_email').value = config.contact_email || '';
         document.getElementById('contact_phone').value = config.contact_phone || '';
+        document.getElementById('primary_ctas').value = JSON.stringify(
+          config.primary_ctas || DEFAULT_PRIMARY_CTAS,
+          null,
+          2
+        );
+        document.getElementById('secondary_ctas').value = JSON.stringify(
+          config.secondary_ctas || DEFAULT_SECONDARY_CTAS,
+          null,
+          2
+        );
         
         // Update integration code
         updateIntegrationCode(config.business_id);
@@ -458,6 +506,17 @@
       
       const formData = new FormData(e.target);
       const data = Object.fromEntries(formData.entries());
+      let primaryCtas;
+      let secondaryCtas;
+      try {
+        primaryCtas = JSON.parse(data.primary_ctas || "[]");
+        secondaryCtas = JSON.parse(data.secondary_ctas || "[]");
+      } catch (err) {
+        showAlert('CTAs must be valid JSON arrays.', 'error');
+        return;
+      }
+      data.primary_ctas = primaryCtas;
+      data.secondary_ctas = secondaryCtas;
       
       // Validate required fields
       if (!data.business_id || !data.business_name || !data.system_prompt) {
@@ -500,6 +559,7 @@
     });
     
     // Load businesses on page load
+    setDefaultCtas();
     loadBusinesses();
   </script>
 </body>

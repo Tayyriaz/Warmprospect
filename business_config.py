@@ -6,7 +6,7 @@ Uses PostgreSQL database (with file fallback for development).
 
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Try to import database manager
@@ -19,6 +19,39 @@ except ImportError:
 
 # File-based storage fallback
 CONFIG_FILE = "business_configs.json"
+
+DEFAULT_PRIMARY_CTAS = [
+    {"label": "Book an Appointment", "action": "send"},
+    {"label": "Speak to Sales", "action": "send"},
+    {"label": "Send More Information", "action": "show_secondary"},
+]
+
+DEFAULT_SECONDARY_CTAS = [
+    {"label": "Website Design Services", "action": "send"},
+    {"label": "Digital Agency Services", "action": "send"},
+    {"label": "Business Growth Services", "action": "send"},
+    {"label": "CRM Software Platform", "action": "send"},
+    {
+        "label": "All of the Above",
+        "action": "send",
+        "message": "Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?",
+    },
+]
+
+
+def _normalize_ctas(value, default: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if value is None:
+        return default
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return default
+    return default
 
 
 class BusinessConfigManager:
@@ -66,6 +99,8 @@ class BusinessConfigManager:
         website_url: str = None,
         contact_email: str = None,
         contact_phone: str = None,
+        primary_ctas: List[Dict[str, Any]] = None,
+        secondary_ctas: List[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create or update a business configuration.
@@ -88,6 +123,9 @@ class BusinessConfigManager:
         Returns:
             The created/updated configuration
         """
+        primary_ctas = _normalize_ctas(primary_ctas, DEFAULT_PRIMARY_CTAS)
+        secondary_ctas = _normalize_ctas(secondary_ctas, DEFAULT_SECONDARY_CTAS)
+
         if self.use_database:
             try:
                 return db_manager.create_or_update_business(
@@ -104,6 +142,8 @@ class BusinessConfigManager:
                     website_url=website_url,
                     contact_email=contact_email,
                     contact_phone=contact_phone,
+                    primary_ctas=primary_ctas,
+                    secondary_ctas=secondary_ctas,
                 )
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
@@ -126,6 +166,8 @@ class BusinessConfigManager:
             "website_url": website_url,
             "contact_email": contact_email,
             "contact_phone": contact_phone,
+            "primary_ctas": primary_ctas,
+            "secondary_ctas": secondary_ctas,
             "created_at": self._configs.get(business_id, {}).get("created_at", datetime.now().isoformat()),
             "updated_at": datetime.now().isoformat(),
         }
@@ -139,25 +181,65 @@ class BusinessConfigManager:
         """Get business configuration by ID."""
         if self.use_database:
             try:
-                return db_manager.get_business(business_id)
+                config = db_manager.get_business(business_id)
+                if config:
+                    config["primary_ctas"] = _normalize_ctas(
+                        config.get("primary_ctas"),
+                        DEFAULT_PRIMARY_CTAS,
+                    )
+                    config["secondary_ctas"] = _normalize_ctas(
+                        config.get("secondary_ctas"),
+                        DEFAULT_SECONDARY_CTAS,
+                    )
+                return config
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
                 self.use_database = False
                 self._load_configs()
         
-        return self._configs.get(business_id)
+        config = self._configs.get(business_id)
+        if config:
+            config["primary_ctas"] = _normalize_ctas(
+                config.get("primary_ctas"),
+                DEFAULT_PRIMARY_CTAS,
+            )
+            config["secondary_ctas"] = _normalize_ctas(
+                config.get("secondary_ctas"),
+                DEFAULT_SECONDARY_CTAS,
+            )
+        return config
     
     def get_all_businesses(self) -> Dict[str, Dict[str, Any]]:
         """Get all business configurations."""
         if self.use_database:
             try:
-                return db_manager.get_all_businesses()
+                businesses = db_manager.get_all_businesses()
+                for config in businesses.values():
+                    config["primary_ctas"] = _normalize_ctas(
+                        config.get("primary_ctas"),
+                        DEFAULT_PRIMARY_CTAS,
+                    )
+                    config["secondary_ctas"] = _normalize_ctas(
+                        config.get("secondary_ctas"),
+                        DEFAULT_SECONDARY_CTAS,
+                    )
+                return businesses
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
                 self.use_database = False
                 self._load_configs()
         
-        return self._configs.copy()
+        configs = self._configs.copy()
+        for config in configs.values():
+            config["primary_ctas"] = _normalize_ctas(
+                config.get("primary_ctas"),
+                DEFAULT_PRIMARY_CTAS,
+            )
+            config["secondary_ctas"] = _normalize_ctas(
+                config.get("secondary_ctas"),
+                DEFAULT_SECONDARY_CTAS,
+            )
+        return configs
     
     def delete_business(self, business_id: str) -> bool:
         """Delete a business configuration."""

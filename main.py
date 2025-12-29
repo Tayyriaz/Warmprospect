@@ -3,7 +3,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,12 +12,17 @@ from google.genai import types
 from typing import Dict, Any, List, Optional
 from rag.retriever import WarmProspectRetriever, format_context
 from session_store import load_session, save_session
+from services.voice_service import get_voice_service
 
 # Custom CRM Tools import
 from core_tools.crm_functions import CRMTools
 
 # Business Configuration Manager
-from business_config import config_manager
+from business_config import (
+    config_manager,
+    DEFAULT_PRIMARY_CTAS,
+    DEFAULT_SECONDARY_CTAS,
+)
 
 # Database initialization (optional - will use file storage if database not available)
 try:
@@ -39,6 +44,8 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
+    print("!!! [CRITICAL ERROR] GEMINI_API_KEY is missing from environment variables.")
+    print("!!! Please ensure .env file exists and contains GEMINI_API_KEY.")
     raise ValueError("GEMINI_API_KEY not found in .env file.")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -366,7 +373,7 @@ def check_hard_guards(
     session: Dict[str, Any],
     session_key: str,
     original_user_id: str,
-) -> str | None:
+) -> Optional[Dict[str, Any]]:
     """Checks for strict hard guards (Intro Token, Appointment) before calling Gemini."""
     
     clean_input = user_input.lower().strip()
@@ -388,12 +395,15 @@ def check_hard_guards(
         # Save to in-memory
         _in_memory_sessions[session_key] = session
         # Return a friendly prompt with primary options
-        return (
-            "Please choose one of the options below 👇<br><br>"
-            "📅 Book an Appointment<br>"
-            "💬 Speak to Sales<br>"
-            "📦 Send More Information"
-        )
+        return {
+            "response": (
+                "Please choose one of the options below.<br><br>"
+                "Book an Appointment<br>"
+                "Speak to Sales<br>"
+                "Send More Information"
+            ),
+            "cta_mode": "primary",
+        }
 
     # Check for APPOINTMENT HARD GUARD
     appointment_triggers = [
@@ -418,9 +428,26 @@ def check_hard_guards(
         session["current_route"] = "appointments"
         # Save to in-memory (no Redis needed)
         _in_memory_sessions[session_key] = session
-        return response_text
+        return {"response": response_text}
         
     return None # No hard guard triggered
+
+
+def _get_ctas_for_business(business_id: Optional[str]) -> Dict[str, Any]:
+    if business_id:
+        config = config_manager.get_business(business_id)
+    else:
+        config = None
+    primary = (config or {}).get("primary_ctas") or DEFAULT_PRIMARY_CTAS
+    secondary = (config or {}).get("secondary_ctas") or DEFAULT_SECONDARY_CTAS
+    return {"primary": primary, "secondary": secondary}
+
+
+def _should_attach_ctas(text: str) -> bool:
+    if not text:
+        return False
+    normalized = text.lower()
+    return "please choose one of the options below" in normalized
 
 
 # --- 4. CORE CONVERSATION ENDPOINT ---
@@ -476,6 +503,8 @@ async def create_or_update_business(request: Request):
             website_url=data.get("website_url"),
             contact_email=data.get("contact_email"),
             contact_phone=data.get("contact_phone"),
+            primary_ctas=data.get("primary_ctas"),
+            secondary_ctas=data.get("secondary_ctas"),
         )
         
         return {"success": True, "config": config}
@@ -535,6 +564,8 @@ async def get_business_config_for_widget(business_id: str):
         "themeColor": config.get("theme_color", "#2563eb"),
         "widgetPosition": config.get("widget_position", "center"),
         "appointmentLink": config.get("appointment_link"),
+        "primaryCtas": config.get("primary_ctas"),
+        "secondaryCtas": config.get("secondary_ctas"),
     }
 
 @app.post("/chat")
@@ -607,7 +638,10 @@ async def chat_endpoint(request: Request):
     # 2. Hard Guard Check (Priority 1)
     hard_guard_response = check_hard_guards(user_input, session, session_key, user_id)
     if hard_guard_response:
-        return {"response": hard_guard_response}
+        payload = {"response": hard_guard_response["response"]}
+        if hard_guard_response.get("cta_mode") == "primary":
+            payload["ctas"] = _get_ctas_for_business(business_id)
+        return payload
 
     # 3. Build effective system instruction (base guardrails + business-specific)
     effective_system_instruction = build_system_instruction(
@@ -817,10 +851,106 @@ async def chat_endpoint(request: Request):
     print(f"[DEBUG] SDK maintains {len(current_sdk_history)} messages in chat session (no Redis needed!)")
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
 
-    return {"response": final_response_text}
+    response_payload = {"response": final_response_text}
+    if _should_attach_ctas(final_response_text):
+        response_payload["ctas"] = _get_ctas_for_business(business_id)
+    return response_payload
 
 
-# --- 5. RUN SERVER INSTRUCTIONS (For local testing) ---
+# --- 5. VOICE ENDPOINT ---
+
+@app.post("/api/voice/chat")
+async def voice_chat(file: UploadFile = File(...)):
+    """
+    Accepts an audio file (e.g., from Flutter or browser), sends it to Gemini Live,
+    and returns a WAV audio response.
+    
+    The input audio is converted to the format Gemini expects (16kHz PCM),
+    and the response is converted back to a standard WAV file (24kHz).
+    """
+    print("[DEBUG] /api/voice/chat endpoint hit")
+    try:
+        print(f"[DEBUG] Received file: {file.filename}, content_type: {file.content_type}")
+        file_bytes = await file.read()
+        print(f"[DEBUG] File size: {len(file_bytes)} bytes")
+        
+        if not file_bytes:
+            print("[ERROR] Empty audio file received")
+            raise HTTPException(status_code=400, detail="Empty audio file.")
+
+        # Check if it's already PCM (e.g. from browser conversion) or needs conversion
+        pcm_16k = None
+        if file.content_type == "audio/pcm" or (file.filename and file.filename.endswith(".pcm")):
+            print("[DEBUG] File identified as raw PCM")
+            pcm_16k = file_bytes
+            # Validate PCM format (even length)
+            if len(pcm_16k) % 2 != 0:
+                print(f"[ERROR] Invalid PCM format: length {len(pcm_16k)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid PCM format: data length ({len(pcm_16k)} bytes) is not even."
+                )
+        else:
+            # Convert generic audio (mp3, wav, webm, etc.) to PCM
+            try:
+                print("[DEBUG] Attempting conversion to PCM16 Mono 16k")
+                voice_service = get_voice_service()
+                pcm_16k = await voice_service.convert_to_pcm16_mono_16k(file_bytes)
+                print(f"[DEBUG] Conversion successful. PCM size: {len(pcm_16k)} bytes")
+            except ValueError as ve:
+                # Specific error for invalid WAV format (e.g. WebM sent when only WAV supported)
+                print(f"[ERROR] ValueError during conversion: {ve}")
+                raise HTTPException(status_code=400, detail=str(ve))
+            except Exception as conv_err:
+                print(f"[ERROR] Unexpected conversion error: {conv_err}")
+                import traceback
+                traceback.print_exc()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Audio conversion failed: {str(conv_err)}"
+                ) from conv_err
+
+        # Call Gemini Live
+        try:
+            print("[DEBUG] Calling Gemini Live service...")
+            voice_service = get_voice_service()
+            pcm_24k, text_responses = await voice_service.call_gemini_live_with_audio(pcm_16k)
+            print(f"[DEBUG] Gemini Live response received. Audio size: {len(pcm_24k)} bytes. Text responses: {len(text_responses)}")
+        except RuntimeError as gemini_err:
+            error_str = str(gemini_err)
+            print(f"[ERROR] Gemini Live runtime error: {error_str}")
+            
+            if "QUOTA_EXCEEDED" in error_str or "resource_exhausted" in error_str.lower():
+                raise HTTPException(
+                    status_code=429,
+                    detail="Gemini API Quota Exceeded. The AI service is currently unavailable due to high usage limits. Please try again later or upgrade the API key."
+                )
+            
+            raise HTTPException(status_code=503, detail=f"Voice service unavailable: {error_str}") from gemini_err
+
+        # Wrap raw PCM in WAV container for easy playback
+        print("[DEBUG] Wrapping PCM response in WAV container")
+        wav_path = voice_service.wrap_pcm24k_to_wav(pcm_24k)
+        print(f"[DEBUG] WAV file created at: {wav_path}")
+        
+        return FileResponse(
+            wav_path,
+            media_type="audio/wav",
+            filename="response.wav",
+            # Clean up temp file after sending is not natively supported by FileResponse in older FastAPI versions
+            # but modern OS cleans /tmp eventually. For production, a BackgroundTask to delete is better.
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[CRITICAL] Unexpected error in voice endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error processing voice request.")
+
+
+# --- 6. RUN SERVER INSTRUCTIONS (For local testing) ---
 # To run this server:
 # 1. Make sure you are in the warmprospect_poc directory.
 # 2. Run the command: uvicorn main:app --reload
