@@ -25,9 +25,12 @@ except redis.ConnectionError:
     # For strict production, we'd raise here. For "don't change DB" (maybe meaning don't break my current flow), we warn.
 
 
+# In-memory fallback storage
+_in_memory_sessions = {}
+
 def load_session(user_id: str, default_factory):
     """
-    Load a session from Redis. If missing, return default_factory().
+    Load a session from Redis. If missing or Redis fails, fallback to in-memory.
     """
     try:
         raw = r.get(user_id)
@@ -35,19 +38,26 @@ def load_session(user_id: str, default_factory):
             session = json.loads(raw)
             print(f"[DEBUG] Loaded session from Redis for user_id: {user_id}, history length: {len(session.get('history', []))}")
             return session
+        elif user_id in _in_memory_sessions:
+            print(f"[DEBUG] Loaded session from In-Memory for user_id: {user_id}")
+            return _in_memory_sessions[user_id]
         else:
-            print(f"[DEBUG] No session found in Redis for user_id: {user_id}, creating new session")
+            print(f"[DEBUG] No session found, creating new session for user_id: {user_id}")
             return default_factory()
     except Exception as e:
-        print(f"[ERROR] Redis load failed: {e}")
-        # Fallback to new session if Redis fails, to prevent app crash
+        print(f"[ERROR] Redis load failed: {e}. Falling back to in-memory.")
+        if user_id in _in_memory_sessions:
+            return _in_memory_sessions[user_id]
         return default_factory()
 
 
 def save_session(user_id: str, session: dict):
     """
-    Persist a session to Redis with TTL.
+    Persist a session to Redis with TTL, and keep an in-memory backup.
     """
+    # Always update in-memory for safety
+    _in_memory_sessions[user_id] = session
+    
     try:
         history_len = len(session.get('history', []))
         r.setex(user_id, SESSION_TTL_SECONDS, json.dumps(session))
