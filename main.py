@@ -3,7 +3,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, File, UploadFile
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,10 @@ from typing import Dict, Any, List, Optional
 from rag.retriever import WarmProspectRetriever, format_context
 from session_store import load_session, save_session
 from services.voice_service import get_voice_service
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from security import get_api_key
 
 # Custom CRM Tools import
 from core_tools.crm_functions import CRMTools
@@ -61,10 +65,18 @@ MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "20"))
 # Initialize FastAPI App
 app = FastAPI(title="WarmProspect Concierge Bot")
 
+# Rate Limiter Setup
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Add CORS middleware to allow frontend requests
+# Hardened CORS: Use env var or default to specific domains, not wildcard in production
+ALLOWED_ORIGINS = json.loads(os.getenv("ALLOWED_ORIGINS", '["*"]'))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -165,18 +177,14 @@ def initialize_session_state():
         "awaiting_field": None,
     }
 
-# In-memory session storage (for PII only - history handled by SDK)
-_in_memory_sessions: Dict[str, Dict[str, Any]] = {}
+# Removed _in_memory_sessions fallback. Redis is now mandatory.
 
 def get_session(user_id: str) -> Dict[str, Any]:
     """
-    Gets session state (for PII storage only - first_name, email, etc.).
-    History is managed by SDK's chat session - no Redis needed!
+    Gets session state from Redis.
+    History is managed by SDK's chat session, but we still store a copy in Redis for persistence/restore.
     """
-    # Use in-memory sessions only (Redis not needed - SDK handles history)
-    if user_id not in _in_memory_sessions:
-        _in_memory_sessions[user_id] = initialize_session_state()
-    return _in_memory_sessions[user_id]
+    return load_session(user_id, initialize_session_state)
 
 def get_or_create_chat_session(user_id: str, system_instruction: str):
     """
@@ -392,8 +400,8 @@ def check_hard_guards(
         if session_key in _chat_sessions_cache:
             del _chat_sessions_cache[session_key]
             print(f"[DEBUG] Cleared chat session cache for session_key: {session_key}")
-        # Save to in-memory
-        _in_memory_sessions[session_key] = session
+        # Save to Redis immediately
+        save_session(session_key, session)
         # Return a friendly prompt with primary options
         return {
             "response": (
@@ -426,8 +434,8 @@ def check_hard_guards(
         response_text = APPOINTMENT_RESPONSE_TEMPLATE.format(link=appointment_link)
         # Update route and return the fixed response
         session["current_route"] = "appointments"
-        # Save to in-memory (no Redis needed)
-        _in_memory_sessions[session_key] = session
+        # Save to Redis immediately
+        save_session(session_key, session)
         return {"response": response_text}
         
     return None # No hard guard triggered
@@ -460,8 +468,17 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Basic health endpoint to verify the server is running."""
-    return {"status": "ok", "message": "WarmProspect Concierge Bot is running"}
+    """Detailed health endpoint to verify the system status."""
+    health_status = {
+        "status": "ok",
+        "message": "WarmProspect Concierge Bot is running",
+        "components": {
+            "api": "healthy",
+            "rag": "loaded" if retriever is not None else "not_loaded",
+            "gemini_api": "configured" if GEMINI_API_KEY else "not_configured"
+        }
+    }
+    return health_status
 
 
 @app.get("/rag/status")
@@ -524,8 +541,13 @@ async def get_business_config(business_id: str):
 @app.get("/admin/business")
 async def list_all_businesses():
     """List all configured businesses."""
-    businesses = config_manager.get_all_businesses()
-    return {"success": True, "businesses": businesses}
+    try:
+        businesses = config_manager.get_all_businesses()
+        print(f"[DEBUG] list_all_businesses: found {len(businesses)} businesses")
+        return {"success": True, "businesses": businesses}
+    except Exception as e:
+        print(f"[ERROR] list_all_businesses failed: {e}")
+        return {"success": False, "businesses": {}, "error": str(e)}
 
 
 @app.delete("/admin/business/{business_id}")
@@ -569,6 +591,7 @@ async def get_business_config_for_widget(business_id: str):
     }
 
 @app.post("/chat")
+@limiter.limit("5/minute")
 async def chat_endpoint(request: Request):
     """
     Main API endpoint to handle incoming chat messages, manages state,
@@ -582,10 +605,16 @@ async def chat_endpoint(request: Request):
         user_id = data.get("user_id", "default_user")  # external user identifier
         # Optional multi-business / multi-tenant fields:
         business_id = data.get("business_id")
-        # business-specific instructions (optional runtime override; DB config takes priority if present)
-        business_system_prompt = data.get("system_prompt")
+        
+        # LOCKED DOWN: System prompt cannot be injected from the client.
+        # It must come from the business config or the default base.
+        # business_system_prompt = data.get("system_prompt") 
+        business_system_prompt = None
+
         appointment_link_override = data.get("appointment_link")
-        use_request_prompt = bool(data.get("use_request_prompt", False))
+        # use_request_prompt = bool(data.get("use_request_prompt", False))
+        use_request_prompt = False # LOCKED DOWN
+
         print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...'")
 
     except Exception as e:
@@ -680,6 +709,9 @@ async def chat_endpoint(request: Request):
     message_to_send = user_input
     biz_retriever = get_retriever_for_business(business_id)
 
+    # DEBUG: Log RAG state
+    print(f"[DEBUG] biz_retriever present: {biz_retriever is not None} for business_id: {business_id}")
+
     if biz_retriever:
         try:
             hits = biz_retriever.search(user_input)
@@ -691,8 +723,23 @@ async def chat_endpoint(request: Request):
             if ctx:
                 # Prepend RAG context to the user message
                 message_to_send = f"{ctx}\n\n{user_input}"
+                print(f"[DEBUG] Attached RAG context: {ctx[:100]}...")
         except Exception as rag_err:
             print(f"RAG retrieval skipped: {rag_err}")
+    elif retriever:
+        # Fallback to default retriever if business-specific one isn't found
+        # but ONLY if business_id is not provided (to avoid cross-tenant leaks)
+        # OR if you want it to be a global knowledge base.
+        # User said "The Bot is unable to access the RAG data", suggesting it might have been working before.
+        print(f"[DEBUG] Falling back to default retriever for query")
+        try:
+            hits = retriever.search(user_input)
+            ctx = format_context(hits)
+            if ctx:
+                message_to_send = f"{ctx}\n\n{user_input}"
+                print(f"[DEBUG] Attached default RAG context")
+        except Exception as rag_err:
+            print(f"Default RAG retrieval skipped: {rag_err}")
     
     # 6. Main Conversation Loop using Chat API (Handles Function Calling)
     # The chat.send_message() automatically includes FULL history - SDK manages it!
@@ -843,8 +890,8 @@ async def chat_endpoint(request: Request):
     
     # 8. SDK automatically manages history - no need to save separately!
     # The chat session maintains full conversation history internally
-    # We only update in-memory session for PII tracking (first_name, email, etc.)
-    _in_memory_sessions[session_key] = session
+    # We only update session for PII tracking (first_name, email, etc.)
+    save_session(session_key, session)
     
     # SDK history is automatically maintained - check it
     current_sdk_history = list(chat.get_history())
