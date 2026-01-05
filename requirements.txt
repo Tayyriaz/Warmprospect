@@ -13,3 +13,8 @@ pandas
 alembic
 python-multipart
 slowapi
+twilio
+websockets
+edge-tts
+pydub
+scipy

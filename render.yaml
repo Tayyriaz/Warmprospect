@@ -11,9 +11,18 @@ services:
         value: gemini-2.5-flash
       - key: MAX_HISTORY_TURNS
         value: "20"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: warmprospect-redis
+          property: connectionString
       - key: PORT
         fromService:
           type: web
           name: warmprospect-concierge
           property: port
+
+  - type: redis
+    name: warmprospect-redis
+    ipAllowList: [] # Only allow internal connections
 
