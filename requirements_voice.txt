@@ -1,0 +1,6 @@
+twilio
+websockets
+numpy
+edge-tts
+pydub
+scipy

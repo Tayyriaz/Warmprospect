@@ -328,7 +328,7 @@
               businessId: "<span id="code_business_id">your-business-id</span>"
             };
           &lt;/script&gt;
-          &lt;iframe src="http://localhost:8000/?business_id=<span id="code_business_id2">your-business-id</span>" 
+          &lt;iframe src="${API_BASE}/?business_id=<span id="code_business_id2">your-business-id</span>" 
                    style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
         </div>
       </div>
@@ -340,6 +340,34 @@
     const API_BASE = window.location.protocol === 'file:' 
       ? 'http://localhost:8000'
       : window.location.origin;
+
+    // Update integration code display with dynamic API_BASE
+    const integrationCodeEl = document.getElementById('integrationCode');
+    if (integrationCodeEl) {
+      // Re-render the HTML to inject API_BASE correctly
+      const businessIdSpan = '<span id="code_business_id">your-business-id</span>';
+      const businessIdSpan2 = '<span id="code_business_id2">your-business-id</span>';
+      integrationCodeEl.innerHTML = `
+          &lt;script&gt;
+            const CHATBOT_CONFIG = {
+              businessId: "${businessIdSpan.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"
+            };
+          &lt;/script&gt;
+          &lt;iframe src="${API_BASE}/?business_id=${businessIdSpan2.replace(/</g, '&lt;').replace(/>/g, '&gt;')}" 
+                   style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
+      `;
+      // We need to restore the spans as actual elements, not escaped strings for the dynamic updates to work
+      // Simpler approach: Just update the text content of the code block structure
+       integrationCodeEl.innerHTML = \`
+          &lt;script&gt;
+            const CHATBOT_CONFIG = {
+              businessId: "<span id="code_business_id">your-business-id</span>"
+            };
+          &lt;/script&gt;
+          &lt;iframe src="\${API_BASE}/?business_id=<span id="code_business_id2">your-business-id</span>" 
+                   style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
+      \`;
+    }
 
     const DEFAULT_PRIMARY_CTAS = [
       { label: "Book an Appointment", action: "send" },
@@ -497,8 +525,18 @@
     }
     
     function updateIntegrationCode(businessId) {
-      document.getElementById('code_business_id').textContent = businessId;
-      document.getElementById('code_business_id2').textContent = businessId;
+      const integrationCodeEl = document.getElementById('integrationCode');
+      const safeBusinessId = businessId.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      
+      integrationCodeEl.innerHTML = `
+&lt;script&gt;
+  const CHATBOT_CONFIG = {
+    businessId: "${safeBusinessId}"
+  };
+&lt;/script&gt;
+&lt;iframe src="${API_BASE}/?business_id=${safeBusinessId}" 
+         style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
+      `.trim();
     }
     
     document.getElementById('businessForm').addEventListener('submit', async (e) => {

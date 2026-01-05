@@ -223,6 +223,21 @@
     <div class="messages" id="messages"></div>
 
     <div class="input-shell">
+      <!-- Call Button Row -->
+      <div style="padding: 10px 14px 0 14px; border-bottom: 1px solid var(--border);">
+        <details>
+          <summary style="cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 600; padding-bottom: 8px;">
+            📞 Make a Phone Call
+          </summary>
+          <div style="padding: 10px 0;">
+            <input id="phoneNumber" type="tel" placeholder="+1234567890" 
+              style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px;">
+            <button id="callBtn" class="send-btn" style="width: 100%;">Start Call</button>
+            <div id="callStatus" style="font-size: 11px; color: var(--muted); margin-top: 6px;"></div>
+          </div>
+        </details>
+      </div>
+
       <div class="input-area">
         <input id="message" class="input-box" placeholder="Type a question or say hi to start..." />
         <button id="micBtn" class="mic-btn" title="Hold to speak">
@@ -310,13 +325,19 @@
       }
     }
     
+    // Base API URL helper
+    // Uses localhost:8000 only if file:// protocol, otherwise uses relative path which works for any domain
+    function getApiUrl(path) {
+      if (window.location.protocol === 'file:') {
+        return `http://localhost:8000${path}`;
+      }
+      return path;
+    }
+
     // Load business configuration from API
     async function loadBusinessConfig() {
       try {
-        // Use relative URL that works with both http:// and file://
-        const apiUrl = window.location.protocol === 'file:' 
-          ? `http://localhost:8000/api/business/${businessId}/config`
-          : `/api/business/${businessId}/config`;
+        const apiUrl = getApiUrl(`/api/business/${businessId}/config`);
         
         const res = await fetch(apiUrl);
         if (res.ok) {
@@ -364,6 +385,47 @@
 
     // --- Voice Recording Logic (WAV Encoding) ---
     const micBtn = document.getElementById("micBtn");
+    const callBtn = document.getElementById("callBtn");
+    const phoneNumberEl = document.getElementById("phoneNumber");
+    const callStatusEl = document.getElementById("callStatus");
+
+    if (callBtn) {
+      callBtn.addEventListener("click", async () => {
+        const phone = phoneNumberEl.value.trim();
+        if (!phone) {
+          callStatusEl.textContent = "Please enter a valid phone number.";
+          return;
+        }
+        
+        callStatusEl.textContent = "Initiating call...";
+        callBtn.disabled = true;
+        
+        try {
+          // Use helper
+          const callUrl = getApiUrl('/make-call');
+
+          const res = await fetch(callUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone_number: phone })
+          });
+          
+          const data = await res.json();
+          if (res.ok) {
+            callStatusEl.textContent = `Calling... SID: ${data.call_sid}`;
+            addMessage(`📞 Calling ${phone}...`, "bot");
+          } else {
+            callStatusEl.textContent = `Error: ${data.detail || "Call failed"}`;
+          }
+        } catch (err) {
+          console.error("Call error:", err);
+          callStatusEl.textContent = "Error initiating call.";
+        } finally {
+          callBtn.disabled = false;
+        }
+      });
+    }
+
     let isRecording = false;
     let mediaRecorder = null;
     let audioChunks = [];
@@ -509,10 +571,8 @@
       try {
         addMessage("🎤 Audio sent...", "user");
         
-        // Use absolute URL if opened via file:// protocol
-        const voiceUrl = window.location.protocol === 'file:' 
-          ? `http://localhost:8000/api/voice/chat`
-          : `/api/voice/chat`;
+        // Use helper
+        const voiceUrl = getApiUrl('/api/voice/chat');
 
         const res = await fetch(voiceUrl, {
           method: "POST",
@@ -709,10 +769,8 @@
           business_id: CHATBOT_CONFIG.businessId
         });
         
-        // Use absolute URL if opened via file:// protocol
-        const chatUrl = window.location.protocol === 'file:' 
-          ? `http://localhost:8000/chat`
-          : `/chat`;
+        // Use helper
+        const chatUrl = getApiUrl('/chat');
         
         const res = await fetch(chatUrl, {
           method: "POST",

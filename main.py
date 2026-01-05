@@ -3,8 +3,9 @@
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Depends
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Depends, WebSocket
+from fastapi.websockets import WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
@@ -13,10 +14,14 @@ from typing import Dict, Any, List, Optional
 from rag.retriever import WarmProspectRetriever, format_context
 from session_store import load_session, save_session
 from services.voice_service import get_voice_service
+from services.twilio_voice_manager import get_voice_manager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from security import get_api_key
+from twilio.twiml.voice_response import VoiceResponse, Connect
+from twilio.rest import Client as TwilioClient
+import urllib.parse
 
 # Custom CRM Tools import
 from core_tools.crm_functions import CRMTools
@@ -72,7 +77,15 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware to allow frontend requests
 # Hardened CORS: Use env var or default to specific domains, not wildcard in production
-ALLOWED_ORIGINS = json.loads(os.getenv("ALLOWED_ORIGINS", '["*"]'))
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    try:
+        ALLOWED_ORIGINS = json.loads(allowed_origins_env)
+    except json.JSONDecodeError:
+        print(f"[WARNING] Invalid JSON in ALLOWED_ORIGINS. Defaulting to ['*']")
+        ALLOWED_ORIGINS = ["*"]
+else:
+    ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -373,7 +386,7 @@ def build_system_instruction(
 # --- 3. HARD GUARD LOGIC ---
 
 # Appointment Hard Guard defaults (can be overridden per session)
-APPOINTMENT_LINK = '<a href="https://wp.wpgrowth.site/public/appointment/u/cQ4wCdoD2pBZmj8dFUXbzgRFZY1" target="_blank">Click Here</a>'
+APPOINTMENT_LINK = os.getenv("DEFAULT_APPOINTMENT_LINK", "") 
 APPOINTMENT_RESPONSE_TEMPLATE = "You can check our availability and schedule directly through our calendar here: {link}."
 
 def check_hard_guards(
@@ -997,7 +1010,134 @@ async def voice_chat(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Internal server error processing voice request.")
 
 
-# --- 6. RUN SERVER INSTRUCTIONS (For local testing) ---
-# To run this server:
-# 1. Make sure you are in the warmprospect_poc directory.
-# 2. Run the command: uvicorn main:app --reload
+# --- 7. TWILIO VOICE WEBHOOKS ---
+
+@app.post("/make-call")
+async def make_call(request: Request):
+    """
+    Initiates an outgoing call to the specified phone number.
+    """
+    try:
+        data = await request.json()
+        phone_number = data.get("phone_number")
+        
+        if not phone_number:
+            raise HTTPException(status_code=400, detail="Phone number is required")
+
+        # Twilio Configuration
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        from_number = os.getenv("TWILIO_PHONE_NUMBER")
+        
+        if not all([account_sid, auth_token, from_number]):
+             raise HTTPException(status_code=500, detail="Twilio credentials not configured")
+
+        client = TwilioClient(account_sid, auth_token)
+        
+        # Construct the webhook URL for the call flow
+        # Use NGROK URL if provided, otherwise construct from request host
+        ngrok_url = os.getenv("NGROK_URL")
+        host = ngrok_url.replace("https://", "").replace("http://", "") if ngrok_url else request.headers.get('host')
+        
+        # We'll use the /voice/incoming endpoint logic for the outgoing call's TwiML
+        # But since client.calls.create takes a URL, we need the full public URL.
+        webhook_url = f"https://{host}/voice/incoming"
+        
+        print(f"[DEBUG] Initiating call to {phone_number} with webhook {webhook_url}")
+
+        call = client.calls.create(
+            to=phone_number,
+            from_=from_number,
+            url=webhook_url
+        )
+
+        return {"success": True, "call_sid": call.sid, "message": "Call initiated"}
+
+    except Exception as e:
+        print(f"[ERROR] Make call failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/voice/incoming")
+async def voice_incoming(request: Request):
+    """
+    Twilio webhook for incoming calls.
+    Returns TwiML to start a Media Stream (WebSocket).
+    """
+    # Get NGROK URL or Host from request
+    host = request.headers.get('host')
+    
+    response = VoiceResponse()
+    response.say("Hello, connecting you to the concierge assistant.", voice='alice')
+    connect = Connect()
+    connect.stream(url=f'wss://{host}/media-stream')
+    response.append(connect)
+    
+    return Response(content=str(response), media_type="application/xml")
+
+
+@app.websocket("/media-stream")
+async def handle_media_stream(websocket: WebSocket):
+    """
+    WebSocket endpoint for Twilio Media Streams.
+    Handles bidirectional audio: Twilio -> Buffer/VAD -> Gemini -> TTS -> Twilio.
+    """
+    await websocket.accept()
+    print("[DEBUG] WebSocket connected: /media-stream")
+    
+    voice_manager = get_voice_manager()
+    stream_sid = None
+    
+    # Simple conversation loop state
+    system_instruction = BASE_SYSTEM_INSTRUCTION
+    
+    try:
+        while True:
+            message = await websocket.receive_text()
+            data = json.loads(message)
+            
+            if data['event'] == 'start':
+                stream_sid = data['start']['streamSid']
+                print(f"[DEBUG] Media Stream started: {stream_sid}")
+                
+            elif data['event'] == 'media':
+                payload = data['media']['payload']
+                
+                # Process audio chunk (VAD & Buffer)
+                full_audio = voice_manager.process_incoming_audio(payload)
+                
+                if full_audio:
+                    print(f"[DEBUG] Speech detected! Processing {len(full_audio)} bytes...")
+                    
+                    # 1. Send Audio to Gemini (STT + Generation)
+                    # Note: We are sending raw PCM bytes. Gemini Flash handles audio input.
+                    response_text = await voice_manager.generate_response(
+                        full_audio, 
+                        system_instruction
+                    )
+                    print(f"[DEBUG] Gemini Response: {response_text}")
+                    
+                    if response_text:
+                        # 2. TTS (Text to Audio)
+                        audio_payload = await voice_manager.text_to_speech(response_text)
+                        
+                        if audio_payload:
+                            # 3. Send Audio back to Twilio
+                            await websocket.send_json({
+                                "event": "media",
+                                "streamSid": stream_sid,
+                                "media": {
+                                    "payload": audio_payload
+                                }
+                            })
+                            
+            elif data['event'] == 'stop':
+                print(f"[DEBUG] Media Stream stopped: {stream_sid}")
+                break
+                
+    except WebSocketDisconnect:
+        print("[DEBUG] WebSocket disconnected")
+    except Exception as e:
+        print(f"[ERROR] WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
