@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
 from typing import Dict, Any, List, Optional
-from rag.retriever import WarmProspectRetriever, format_context
+from rag.retriever import GoAccelRetriever, format_context
 from session_store import load_session, save_session
 from services.voice_service import get_voice_service
 from services.twilio_voice_manager import get_voice_manager
@@ -68,7 +68,7 @@ PORT = int(os.getenv("PORT", "8000"))
 MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "20"))
 
 # Initialize FastAPI App
-app = FastAPI(title="WarmProspect Concierge Bot")
+app = FastAPI(title="GoAccel Concierge Bot")
 
 # Rate Limiter Setup
 limiter = Limiter(key_func=get_remote_address)
@@ -102,11 +102,11 @@ crm_tools = CRMTools()
 # NOTE: In multi-tenant mode, each business should have its own index under:
 #   data/{business_id}/index.faiss and data/{business_id}/meta.jsonl
 # The legacy default index (data/index.faiss) is only used when business_id is not provided.
-retriever: Optional[WarmProspectRetriever] = None
-_retriever_cache: Dict[str, WarmProspectRetriever] = {}
+retriever: Optional[GoAccelRetriever] = None
+_retriever_cache: Dict[str, GoAccelRetriever] = {}
 
 try:
-    retriever = WarmProspectRetriever(
+    retriever = GoAccelRetriever(
         api_key=os.getenv("GEMINI_API_KEY", ""),
         index_path="data/index.faiss",
         meta_path="data/meta.jsonl",
@@ -118,7 +118,7 @@ except Exception as e:
     print(f"Default RAG retriever not loaded: {e}")
 
 
-def get_retriever_for_business(business_id: Optional[str]) -> Optional[WarmProspectRetriever]:
+def get_retriever_for_business(business_id: Optional[str]) -> Optional[GoAccelRetriever]:
     """
     Returns a retriever for the given business_id if a business-specific index exists.
     - If business_id is None -> returns the default retriever (if loaded)
@@ -137,7 +137,7 @@ def get_retriever_for_business(business_id: Optional[str]) -> Optional[WarmProsp
         return None
 
     try:
-        biz_ret = WarmProspectRetriever(
+        biz_ret = GoAccelRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
             meta_path=meta_path,
@@ -484,7 +484,7 @@ async def health():
     """Detailed health endpoint to verify the system status."""
     health_status = {
         "status": "ok",
-        "message": "WarmProspect Concierge Bot is running",
+        "message": "GoAccel Concierge Bot is running",
         "components": {
             "api": "healthy",
             "rag": "loaded" if retriever is not None else "not_loaded",
@@ -604,7 +604,7 @@ async def get_business_config_for_widget(business_id: str):
     }
 
 @app.post("/chat")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def chat_endpoint(request: Request):
     """
     Main API endpoint to handle incoming chat messages, manages state,

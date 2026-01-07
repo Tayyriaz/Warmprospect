@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WarmProspect Concierge</title>
+  <title>GoAccel Concierge</title>
   <style>
     :root {
       --bg: #f5f7fb;
@@ -213,9 +213,9 @@
 <body>
   <div class="widget">
     <div class="header">
-      <div class="avatar" id="businessAvatar">WP</div>
+      <div class="avatar" id="businessAvatar">GA</div>
       <div>
-        <p class="title" id="businessTitle">WarmProspect Concierge</p>
+        <p class="title" id="businessTitle">GoAccel Concierge</p>
         <p class="subtitle" id="businessSubtitle">Ask about services, pricing or booking – 24/7</p>
       </div>
     </div>
@@ -252,7 +252,7 @@
       </div>
     </div>
 
-    <div class="footer" id="businessFooter">Powered by WarmProspect • AI assistant demo</div>
+    <div class="footer" id="businessFooter">Powered by GoAccel • AI assistant demo</div>
   </div>
 
   <script>
@@ -296,7 +296,7 @@
     
     // Generate avatar initials from business name
     function getInitials(name) {
-      if (!name) return "WP";
+      if (!name) return "GA";
       const words = name.trim().split(/\s+/);
       if (words.length >= 2) {
         return (words[0][0] + words[1][0]).toUpperCase();
@@ -326,10 +326,10 @@
     }
     
     // Base API URL helper
-    // Uses localhost:8000 only if file:// protocol, otherwise uses relative path which works for any domain
+    // Detects the current port or defaults to port 80 if on file://
     function getApiUrl(path) {
       if (window.location.protocol === 'file:') {
-        return `http://localhost:8000${path}`;
+        return `http://localhost${path}`;
       }
       return path;
     }
@@ -827,7 +827,14 @@
       } catch (err) {
         hideTyping();
         console.error("Chat error:", err);
-        let errorMsg = "Error connecting to the assistant. Please try again.";
+        let errorMsg = "Error connecting to the assistant. ";
+        
+        if (window.location.protocol === 'file:') {
+          errorMsg += "<br><br><b>Tip:</b> Direct file access (file://) is often blocked by browsers. <br>Please visit <b>http://localhost</b> in your browser instead.";
+        } else {
+          errorMsg += "Please check if the backend is running and reachable.";
+        }
+        
         if (err.message) {
           errorMsg += ` (${err.message})`;
         }

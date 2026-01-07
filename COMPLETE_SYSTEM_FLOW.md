@@ -1,4 +1,4 @@
-# Complete System Flow - WarmProspect Chatbot Platform
+# Complete System Flow - GoAccel Chatbot Platform
 
 ## 🎯 System Overview
 
@@ -18,11 +18,11 @@ Yeh ek **multi-business chatbot platform** hai jahan:
 # PostgreSQL install karein (agar nahi hai)
 # Database create karein
 psql -U postgres
-CREATE DATABASE warmprospect_db;
+CREATE DATABASE goaccel_db;
 \q
 
 # .env file mein database URL add karein
-DATABASE_URL=postgresql://postgres:tayyab@localhost:5432/warmprospect_db
+DATABASE_URL=postgresql://postgres:tayyab@localhost:5432/goaccel_db
 GEMINI_API_KEY=your_api_key_here
 
 # Database tables create karein

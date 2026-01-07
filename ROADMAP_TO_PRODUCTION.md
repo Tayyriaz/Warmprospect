@@ -1,6 +1,6 @@
 # Roadmap to Production 🚀
 
-This document outlines the necessary steps to take the **WarmProspect Concierge Bot** from a Proof of Concept (POC) to a production-ready, scalable, and secure application.
+This document outlines the necessary steps to take the **GoAccel Concierge Bot** from a Proof of Concept (POC) to a production-ready, scalable, and secure application.
 
 ---
 

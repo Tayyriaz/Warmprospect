@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WarmProspect - Business Configuration</title>
+  <title>GoAccel - Business Configuration</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -191,7 +191,7 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>🤖 Chatbot Configuration</h1>
+      <h1>🤖 GoAccel Configuration</h1>
       <p>Configure your business chatbot settings</p>
     </div>
     
@@ -336,9 +336,9 @@
   </div>
 
   <script>
-    // Use localhost:8000 if opened via file:// protocol, otherwise use current origin
+    // Detects the current origin or defaults to localhost (port 80)
     const API_BASE = window.location.protocol === 'file:' 
-      ? 'http://localhost:8000'
+      ? 'http://localhost'
       : window.location.origin;
 
     // Update integration code display with dynamic API_BASE

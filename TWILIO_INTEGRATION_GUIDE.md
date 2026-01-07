@@ -1,6 +1,6 @@
 # Twilio Voice Integration Guide 📞
 
-This guide explains how the Twilio Voice integration works in the **WarmProspect Concierge Bot**, how to set it up, and how to troubleshoot common issues.
+This guide explains how the Twilio Voice integration works in the **GoAccel Concierge Bot**, how to set it up, and how to troubleshoot common issues.
 
 ---
 

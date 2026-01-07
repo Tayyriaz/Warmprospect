@@ -7,7 +7,7 @@ import numpy as np
 from google import genai
 
 
-class WarmProspectRetriever:
+class GoAccelRetriever:
     """
     Lightweight retriever that loads a FAISS index and associated metadata.
     """

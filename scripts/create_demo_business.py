@@ -14,9 +14,9 @@ print("Creating default demo-business...")
 try:
     config_manager.create_or_update_business(
         business_id="demo-business",
-        business_name="WarmProspect Demo",
-        system_prompt="You are a helpful AI assistant for WarmProspect. You help users understand our services.",
-        greeting_message="Hi! I'm the WarmProspect Demo Bot. Ask me anything!",
+        business_name="GoAccel Demo",
+        system_prompt="You are a helpful AI assistant for GoAccel. You help users understand our services.",
+        greeting_message="Hi! I'm the GoAccel Demo Bot. Ask me anything!",
         primary_ctas=DEFAULT_PRIMARY_CTAS,
         secondary_ctas=DEFAULT_SECONDARY_CTAS
     )

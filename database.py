@@ -23,7 +23,7 @@ load_dotenv()
 # Database connection
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/warmprospect_db",
+    "postgresql://postgres:postgres@localhost:5432/goaccel_db",
 )
 
 # Create engine

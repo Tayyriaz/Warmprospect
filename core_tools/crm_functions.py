@@ -2,13 +2,13 @@
 
 class CRMTools:
     """
-    Provides tools for managing customer data and deals in the WarmProspect CRM.
+    Provides tools for managing customer data and deals in the GoAccel CRM.
     These tools are exposed to the Gemini model for Function Calling.
     """
     
     def search_contact(self, email: str = None, phone_number: str = None) -> dict:
         """
-        Searches WarmProspect CRM for an existing contact using Email or Phone Number. 
+        Searches GoAccel CRM for an existing contact using Email or Phone Number. 
         This is run before creating a new contact to prevent duplicates.
         
         Args:
@@ -28,7 +28,7 @@ class CRMTools:
 
     def create_new_contact(self, first_name: str, email: str, phone_number: str = None) -> dict:
         """
-        Creates a new contact in the WarmProspect CRM. Requires first name and email. 
+        Creates a new contact in the GoAccel CRM. Requires first name and email. 
         The phone number is verified and E.164 formatted before creation.
         
         Args:
@@ -47,7 +47,7 @@ class CRMTools:
 
     def create_deal(self, title: str, contact_id: str, description: str = None) -> dict:
         """
-        Creates a new deal (opportunity) in WarmProspect CRM, linking it to a specific contact.
+        Creates a new deal (opportunity) in GoAccel CRM, linking it to a specific contact.
         Title is always required before calling this tool.
         
         Args:
