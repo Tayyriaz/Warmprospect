@@ -186,6 +186,86 @@
     .btn-danger:hover {
       background: #dc2626;
     }
+    
+    /* Scraping Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .modal h2 {
+      margin: 0 0 16px 0;
+      color: #1f2937;
+    }
+    .modal p {
+      color: #6b7280;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .modal-status {
+      font-weight: 600;
+      color: #667eea;
+      margin-bottom: 8px;
+    }
+    .modal-message {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .btn-close {
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .btn-close:hover {
+      background: #e5e7eb;
+    }
   </style>
 </head>
 <body>
@@ -307,6 +387,7 @@
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
           <button type="button" class="btn btn-secondary" onclick="loadBusinesses()">📋 View All Businesses</button>
+          <button type="button" class="btn btn-secondary" onclick="loadGoAccelTemplate()">🚀 Load GoAccel Template</button>
           <button type="button" class="btn btn-secondary" onclick="clearForm()">🔄 Clear Form</button>
         </div>
       </form>
@@ -335,6 +416,21 @@
     </div>
   </div>
 
+  <!-- Scraping Progress Modal -->
+  <div id="scrapingModal" class="modal-overlay">
+    <div class="modal">
+      <h2>🌐 Building Knowledge Base</h2>
+      <div class="modal-status" id="modalStatus">Initializing...</div>
+      <div class="modal-message" id="modalMessage">Preparing to scrape your website...</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-close" onclick="closeScrapingModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Detects the current origin or defaults to localhost (port 80)
     const API_BASE = window.location.protocol === 'file:' 
@@ -342,31 +438,11 @@
       : window.location.origin;
 
     // Update integration code display with dynamic API_BASE
-    const integrationCodeEl = document.getElementById('integrationCode');
-    if (integrationCodeEl) {
-      // Re-render the HTML to inject API_BASE correctly
-      const businessIdSpan = '<span id="code_business_id">your-business-id</span>';
-      const businessIdSpan2 = '<span id="code_business_id2">your-business-id</span>';
-      integrationCodeEl.innerHTML = `
-          &lt;script&gt;
-            const CHATBOT_CONFIG = {
-              businessId: "${businessIdSpan.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"
-            };
-          &lt;/script&gt;
-          &lt;iframe src="${API_BASE}/?business_id=${businessIdSpan2.replace(/</g, '&lt;').replace(/>/g, '&gt;')}" 
-                   style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
-      `;
-      // We need to restore the spans as actual elements, not escaped strings for the dynamic updates to work
-      // Simpler approach: Just update the text content of the code block structure
-       integrationCodeEl.innerHTML = \`
-          &lt;script&gt;
-            const CHATBOT_CONFIG = {
-              businessId: "<span id="code_business_id">your-business-id</span>"
-            };
-          &lt;/script&gt;
-          &lt;iframe src="\${API_BASE}/?business_id=<span id="code_business_id2">your-business-id</span>" 
-                   style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
-      \`;
+    function updateIntegrationCodeOnLoad() {
+      const integrationCodeEl = document.getElementById('integrationCode');
+      if (integrationCodeEl) {
+        updateIntegrationCode('your-business-id');
+      }
     }
 
     const DEFAULT_PRIMARY_CTAS = [
@@ -404,6 +480,54 @@
       document.getElementById('businessForm').reset();
       document.getElementById('theme_color').value = '#2563eb';
       setDefaultCtas();
+    }
+    
+    function loadGoAccelTemplate() {
+      // Fill all fields with GoAccel default values
+      document.getElementById('business_id').value = 'goaccel-website';
+      document.getElementById('business_name').value = 'GoAccel';
+      document.getElementById('system_prompt').value = `GoAccel is an all-in-one growth and operations system built specifically for home services and skilled trade businesses. We combine customer acquisition, automation, CRM, scheduling, and operational systems into a single platform designed to help owners scale predictably and build long-term enterprise value.
+
+Our services include:
+- Digital Agency Solutions: Full-service digital agency/lead gen services including websites, paid ads, and conversion tracking
+- CRM Software: Customer relationship management, deal pipeline management, business management software
+- Marketing Automation: Automated appointment booking, lead nurturing, marketing campaign management
+- Business Listing Management: Customer review management, data enhancement, database reactivation
+
+We serve industries including HVAC, plumbing, electrical, window cleaning, appliance repair, carpet cleaning, handyman, cleaning & janitorial, garage door, lawn care, pest control, custom home building, pool & spa service, fireplace & chimney, custom remodeling, locksmith, landscaping, painting contractors, junk removal, property maintenance, roofing, and mechanic services.
+
+Your role is to help potential customers understand how GoAccel can help their home services business grow. Be friendly, knowledgeable, and focus on how we can help them achieve predictable growth and build business value.`;
+      
+      document.getElementById('primary_goal').value = 'Help home services businesses scale predictably and build long-term enterprise value';
+      document.getElementById('personality').value = 'Friendly, knowledgeable, and growth-focused';
+      document.getElementById('greeting_message').value = 'Hi! Welcome to GoAccel. I\'m here to help you understand how we can accelerate your home services business growth. What would you like to know?';
+      document.getElementById('appointment_link').value = 'https://warmprospect.com/goaccel-website/';
+      document.getElementById('privacy_statement').value = 'We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.';
+      document.getElementById('website_url').value = 'https://warmprospect.com/goaccel-website/';
+      document.getElementById('contact_email').value = 'info@goaccel.com';
+      document.getElementById('contact_phone').value = '855.915.0747';
+      document.getElementById('theme_color').value = '#667eea';
+      document.getElementById('widget_position').value = 'center';
+      
+      // Set GoAccel-specific CTAs
+      document.getElementById('primary_ctas').value = JSON.stringify([
+        {"label": "Get Free Visibility Scan", "action": "send", "message": "I'd like to get a free visibility scan for my business."},
+        {"label": "Book a Growth Call", "action": "send", "message": "I want to book a 15-minute growth call to learn more."},
+        {"label": "Learn About Services", "action": "show_secondary"}
+      ], null, 2);
+      
+      document.getElementById('secondary_ctas').value = JSON.stringify([
+        {"label": "Digital Agency Solutions", "action": "send", "message": "Tell me about your digital agency solutions and website design services."},
+        {"label": "CRM Software", "action": "send", "message": "I want to learn about your CRM software for home services businesses."},
+        {"label": "Marketing Automation", "action": "send", "message": "How does your marketing automation work?"},
+        {"label": "Industries We Serve", "action": "send", "message": "Which industries do you serve?"},
+        {"label": "Pricing Information", "action": "send", "message": "What are your pricing options?"}
+      ], null, 2);
+      
+      // Update integration code
+      updateIntegrationCode('goaccel-website');
+      
+      showAlert('✅ GoAccel template loaded! Review and customize the fields, then click "Save Configuration".', 'success');
     }
     
     async function loadBusinesses() {
@@ -579,9 +703,16 @@
         console.log('Save response:', result);
         
         if (result.success) {
-          showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
           updateIntegrationCode(data.business_id);
           loadBusinesses();
+          
+          // Check if scraping was started
+          if (result.scraping_started && data.website_url) {
+            showScrapingModal(data.business_id);
+            startScrapingPoll(data.business_id);
+          } else {
+            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+          }
         } else {
           showAlert('❌ Failed to save: ' + (result.detail || 'Unknown error'), 'error');
         }
@@ -596,8 +727,94 @@
       updateIntegrationCode(e.target.value || 'your-business-id');
     });
     
+    // Scraping Modal Functions
+    function showScrapingModal(businessId) {
+      const modal = document.getElementById('scrapingModal');
+      modal.classList.add('active');
+      updateScrapingStatus(businessId);
+    }
+    
+    function closeScrapingModal() {
+      const modal = document.getElementById('scrapingModal');
+      modal.classList.remove('active');
+    }
+    
+    function updateScrapingStatus(businessId) {
+      fetch(`${API_BASE}/admin/business/${businessId}/scraping-status`)
+        .then(res => res.json())
+        .then(status => {
+          const statusEl = document.getElementById('modalStatus');
+          const messageEl = document.getElementById('modalMessage');
+          const progressEl = document.getElementById('progressFill');
+          
+          let statusText = '';
+          let messageText = status.message || '';
+          let progress = status.progress || 0;
+          
+          switch(status.status) {
+            case 'pending':
+              statusText = '⏳ Preparing...';
+              break;
+            case 'scraping':
+              statusText = '🌐 Scraping Website...';
+              progress = Math.max(progress, 20);
+              break;
+            case 'indexing':
+              statusText = '📚 Building Knowledge Base...';
+              progress = Math.max(progress, 80);
+              break;
+            case 'completed':
+              statusText = '✅ Complete!';
+              progress = 100;
+              messageText = 'Your chatbot is now ready to use with the scraped knowledge base!';
+              setTimeout(() => {
+                closeScrapingModal();
+                showAlert('✅ Knowledge base built successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+              }, 2000);
+              return; // Stop polling
+            case 'failed':
+              statusText = '❌ Failed';
+              messageText = status.message || 'Scraping failed. Please try again.';
+              progress = 0;
+              return; // Stop polling
+            default:
+              statusText = '⏳ Waiting...';
+          }
+          
+          statusEl.textContent = statusText;
+          messageEl.textContent = messageText;
+          progressEl.style.width = progress + '%';
+        })
+        .catch(err => {
+          console.error('Error checking scraping status:', err);
+        });
+    }
+    
+    let scrapingPollInterval = null;
+    
+    function startScrapingPoll(businessId) {
+      // Clear any existing interval
+      if (scrapingPollInterval) {
+        clearInterval(scrapingPollInterval);
+      }
+      
+      // Poll every 2 seconds
+      scrapingPollInterval = setInterval(() => {
+        updateScrapingStatus(businessId);
+      }, 2000);
+      
+      // Stop polling after 15 minutes (timeout)
+      setTimeout(() => {
+        if (scrapingPollInterval) {
+          clearInterval(scrapingPollInterval);
+          scrapingPollInterval = null;
+        }
+      }, 15 * 60 * 1000);
+    }
+    
     // Load businesses on page load
     setDefaultCtas();
+    updateIntegrationCodeOnLoad();
     loadBusinesses();
   </script>
 </body>

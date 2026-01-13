@@ -337,7 +337,8 @@
     // Load business configuration from API
     async function loadBusinessConfig() {
       try {
-        const apiUrl = getApiUrl(`/api/business/${businessId}/config`);
+        // Added a timestamp to bypass browser cache
+        const apiUrl = getApiUrl(`/api/business/${businessId}/config?t=${Date.now()}`);
         
         const res = await fetch(apiUrl);
         if (res.ok) {
@@ -870,6 +871,12 @@
       await loadBusinessConfig(); // Ensure config is loaded
       updateBusinessBranding(); // Update branding from config
       
+      // Update CTA config after loading business config
+      ctaConfig = {
+        primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
+        secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
+      };
+      
       if (CHATBOT_CONFIG.privacyStatement) {
         addMessage(CHATBOT_CONFIG.privacyStatement, "meta");
       }
@@ -877,6 +884,13 @@
         CHATBOT_CONFIG.greetingMessage ||
         "Hi! I'm your AI assistant. Ask anything about services, pricing or booking and I'll guide you.";
       addMessage(initialGreeting, "bot");
+      
+      // Show primary CTAs after greeting
+      if (ctaConfig.primary && ctaConfig.primary.length > 0) {
+        primaryRendered = false;
+        secondaryRendered = false;
+        addOptionChips(ctaConfig.primary, "primary");
+      }
     }
     
     // Initialize chat after page loads

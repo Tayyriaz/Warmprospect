@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: warmprospect-concierge
+    name: goaccel-concierge
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -14,15 +14,15 @@ services:
       - key: REDIS_URL
         fromService:
           type: redis
-          name: warmprospect-redis
+          name: goaccel-redis
           property: connectionString
       - key: PORT
         fromService:
           type: web
-          name: warmprospect-concierge
+          name: goaccel-concierge
           property: port
 
   - type: redis
-    name: warmprospect-redis
+    name: goaccel-redis
     ipAllowList: [] # Only allow internal connections
 

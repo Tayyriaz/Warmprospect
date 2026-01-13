@@ -1,8 +1,8 @@
 """
-Builds a local RAG corpus and FAISS index for warmprospect.com.
+Builds a local RAG corpus and FAISS index for GoAccel website.
 
 Steps:
-1) Crawl warmprospect.com up to depth 5.
+1) Crawl GoAccel website (warmprospect.com/goaccel-website/) up to depth 5.
 2) Extract main text and metadata.
 3) Chunk content.
 4) Embed with Gemini text-embedding-004.
@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 
 BASE_DOMAIN = "warmprospect.com"
-ROOT_URL = "https://warmprospect.com/"
+ROOT_URL = "https://warmprospect.com/goaccel-website/"
 MAX_DEPTH = 5
 MAX_PAGES = 200  # safety cap
 MAX_SECONDS = 120  # fail-safe wall clock limit
@@ -41,7 +41,7 @@ CHUNK_SIZE = 800  # tokens (approx by words)
 CHUNK_OVERLAP = 100
 EMBED_MODEL = "text-embedding-004"
 SEED_URLS = [
-    ROOT_URL,  # start at home and follow discovered links
+    ROOT_URL,  # start at GoAccel website and follow discovered links
 ]
 SITEMAP_URL = "https://warmprospect.com/wp-sitemap.xml"
 
@@ -77,7 +77,7 @@ def is_allowed(url: str) -> bool:
 
 def fetch(url: str) -> str:
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; WarmProspectBot/1.0; +https://warmprospect.com/)",
+        "User-Agent": "Mozilla/5.0 (compatible; GoAccelBot/1.0; +https://warmprospect.com/goaccel-website/)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     resp = requests.get(url, timeout=(3, 10), headers=headers, allow_redirects=True)

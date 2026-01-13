@@ -2,8 +2,11 @@
 
 import os
 import json
+import subprocess
+import sys
+import time
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Depends, WebSocket
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile, Depends, WebSocket, BackgroundTasks
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -128,15 +131,23 @@ def get_retriever_for_business(business_id: Optional[str]) -> Optional[GoAccelRe
         return retriever
 
     if business_id in _retriever_cache:
+        print(f"[RAG] Using cached retriever for business_id={business_id}")
         return _retriever_cache[business_id]
 
     index_path = os.path.join("data", business_id, "index.faiss")
     meta_path = os.path.join("data", business_id, "meta.jsonl")
+    
+    print(f"[RAG] Checking for business KB: business_id={business_id}")
+    print(f"[RAG] Index path: {index_path} (exists: {os.path.exists(index_path)})")
+    print(f"[RAG] Meta path: {meta_path} (exists: {os.path.exists(meta_path)})")
+    
     if not (os.path.exists(index_path) and os.path.exists(meta_path)):
         # No business KB yet -> disable RAG for this business to avoid cross-tenant contamination
+        print(f"[RAG] No KB found for business_id={business_id}, RAG disabled")
         return None
 
     try:
+        print(f"[RAG] Loading retriever for business_id={business_id}...")
         biz_ret = GoAccelRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
@@ -145,10 +156,12 @@ def get_retriever_for_business(business_id: Optional[str]) -> Optional[GoAccelRe
             top_k=5,
         )
         _retriever_cache[business_id] = biz_ret
-        print(f"Business RAG retriever loaded for business_id={business_id}.")
+        print(f"✅ Business RAG retriever loaded for business_id={business_id}.")
         return biz_ret
     except Exception as e:
-        print(f"[WARNING] Could not load business RAG for {business_id}: {e}")
+        print(f"[ERROR] Could not load business RAG for {business_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # Serve static frontend
@@ -465,10 +478,38 @@ def _get_ctas_for_business(business_id: Optional[str]) -> Dict[str, Any]:
 
 
 def _should_attach_ctas(text: str) -> bool:
+    """
+    Determine if CTAs should be attached to the response.
+    CTAs are shown when:
+    1. Response contains "please choose one of the options below"
+    2. Response asks a question or suggests an action
+    3. Response is a greeting or initial message
+    """
     if not text:
         return False
     normalized = text.lower()
-    return "please choose one of the options below" in normalized
+    
+    # Always show CTAs if response contains these phrases
+    cta_indicators = [
+        "please choose one of the options below",
+        "how can i help",
+        "what would you like",
+        "would you like to",
+        "can i help you",
+        "let me know",
+        "feel free to"
+    ]
+    
+    # Check if any indicator is present
+    for indicator in cta_indicators:
+        if indicator in normalized:
+            return True
+    
+    # Also show CTAs if response ends with a question mark
+    if text.strip().endswith("?"):
+        return True
+    
+    return False
 
 
 # --- 4. CORE CONVERSATION ENDPOINT ---
@@ -503,14 +544,116 @@ async def rag_status():
         "meta_path": "data/meta.jsonl",
     }
 
+@app.get("/rag/test/{business_id}")
+async def test_rag_for_business(business_id: str):
+    """Test RAG retrieval for a specific business."""
+    test_query = "What is GoAccel?"
+    
+    try:
+        biz_retriever = get_retriever_for_business(business_id)
+        if not biz_retriever:
+            return {
+                "success": False,
+                "error": f"No RAG retriever found for business_id={business_id}",
+                "index_exists": os.path.exists(os.path.join("data", business_id, "index.faiss")),
+                "meta_exists": os.path.exists(os.path.join("data", business_id, "meta.jsonl")),
+            }
+        
+        hits = biz_retriever.search(test_query)
+        ctx = format_context(hits)
+        
+        return {
+            "success": True,
+            "business_id": business_id,
+            "query": test_query,
+            "hits_found": len(hits),
+            "context_generated": ctx is not None,
+            "context_length": len(ctx) if ctx else 0,
+            "sample_hits": [
+                {
+                    "url": h.get("url", "")[:60],
+                    "score": round(h.get("score", 0), 4),
+                    "text_preview": h.get("text", "")[:100]
+                }
+                for h in hits[:3]
+            ],
+            "context_preview": ctx[:300] if ctx else None,
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
 
 # --- ADMIN API ENDPOINTS FOR BUSINESS CONFIGURATION ---
 
+def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0):
+    """Update scraping status in a JSON file for frontend polling."""
+    status_file = os.path.join("data", business_id, "scraping_status.json")
+    os.makedirs(os.path.dirname(status_file), exist_ok=True)
+    
+    status_data = {
+        "status": status,  # "pending", "scraping", "indexing", "completed", "failed"
+        "message": message,
+        "progress": progress,  # 0-100
+        "updated_at": time.time()
+    }
+    
+    with open(status_file, "w", encoding="utf-8") as f:
+        json.dump(status_data, f)
+
+
+def trigger_kb_build(business_id: str, website_url: str):
+    """
+    Background task to build knowledge base for a business website.
+    Runs the scraping script asynchronously and updates status.
+    """
+    try:
+        update_scraping_status(business_id, "pending", "Preparing to scrape website...", 0)
+        
+        script_path = os.path.join("scripts", "build_kb_for_business.py")
+        if not os.path.exists(script_path):
+            error_msg = f"Scraping script not found: {script_path}"
+            print(f"[WARNING] {error_msg}")
+            update_scraping_status(business_id, "failed", error_msg, 0)
+            return
+        
+        # Run the scraping script in background
+        cmd = [sys.executable, script_path, "--business_id", business_id, "--url", website_url]
+        print(f"[INFO] Starting KB build for business: {business_id}, URL: {website_url}")
+        update_scraping_status(business_id, "scraping", "Scraping website content... This may take a few minutes.", 10)
+        
+        # Increase timeout to 700 seconds (10+ minutes)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=700)
+        
+        if result.returncode == 0:
+            success_msg = "Knowledge base built successfully! Your chatbot is now ready to use."
+            print(f"[SUCCESS] KB build completed for business: {business_id}")
+            update_scraping_status(business_id, "completed", success_msg, 100)
+        else:
+            error_msg = f"Scraping failed: {result.stderr[:200]}"
+            print(f"[ERROR] KB build failed for business: {business_id}")
+            print(f"[ERROR] Error output: {result.stderr}")
+            update_scraping_status(business_id, "failed", error_msg, 0)
+    except subprocess.TimeoutExpired:
+        error_msg = "Scraping timed out. The website might be too large or slow."
+        print(f"[ERROR] KB build timeout for business: {business_id}")
+        update_scraping_status(business_id, "failed", error_msg, 0)
+    except Exception as e:
+        error_msg = f"Failed to build knowledge base: {str(e)}"
+        print(f"[ERROR] Failed to trigger KB build for business {business_id}: {e}")
+        update_scraping_status(business_id, "failed", error_msg, 0)
+
+
 @app.post("/admin/business")
-async def create_or_update_business(request: Request):
+async def create_or_update_business(request: Request, background_tasks: BackgroundTasks):
     """
     Create or update a business configuration.
     Clients can use this to configure their chatbot.
+    If website_url is provided, automatically triggers knowledge base scraping.
     """
     try:
         data = await request.json()
@@ -518,6 +661,8 @@ async def create_or_update_business(request: Request):
         business_id = data.get("business_id")
         if not business_id:
             raise HTTPException(status_code=400, detail="business_id is required")
+        
+        website_url = data.get("website_url")
         
         config = config_manager.create_or_update_business(
             business_id=business_id,
@@ -530,16 +675,50 @@ async def create_or_update_business(request: Request):
             privacy_statement=data.get("privacy_statement"),
             theme_color=data.get("theme_color", "#2563eb"),
             widget_position=data.get("widget_position", "center"),
-            website_url=data.get("website_url"),
+            website_url=website_url,
             contact_email=data.get("contact_email"),
             contact_phone=data.get("contact_phone"),
             primary_ctas=data.get("primary_ctas"),
             secondary_ctas=data.get("secondary_ctas"),
         )
         
-        return {"success": True, "config": config}
+        # Trigger knowledge base build in background if website_url is provided
+        scraping_started = False
+        if website_url and website_url.strip():
+            background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
+            print(f"[INFO] Queued KB build for business: {business_id}, URL: {website_url}")
+            scraping_started = True
+        
+        return {
+            "success": True, 
+            "config": config,
+            "scraping_started": scraping_started
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/admin/business/{business_id}/scraping-status")
+async def get_scraping_status(business_id: str):
+    """Get current scraping status for a business."""
+    status_file = os.path.join("data", business_id, "scraping_status.json")
+    
+    if not os.path.exists(status_file):
+        return {
+            "status": "not_started",
+            "message": "No scraping in progress",
+            "progress": 0
+        }
+    
+    try:
+        with open(status_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error reading status: {str(e)}",
+            "progress": 0
+        }
 
 
 @app.get("/admin/business/{business_id}")
@@ -723,22 +902,30 @@ async def chat_endpoint(request: Request):
     biz_retriever = get_retriever_for_business(business_id)
 
     # DEBUG: Log RAG state
-    print(f"[DEBUG] biz_retriever present: {biz_retriever is not None} for business_id: {business_id}")
+    print(f"[RAG DEBUG] business_id={business_id}, retriever_present={biz_retriever is not None}")
 
     if biz_retriever:
         try:
+            print(f"[RAG] Searching for query: '{user_input[:50]}...'")
             hits = biz_retriever.search(user_input)
-            print(f"[RAG] hits={len(hits)}")
-            for h in hits[:3]:
-                print(f"[RAG] url={h.get('url')} score={h.get('score')}")
+            print(f"[RAG] Found {len(hits)} hits")
+            if hits:
+                for i, h in enumerate(hits[:3]):
+                    print(f"[RAG] Hit {i+1}: url={h.get('url', 'N/A')}, score={h.get('score', 'N/A')}")
+            else:
+                print(f"[RAG] No hits found for query")
             
             ctx = format_context(hits)
             if ctx:
                 # Prepend RAG context to the user message
                 message_to_send = f"{ctx}\n\n{user_input}"
-                print(f"[DEBUG] Attached RAG context: {ctx[:100]}...")
+                print(f"[RAG] ✅ Attached RAG context ({len(ctx)} chars): {ctx[:100]}...")
+            else:
+                print(f"[RAG] ⚠️ No context generated from hits")
         except Exception as rag_err:
-            print(f"RAG retrieval skipped: {rag_err}")
+            print(f"[RAG ERROR] Retrieval failed: {rag_err}")
+            import traceback
+            traceback.print_exc()
     elif retriever:
         # Fallback to default retriever if business-specific one isn't found
         # but ONLY if business_id is not provided (to avoid cross-tenant leaks)
