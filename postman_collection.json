@@ -1,0 +1,371 @@
+{
+	"info": {
+		"name": "WarmProspect Chatbot Platform API",
+		"description": "Complete API collection for WarmProspect Chatbot Platform - Multi-tenant AI concierge system",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "warmprospect"
+	},
+	"item": [
+		{
+			"name": "Public Endpoints",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Detailed health endpoint to verify the system status"
+					},
+					"response": []
+				},
+				{
+					"name": "Chat - Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"business_id\": \"example_business\",\n  \"user_id\": \"user_123\",\n  \"message\": \"Hello, I'd like to book an appointment\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": ["{{base_url}}"],
+							"path": ["chat"]
+						},
+						"description": "Main API endpoint to handle incoming chat messages. Rate limited to 20 requests per minute.\n\n**Required Fields:**\n- `business_id`: Identifies which business's chatbot to use\n- `user_id`: Unique identifier for the conversation session (can use `session_id` as alias)\n- `message`: User's message/input\n\n**Response:**\n- `response`: AI-generated response text\n- `ctas`: (optional) Call-to-action buttons if applicable"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Business Config for Widget",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/business/:business_id/config",
+							"host": ["{{base_url}}"],
+							"path": ["api", "business", ":business_id", "config"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Get business configuration for frontend widget. Returns business-specific settings like branding, CTAs, greeting message, etc."
+					},
+					"response": []
+				},
+				{
+					"name": "RAG Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/rag/status",
+							"host": ["{{base_url}}"],
+							"path": ["rag", "status"]
+						},
+						"description": "Returns whether the RAG index is loaded"
+					},
+					"response": []
+				},
+				{
+					"name": "Test RAG for Business",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/rag/test/:business_id",
+							"host": ["{{base_url}}"],
+							"path": ["rag", "test", ":business_id"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Test RAG retrieval for a specific business"
+					},
+					"response": []
+				}
+			],
+			"description": "Public endpoints that don't require authentication"
+		},
+		{
+			"name": "Admin Endpoints",
+			"item": [
+				{
+					"name": "Create or Update Business",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"business_id\": \"example_business\",\n  \"business_name\": \"Example Business Name\",\n  \"system_prompt\": \"You are a friendly AI assistant for Example Business.\",\n  \"greeting_message\": \"Welcome! How can I help you today?\",\n  \"appointment_link\": \"https://calendly.com/example\",\n  \"primary_goal\": \"Lead generation and customer support\",\n  \"personality\": \"Friendly, professional, and helpful\",\n  \"privacy_statement\": \"We respect your privacy...\",\n  \"theme_color\": \"#2563eb\",\n  \"widget_position\": \"center\",\n  \"website_url\": \"https://example.com\",\n  \"contact_email\": \"contact@example.com\",\n  \"contact_phone\": \"+1234567890\",\n  \"primary_ctas\": [\n    {\"label\": \"Book an Appointment\", \"action\": \"send\"},\n    {\"label\": \"Speak to Sales\", \"action\": \"send\"},\n    {\"label\": \"Send More Information\", \"action\": \"show_secondary\"}\n  ],\n  \"secondary_ctas\": [\n    {\"label\": \"Service 1\", \"action\": \"send\"},\n    {\"label\": \"Service 2\", \"action\": \"send\"}\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/business",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business"]
+						},
+						"description": "Create or update a business configuration. If `website_url` is provided, automatically triggers knowledge base scraping in the background.\n\n**Required Fields:**\n- `business_id`: Unique identifier for the business\n\n**Optional Fields:**\n- `business_name`: Display name for the business\n- `system_prompt`: Business-specific system prompt/instructions\n- `greeting_message`: Initial greeting message\n- `appointment_link`: URL for appointment booking\n- `primary_goal`: Primary business goal\n- `personality`: Personality description\n- `privacy_statement`: Privacy statement text\n- `theme_color`: Theme color (hex code)\n- `widget_position`: Widget position (center, bottom-right, etc.)\n- `website_url`: Website URL for knowledge base scraping\n- `contact_email`: Contact email\n- `contact_phone`: Contact phone number\n- `primary_ctas`: Array of primary CTA objects\n- `secondary_ctas`: Array of secondary CTA objects"
+					},
+					"response": []
+				},
+				{
+					"name": "List All Businesses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business"]
+						},
+						"description": "List all configured businesses. Returns a dictionary of all businesses keyed by business_id."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Business Config",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business/:business_id",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business", ":business_id"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Get complete business configuration by business_id"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Business",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business/:business_id",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business", ":business_id"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Delete a business configuration"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Scraping Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business/:business_id/scraping-status",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business", ":business_id", "scraping-status"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Get current knowledge base scraping status for a business. Returns status, message, and progress (0-100)."
+					},
+					"response": []
+				}
+			],
+			"description": "Admin endpoints protected by API key authentication. Use X-Admin-API-Key header."
+		},
+		{
+			"name": "Voice Endpoints",
+			"item": [
+				{
+					"name": "Voice Chat (Audio File)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Audio file (WAV, MP3, WebM, or raw PCM). Will be converted to 16kHz PCM for Gemini Live API."
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/voice/chat",
+							"host": ["{{base_url}}"],
+							"path": ["api", "voice", "chat"]
+						},
+						"description": "Accepts an audio file, sends it to Gemini Live API, and returns a WAV audio response. The input audio is converted to the format Gemini expects (16kHz PCM), and the response is converted back to a standard WAV file (24kHz).\n\n**Supported Formats:**\n- WAV\n- MP3\n- WebM\n- Raw PCM (16kHz mono)\n\n**Response:**\n- Returns WAV audio file (24kHz) with the AI's voice response"
+					},
+					"response": []
+				},
+				{
+					"name": "Make Outgoing Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone_number\": \"+1234567890\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/make-call",
+							"host": ["{{base_url}}"],
+							"path": ["make-call"]
+						},
+						"description": "Initiates an outgoing call to the specified phone number using Twilio. Requires Twilio credentials to be configured.\n\n**Required Fields:**\n- `phone_number`: Phone number in E.164 format (e.g., +1234567890)\n\n**Response:**\n- `success`: Boolean indicating success\n- `call_sid`: Twilio Call SID\n- `message`: Status message"
+					},
+					"response": []
+				},
+				{
+					"name": "Twilio Incoming Webhook",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/x-www-form-urlencoded"
+							}
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{
+									"key": "CallSid",
+									"value": "CA1234567890abcdef",
+									"description": "Twilio Call SID"
+								},
+								{
+									"key": "From",
+									"value": "+1234567890",
+									"description": "Caller's phone number"
+								},
+								{
+									"key": "To",
+									"value": "+0987654321",
+									"description": "Called phone number"
+								},
+								{
+									"key": "CallStatus",
+									"value": "ringing",
+									"description": "Call status"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/voice/incoming?business_id=example_business",
+							"host": ["{{base_url}}"],
+							"path": ["voice", "incoming"],
+							"query": [
+								{
+									"key": "business_id",
+									"value": "example_business",
+									"description": "Identifies which business's chatbot to use"
+								}
+							]
+						},
+						"description": "Twilio webhook for incoming calls. Returns TwiML XML to start a Media Stream (WebSocket). Businesses route their Twilio phone calls to this endpoint.\n\n**Query Parameters:**\n- `business_id` (required): Identifies which business's chatbot to use\n\n**Request:**\n- Twilio webhook payload (form-encoded)\n\n**Response:**\n- TwiML XML to start media stream"
+					},
+					"response": []
+				}
+			],
+			"description": "Voice endpoints for Twilio phone call integration. Note: WebSocket /media-stream endpoint cannot be tested in Postman - use a WebSocket client or Twilio directly."
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://72.52.132.145:8000/",
+			"type": "string"
+		},
+		{
+			"key": "admin_api_key",
+			"value": "your_admin_api_key_here",
+			"type": "string"
+		}
+	]
+}

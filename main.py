@@ -649,7 +649,7 @@ def trigger_kb_build(business_id: str, website_url: str):
 
 
 @app.post("/admin/business")
-async def create_or_update_business(request: Request, background_tasks: BackgroundTasks):
+async def create_or_update_business(request: Request, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
     """
     Create or update a business configuration.
     Clients can use this to configure their chatbot.
@@ -699,7 +699,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
 
 
 @app.get("/admin/business/{business_id}/scraping-status")
-async def get_scraping_status(business_id: str):
+async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_key)):
     """Get current scraping status for a business."""
     status_file = os.path.join("data", business_id, "scraping_status.json")
     
@@ -722,7 +722,7 @@ async def get_scraping_status(business_id: str):
 
 
 @app.get("/admin/business/{business_id}")
-async def get_business_config(business_id: str):
+async def get_business_config(business_id: str, api_key: str = Depends(get_api_key)):
     """Get business configuration by ID."""
     config = config_manager.get_business(business_id)
     if not config:
@@ -731,7 +731,7 @@ async def get_business_config(business_id: str):
 
 
 @app.get("/admin/business")
-async def list_all_businesses():
+async def list_all_businesses(api_key: str = Depends(get_api_key)):
     """List all configured businesses."""
     try:
         businesses = config_manager.get_all_businesses()
@@ -743,7 +743,7 @@ async def list_all_businesses():
 
 
 @app.delete("/admin/business/{business_id}")
-async def delete_business_config(business_id: str):
+async def delete_business_config(business_id: str, api_key: str = Depends(get_api_key)):
     """Delete a business configuration."""
     success = config_manager.delete_business(business_id)
     if not success:
