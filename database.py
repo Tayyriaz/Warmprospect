@@ -56,6 +56,7 @@ class BusinessConfig(Base):
     contact_phone = Column(String(50))
     primary_ctas = Column(Text)
     secondary_ctas = Column(Text)
+    cta_tree = Column(Text)  # Stores complete CTA tree structure as JSON
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -88,6 +89,14 @@ class BusinessConfig(Base):
             "contact_phone": self.contact_phone,
             "primary_ctas": _parse_ctas(self.primary_ctas),
             "secondary_ctas": _parse_ctas(self.secondary_ctas),
+            "cta_tree": json.loads(self.cta_tree) if hasattr(self, 'cta_tree') and self.cta_tree else {},
+            "tertiary_ctas": _parse_ctas(self.tertiary_ctas) if hasattr(self, 'tertiary_ctas') else None,
+            "nested_ctas": json.loads(self.nested_ctas) if hasattr(self, 'nested_ctas') and self.nested_ctas else {},
+            "rules": json.loads(self.rules) if hasattr(self, 'rules') and self.rules else [],
+            "custom_routes": json.loads(self.custom_routes) if hasattr(self, 'custom_routes') and self.custom_routes else {},
+            "available_services": json.loads(self.available_services) if hasattr(self, 'available_services') and self.available_services else [],
+            "topic_ctas": json.loads(self.topic_ctas) if hasattr(self, 'topic_ctas') and self.topic_ctas else {},
+            "experiments": json.loads(self.experiments) if hasattr(self, 'experiments') and self.experiments else [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -141,9 +150,28 @@ class BusinessConfigDB:
         contact_phone: str = None,
         primary_ctas = None,
         secondary_ctas = None,
+        cta_tree = None,
+        tertiary_ctas = None,
+        nested_ctas = None,
+        rules = None,
+        custom_routes = None,
+        available_services = None,
+        topic_ctas = None,
+        experiments = None,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
         def _serialize_ctas(value):
+            if value is None:
+                return None
+            if isinstance(value, str):
+                return value
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return None
+        
+        def _serialize_json(value):
+            """Serialize any JSON-serializable value to string."""
             if value is None:
                 return None
             if isinstance(value, str):
@@ -176,6 +204,23 @@ class BusinessConfigDB:
                 existing.contact_phone = contact_phone
                 existing.primary_ctas = _serialize_ctas(primary_ctas)
                 existing.secondary_ctas = _serialize_ctas(secondary_ctas)
+                if hasattr(existing, 'cta_tree'):
+                    existing.cta_tree = _serialize_json(cta_tree)
+                # Store new dynamic fields as JSON strings
+                if hasattr(existing, 'tertiary_ctas'):
+                    existing.tertiary_ctas = _serialize_json(tertiary_ctas)
+                if hasattr(existing, 'nested_ctas'):
+                    existing.nested_ctas = _serialize_json(nested_ctas)
+                if hasattr(existing, 'rules'):
+                    existing.rules = _serialize_json(rules)
+                if hasattr(existing, 'custom_routes'):
+                    existing.custom_routes = _serialize_json(custom_routes)
+                if hasattr(existing, 'available_services'):
+                    existing.available_services = _serialize_json(available_services)
+                if hasattr(existing, 'topic_ctas'):
+                    existing.topic_ctas = _serialize_json(topic_ctas)
+                if hasattr(existing, 'experiments'):
+                    existing.experiments = _serialize_json(experiments)
                 existing.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(existing)
@@ -198,6 +243,14 @@ class BusinessConfigDB:
                     contact_phone=contact_phone,
                     primary_ctas=_serialize_ctas(primary_ctas),
                     secondary_ctas=_serialize_ctas(secondary_ctas),
+                    cta_tree=_serialize_json(cta_tree),
+                    tertiary_ctas=_serialize_json(tertiary_ctas),
+                    nested_ctas=_serialize_json(nested_ctas),
+                    rules=_serialize_json(rules),
+                    custom_routes=_serialize_json(custom_routes),
+                    available_services=_serialize_json(available_services),
+                    topic_ctas=_serialize_json(topic_ctas),
+                    experiments=_serialize_json(experiments),
                 )
                 db.add(new_business)
                 db.commit()

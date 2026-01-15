@@ -347,6 +347,16 @@
                     placeholder='[{"label":"Website Design Services","action":"send"}]'></textarea>
           <div class="help-text">Shown after clicking a CTA with action show_secondary</div>
         </div>
+
+        <div class="form-group">
+          <label>CTA Tree (JSON) - Tree-based Structure</label>
+          <textarea id="cta_tree" name="cta_tree" style="min-height: 300px; font-family: monospace;"
+                    placeholder='{"learn_services": {"id": "learn_services", "label": "Learn About Services", "action": "show_children", "children": ["digital_agency", "website_design"]}, ...}'></textarea>
+          <div class="help-text">
+            <strong>Tree-based CTA structure.</strong> Each CTA has: id, label, action (show_children/redirect/send), children (array of child IDs), url (if redirect), message (if send).
+            See team lead's document for complete example.
+          </div>
+        </div>
         
         <div class="form-row">
           <div class="form-group">
@@ -434,8 +444,29 @@
   <script>
     // Detects the current origin or defaults to localhost (port 80)
     const API_BASE = window.location.protocol === 'file:' 
-      ? 'http://localhost'
+      ? 'http://localhost:8000'
       : window.location.origin;
+
+    // Admin API Key - Get from localStorage or prompt user
+    let ADMIN_API_KEY = localStorage.getItem('admin_api_key');
+    
+    // If no API key in localStorage, prompt user to enter it
+    if (!ADMIN_API_KEY) {
+      const storedKey = prompt('Enter Admin API Key (from .env file):');
+      if (storedKey) {
+        ADMIN_API_KEY = storedKey;
+        localStorage.setItem('admin_api_key', storedKey);
+      }
+    }
+    
+    // Helper function to get headers with API key
+    function getAdminHeaders() {
+      const headers = { 'Content-Type': 'application/json' };
+      if (ADMIN_API_KEY) {
+        headers['X-Admin-API-Key'] = ADMIN_API_KEY;
+      }
+      return headers;
+    }
 
     // Update integration code display with dynamic API_BASE
     function updateIntegrationCodeOnLoad() {
@@ -533,10 +564,24 @@ Your role is to help potential customers understand how GoAccel can help their h
     async function loadBusinesses() {
       try {
         console.log('Loading businesses from:', `${API_BASE}/admin/business`);
-        const res = await fetch(`${API_BASE}/admin/business`);
+        const res = await fetch(`${API_BASE}/admin/business`, {
+          headers: getAdminHeaders()
+        });
         
         if (!res.ok) {
           const errorText = await res.text();
+          if (res.status === 403 || res.status === 500) {
+            // API key issue - clear and prompt again
+            localStorage.removeItem('admin_api_key');
+            ADMIN_API_KEY = null;
+            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
+            if (newKey) {
+              ADMIN_API_KEY = newKey;
+              localStorage.setItem('admin_api_key', newKey);
+              // Retry
+              return loadBusinesses();
+            }
+          }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
         
@@ -571,10 +616,22 @@ Your role is to help potential customers understand how GoAccel can help their h
     async function loadBusiness(businessId) {
       try {
         console.log('Loading business:', businessId);
-        const res = await fetch(`${API_BASE}/admin/business/${businessId}`);
+        const res = await fetch(`${API_BASE}/admin/business/${businessId}`, {
+          headers: getAdminHeaders()
+        });
         
         if (!res.ok) {
           const errorText = await res.text();
+          if (res.status === 403 || res.status === 500) {
+            localStorage.removeItem('admin_api_key');
+            ADMIN_API_KEY = null;
+            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
+            if (newKey) {
+              ADMIN_API_KEY = newKey;
+              localStorage.setItem('admin_api_key', newKey);
+              return loadBusiness(businessId);
+            }
+          }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
         
@@ -607,6 +664,13 @@ Your role is to help potential customers understand how GoAccel can help their h
           2
         );
         
+        // Load CTA tree if available
+        document.getElementById('cta_tree').value = JSON.stringify(
+          config.cta_tree || {},
+          null,
+          2
+        );
+        
         // Update integration code
         updateIntegrationCode(config.business_id);
         
@@ -625,11 +689,22 @@ Your role is to help potential customers understand how GoAccel can help their h
       try {
         console.log('Deleting business:', businessId);
         const res = await fetch(`${API_BASE}/admin/business/${businessId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: getAdminHeaders()
         });
         
         if (!res.ok) {
           const errorText = await res.text();
+          if (res.status === 403 || res.status === 500) {
+            localStorage.removeItem('admin_api_key');
+            ADMIN_API_KEY = null;
+            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
+            if (newKey) {
+              ADMIN_API_KEY = newKey;
+              localStorage.setItem('admin_api_key', newKey);
+              return deleteBusiness(businessId);
+            }
+          }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
         
@@ -670,15 +745,20 @@ Your role is to help potential customers understand how GoAccel can help their h
       const data = Object.fromEntries(formData.entries());
       let primaryCtas;
       let secondaryCtas;
+      let ctaTree = {};
       try {
         primaryCtas = JSON.parse(data.primary_ctas || "[]");
         secondaryCtas = JSON.parse(data.secondary_ctas || "[]");
+        if (data.cta_tree && data.cta_tree.trim()) {
+          ctaTree = JSON.parse(data.cta_tree);
+        }
       } catch (err) {
-        showAlert('CTAs must be valid JSON arrays.', 'error');
+        showAlert('CTAs and CTA Tree must be valid JSON.', 'error');
         return;
       }
       data.primary_ctas = primaryCtas;
       data.secondary_ctas = secondaryCtas;
+      data.cta_tree = ctaTree;
       
       // Validate required fields
       if (!data.business_id || !data.business_name || !data.system_prompt) {
@@ -690,12 +770,24 @@ Your role is to help potential customers understand how GoAccel can help their h
         console.log('Saving business:', data.business_id);
         const res = await fetch(`${API_BASE}/admin/business`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAdminHeaders(),
           body: JSON.stringify(data)
         });
         
         if (!res.ok) {
           const errorText = await res.text();
+          if (res.status === 403 || res.status === 500) {
+            localStorage.removeItem('admin_api_key');
+            ADMIN_API_KEY = null;
+            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
+            if (newKey) {
+              ADMIN_API_KEY = newKey;
+              localStorage.setItem('admin_api_key', newKey);
+              // Retry by re-submitting form
+              e.target.dispatchEvent(new Event('submit', { cancelable: true }));
+              return;
+            }
+          }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
         
@@ -740,7 +832,9 @@ Your role is to help potential customers understand how GoAccel can help their h
     }
     
     function updateScrapingStatus(businessId) {
-      fetch(`${API_BASE}/admin/business/${businessId}/scraping-status`)
+      fetch(`${API_BASE}/admin/business/${businessId}/scraping-status`, {
+        headers: getAdminHeaders()
+      })
         .then(res => res.json())
         .then(status => {
           const statusEl = document.getElementById('modalStatus');

@@ -101,6 +101,14 @@ class BusinessConfigManager:
         contact_phone: str = None,
         primary_ctas: List[Dict[str, Any]] = None,
         secondary_ctas: List[Dict[str, Any]] = None,
+        cta_tree: Dict[str, Any] = None,
+        tertiary_ctas: List[Dict[str, Any]] = None,
+        nested_ctas: Dict[str, List[Dict[str, Any]]] = None,
+        rules: List[Dict[str, Any]] = None,
+        custom_routes: Dict[str, Any] = None,
+        available_services: List[Dict[str, Any]] = None,
+        topic_ctas: Dict[str, List[Dict[str, Any]]] = None,
+        experiments: List[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create or update a business configuration.
@@ -140,10 +148,18 @@ class BusinessConfigManager:
                     theme_color=theme_color,
                     widget_position=widget_position,
                     website_url=website_url,
-                    contact_email=contact_email,
-                    contact_phone=contact_phone,
-                    primary_ctas=primary_ctas,
-                    secondary_ctas=secondary_ctas,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            primary_ctas=primary_ctas,
+            secondary_ctas=secondary_ctas,
+            cta_tree=cta_tree,
+            tertiary_ctas=tertiary_ctas,
+            nested_ctas=nested_ctas,
+            rules=rules,
+            custom_routes=custom_routes,
+            available_services=available_services,
+            topic_ctas=topic_ctas,
+            experiments=experiments,
                 )
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
@@ -168,6 +184,7 @@ class BusinessConfigManager:
             "contact_phone": contact_phone,
             "primary_ctas": primary_ctas,
             "secondary_ctas": secondary_ctas,
+            "cta_tree": cta_tree or {},
             "created_at": self._configs.get(business_id, {}).get("created_at", datetime.now().isoformat()),
             "updated_at": datetime.now().isoformat(),
         }

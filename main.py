@@ -36,6 +36,13 @@ from business_config import (
     DEFAULT_SECONDARY_CTAS,
 )
 
+# Dynamic Configuration System
+from core.rules_engine import BusinessRulesEngine, load_rules_from_config, RuleType
+from core.cta_manager import DynamicCTAManager
+from core.ab_testing import get_ab_testing_framework
+from core.routing import DynamicRouter, apply_routing_to_session
+from core.cta_tree import get_cta_children, get_entry_point_cta, detect_intent_from_message
+
 # Database initialization (optional - will use file storage if database not available)
 try:
     from database import init_db
@@ -467,14 +474,89 @@ def check_hard_guards(
     return None # No hard guard triggered
 
 
-def _get_ctas_for_business(business_id: Optional[str]) -> Dict[str, Any]:
+def _get_entry_point_ctas(
+    business_id: Optional[str],
+    user_message: str
+) -> List[Dict[str, Any]]:
+    """
+    Get entry point CTAs based on user message and intent (Tree-based approach).
+    
+    Args:
+        business_id: Business identifier
+        user_message: User's message to detect intent from
+    
+    Returns:
+        List of entry point CTA objects (single level, no nested children)
+    """
+    if not business_id:
+        return []
+    
+    config = config_manager.get_business(business_id)
+    if not config:
+        return []
+    
+    # Get CTA tree from config
+    cta_tree = config.get("cta_tree", {})
+    if not cta_tree or not isinstance(cta_tree, dict):
+        return []
+    
+    # Get entry point CTA based on intent
+    entry_cta = get_entry_point_cta(cta_tree, user_message)
+    if entry_cta:
+        return [entry_cta]
+    
+    return []
+
+
+def _get_ctas_for_business(
+    business_id: Optional[str],
+    session: Optional[Dict[str, Any]] = None,
+    conversation_history: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Get CTAs for business using dynamic CTA manager with context-aware selection.
+    (Legacy function - kept for backward compatibility)
+    
+    Args:
+        business_id: Business identifier
+        session: Current session context
+        conversation_history: Conversation history for context
+    
+    Returns:
+        Dictionary with primary, secondary, tertiary, and nested CTAs
+    """
     if business_id:
         config = config_manager.get_business(business_id)
     else:
-        config = None
-    primary = (config or {}).get("primary_ctas") or DEFAULT_PRIMARY_CTAS
-    secondary = (config or {}).get("secondary_ctas") or DEFAULT_SECONDARY_CTAS
-    return {"primary": primary, "secondary": secondary}
+        config = {}
+    
+    if not config:
+        # Return defaults if no config
+        return {
+            "primary": DEFAULT_PRIMARY_CTAS,
+            "secondary": DEFAULT_SECONDARY_CTAS,
+            "tertiary": [],
+            "nested": {}
+        }
+    
+    # Initialize rules engine and CTA manager
+    rules_engine = load_rules_from_config(config)
+    cta_manager = DynamicCTAManager(rules_engine=rules_engine)
+    
+    # Build context for CTA selection
+    context = {
+        "session": session or {},
+        "conversation_history": conversation_history or []
+    }
+    
+    # Get dynamic CTAs based on context
+    ctas = cta_manager.get_ctas_for_context(
+        context=context,
+        business_config=config,
+        conversation_history=conversation_history or []
+    )
+    
+    return ctas
 
 
 def _should_attach_ctas(text: str) -> bool:
@@ -680,6 +762,14 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             contact_phone=data.get("contact_phone"),
             primary_ctas=data.get("primary_ctas"),
             secondary_ctas=data.get("secondary_ctas"),
+            cta_tree=data.get("cta_tree"),
+            tertiary_ctas=data.get("tertiary_ctas"),
+            nested_ctas=data.get("nested_ctas"),
+            rules=data.get("rules"),
+            custom_routes=data.get("custom_routes"),
+            available_services=data.get("available_services"),
+            topic_ctas=data.get("topic_ctas"),
+            experiments=data.get("experiments"),
         )
         
         # Trigger knowledge base build in background if website_url is provided
@@ -861,8 +951,47 @@ async def chat_endpoint(request: Request):
     if hard_guard_response:
         payload = {"response": hard_guard_response["response"]}
         if hard_guard_response.get("cta_mode") == "primary":
-            payload["ctas"] = _get_ctas_for_business(business_id)
+            # Get dynamic CTAs for hard guard responses
+            payload["ctas"] = _get_ctas_for_business(
+                business_id=business_id,
+                session=session,
+                conversation_history=[]
+            )
         return payload
+
+    # 2.5. Dynamic Routing (Priority 2)
+    # Determine optimal route based on context and business rules
+    if business_id:
+        stored_config = config_manager.get_business(business_id) or {}
+        rules_engine = load_rules_from_config(stored_config)
+        router = DynamicRouter(rules_engine=rules_engine)
+        
+        # Get conversation history for routing
+        chat_history = []
+        if session_key in _chat_sessions_cache:
+            cached_chat = _chat_sessions_cache[session_key]
+            if isinstance(cached_chat, dict):
+                cached_chat_obj = cached_chat.get("chat")
+            else:
+                cached_chat_obj = cached_chat
+            
+            if cached_chat_obj:
+                try:
+                    chat_history = list(cached_chat_obj.get_history())
+                except Exception:
+                    pass
+        
+        # Determine route
+        route_decision = router.determine_route(
+            context={"session": session},
+            user_input=user_input,
+            conversation_history=chat_history,
+            business_config=stored_config
+        )
+        
+        # Apply routing decision to session
+        session = apply_routing_to_session(route_decision, session)
+        print(f"[ROUTING] Route: {session.get('current_route')}, Confidence: {route_decision.get('confidence', 0):.2f}, Reasoning: {route_decision.get('reasoning', '')}")
 
     # 3. Build effective system instruction (base guardrails + business-specific)
     effective_system_instruction = build_system_instruction(
@@ -926,12 +1055,11 @@ async def chat_endpoint(request: Request):
             print(f"[RAG ERROR] Retrieval failed: {rag_err}")
             import traceback
             traceback.print_exc()
-    elif retriever:
-        # Fallback to default retriever if business-specific one isn't found
-        # but ONLY if business_id is not provided (to avoid cross-tenant leaks)
-        # OR if you want it to be a global knowledge base.
-        # User said "The Bot is unable to access the RAG data", suggesting it might have been working before.
-        print(f"[DEBUG] Falling back to default retriever for query")
+    elif retriever and not business_id:
+        # Fallback to default retriever ONLY if business_id is not provided
+        # This prevents cross-tenant data leaks by ensuring we never use
+        # default retriever when a business_id is specified
+        print(f"[DEBUG] Falling back to default retriever for query (no business_id)")
         try:
             hits = retriever.search(user_input)
             ctx = format_context(hits)
@@ -1099,9 +1227,86 @@ async def chat_endpoint(request: Request):
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
 
     response_payload = {"response": final_response_text}
-    if _should_attach_ctas(final_response_text):
-        response_payload["ctas"] = _get_ctas_for_business(business_id)
+    
+    # Tree-based CTA approach: Get entry point CTAs based on user intent
+    if business_id:
+        config = config_manager.get_business(business_id)
+        if config and config.get("cta_tree"):
+            # Use tree-based approach
+            entry_ctas = _get_entry_point_ctas(business_id, user_input)
+            if entry_ctas:
+                response_payload["ctas"] = entry_ctas
+        elif _should_attach_ctas(final_response_text):
+            # Fallback to legacy dynamic CTAs if no tree defined
+            chat_history = list(chat.get_history())
+            response_payload["ctas"] = _get_ctas_for_business(
+                business_id=business_id,
+                session=session,
+                conversation_history=chat_history
+            )
+    elif _should_attach_ctas(final_response_text):
+        # No business_id, use legacy approach
+        chat_history = list(chat.get_history())
+        response_payload["ctas"] = _get_ctas_for_business(
+            business_id=business_id,
+            session=session,
+            conversation_history=chat_history
+        )
+    
     return response_payload
+
+
+@app.post("/api/chat/cta")
+@limiter.limit("30/minute")
+async def handle_cta_click(request: Request):
+    """
+    Handle CTA click - return children CTAs for the clicked CTA.
+    Tree-based approach: Frontend sends CTA ID, backend returns children.
+    """
+    try:
+        data = await request.json()
+        cta_id = data.get("cta_id")
+        business_id = data.get("business_id")
+        session_id = data.get("session_id")
+        
+        if not cta_id:
+            raise HTTPException(status_code=400, detail="cta_id is required")
+        
+        if not business_id:
+            raise HTTPException(status_code=400, detail="business_id is required")
+        
+        # Get business config
+        config = config_manager.get_business(business_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        # Get CTA tree
+        cta_tree = config.get("cta_tree", {})
+        if not cta_tree or not isinstance(cta_tree, dict):
+            raise HTTPException(status_code=400, detail="CTA tree not configured for this business")
+        
+        # Get children CTAs
+        children = get_cta_children(cta_tree, cta_id)
+        
+        # Generate appropriate response message
+        cta_node = cta_tree.get(cta_id)
+        if cta_node:
+            response_text = f"Here are your options for {cta_node.get('label', 'this category')}:"
+        else:
+            response_text = "Here are your options:"
+        
+        return {
+            "response": response_text,
+            "ctas": children
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"!!! CTA endpoint error: {str(e)}")
+        print(f"!!! Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error handling CTA click: {str(e)}")
 
 
 # --- 5. VOICE ENDPOINT ---
@@ -1224,7 +1429,18 @@ async def make_call(request: Request):
         # Construct the webhook URL for the call flow
         # Use NGROK URL if provided, otherwise construct from request host
         ngrok_url = os.getenv("NGROK_URL")
-        host = ngrok_url.replace("https://", "").replace("http://", "") if ngrok_url else request.headers.get('host')
+        if ngrok_url:
+            # Validate and sanitize ngrok URL
+            host = ngrok_url.replace("https://", "").replace("http://", "").split("/")[0].split("?")[0]
+        else:
+            # Validate host header to prevent injection
+            host_header = request.headers.get('host', '')
+            # Allow only alphanumeric, dots, dashes, and colons (for port)
+            import re
+            if re.match(r'^[a-zA-Z0-9.\-:]+$', host_header):
+                host = host_header.split(":")[0]  # Remove port if present
+            else:
+                raise HTTPException(status_code=400, detail="Invalid host header")
         
         # We'll use the /voice/incoming endpoint logic for the outgoing call's TwiML
         # But since client.calls.create takes a URL, we need the full public URL.
