@@ -43,6 +43,13 @@ from core.ab_testing import get_ab_testing_framework
 from core.routing import DynamicRouter, apply_routing_to_session
 from core.cta_tree import get_cta_children, get_entry_point_cta, detect_intent_from_message
 
+# Session & Conversation Enhancements
+from core.session_metadata import metadata_manager
+from core.session_state_machine import state_machine, ConversationState
+from core.session_analytics import analytics
+from core.sentiment_analysis import sentiment_analyzer
+from core.conversation_planner import conversation_planner
+
 # Database initialization (optional - will use file storage if database not available)
 try:
     from database import init_db
@@ -208,6 +215,15 @@ def initialize_session_state():
         # Flow/Route Tracking
         "current_route": "intro",
         "awaiting_field": None,
+        
+        # Session & Conversation Enhancements
+        "conversation_state": ConversationState.INITIAL.value,  # State machine
+        "state_history": [],  # State transition history
+        "metadata": {},  # Custom metadata storage
+        "analytics": {},  # Analytics tracking
+        "conversation_plan": None,  # Multi-turn conversation plan
+        "detected_intent": None,  # Latest detected intent
+        "sentiment": None,  # Latest sentiment analysis
     }
 
 # Removed _in_memory_sessions fallback. Redis is now mandatory.
@@ -914,6 +930,44 @@ async def chat_endpoint(request: Request):
     session["user_id"] = user_id
     session["session_key"] = session_key
     
+    # 1.5. Session & Conversation Enhancements
+    # Track user message event
+    session = analytics.track_message(session, "user")
+    
+    # Detect intent from message
+    chat_history = []
+    if session_key in _chat_sessions_cache:
+        cached_chat = _chat_sessions_cache[session_key]
+        if isinstance(cached_chat, dict):
+            cached_chat_obj = cached_chat.get("chat")
+        else:
+            cached_chat_obj = cached_chat
+        if cached_chat_obj:
+            try:
+                chat_history = list(cached_chat_obj.get_history())
+            except Exception:
+                pass
+    
+    intent_result = detect_intent_from_message(user_input, chat_history)
+    session["detected_intent"] = intent_result
+    metadata_manager.set_metadata(session, "last_intent", intent_result)
+    
+    # Analyze sentiment
+    sentiment_result = sentiment_analyzer.analyze(user_input, chat_history)
+    session["sentiment"] = sentiment_result
+    metadata_manager.set_metadata(session, "last_sentiment", sentiment_result)
+    
+    # Auto-transition state machine based on user input
+    session = state_machine.auto_transition(session, user_input)
+    
+    # Check if conversation plan exists and advance if needed
+    current_step = conversation_planner.get_current_step(session)
+    if current_step:
+        session, next_question = conversation_planner.advance_step(session, user_input)
+        if next_question:
+            # If there's a next question in the plan, we might want to guide the response
+            metadata_manager.set_metadata(session, "planned_next_question", next_question)
+    
     # Load business configuration if business_id is provided
     if business_id:
         session["business_id"] = business_id
@@ -998,6 +1052,11 @@ async def chat_endpoint(request: Request):
         BASE_SYSTEM_INSTRUCTION,
         session.get("system_instruction"),
     )
+    
+    # 3.5. Add sentiment-aware guidance to system instruction
+    if session.get("sentiment"):
+        sentiment_guidance = sentiment_analyzer.get_sentiment_aware_response_guidance(session["sentiment"])
+        effective_system_instruction += f"\n\nSENTIMENT CONTEXT: {sentiment_guidance}"
 
     # 4. Get or create chat session using Gemini SDK Chat API
     # SDK automatically manages FULL conversation history - no Redis needed!
@@ -1216,7 +1275,29 @@ async def chat_endpoint(request: Request):
         print(f"!!! {error_msg}")
         return {"response": error_msg}
     
-    # 8. SDK automatically manages history - no need to save separately!
+    # 8. Track assistant message and update analytics
+    session = analytics.track_message(session, "assistant")
+    
+    # Track state change if occurred
+    state_history = session.get("state_history", [])
+    if state_history:
+        last_state_change = state_history[-1]
+        if last_state_change.get("timestamp"):
+            # Check if this state change happened in this request (recent)
+            from datetime import datetime
+            try:
+                change_time = datetime.fromisoformat(last_state_change["timestamp"].replace("Z", "+00:00"))
+                now = datetime.utcnow().replace(tzinfo=change_time.tzinfo)
+                if (now - change_time).total_seconds() < 5:  # Within last 5 seconds
+                    session = analytics.track_state_change(
+                        session,
+                        last_state_change.get("from_state"),
+                        last_state_change.get("to_state")
+                    )
+            except Exception:
+                pass
+    
+    # SDK automatically manages history - no need to save separately!
     # The chat session maintains full conversation history internally
     # We only update session for PII tracking (first_name, email, etc.)
     save_session(session_key, session)
@@ -1225,6 +1306,7 @@ async def chat_endpoint(request: Request):
     current_sdk_history = list(chat.get_history())
     print(f"[DEBUG] SDK maintains {len(current_sdk_history)} messages in chat session (no Redis needed!)")
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
+    print(f"[ANALYTICS] Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
 
     response_payload = {"response": final_response_text}
     
@@ -1288,6 +1370,17 @@ async def handle_cta_click(request: Request):
         # Get children CTAs
         children = get_cta_children(cta_tree, cta_id)
         
+        # Track CTA click in analytics
+        if session_id:
+            session = get_session(session_id)
+            cta_node = cta_tree.get(cta_id, {})
+            session = analytics.track_cta_click(
+                session,
+                cta_id,
+                cta_node.get("label", cta_id)
+            )
+            save_session(session_id, session)
+        
         # Generate appropriate response message
         cta_node = cta_tree.get(cta_id)
         if cta_node:
@@ -1307,6 +1400,52 @@ async def handle_cta_click(request: Request):
         print(f"!!! CTA endpoint error: {str(e)}")
         print(f"!!! Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error handling CTA click: {str(e)}")
+
+
+@app.get("/api/analytics/session/{session_id}")
+@limiter.limit("30/minute")
+async def get_session_analytics(session_id: str):
+    """
+    Get analytics metrics for a specific session.
+    """
+    try:
+        session = get_session(session_id)
+        metrics = analytics.get_session_metrics(session)
+        plan_progress = conversation_planner.get_plan_progress(session)
+        
+        return {
+            "session_id": session_id,
+            "metrics": metrics,
+            "conversation_plan": plan_progress,
+            "current_state": state_machine.get_current_state(session),
+            "intent": session.get("detected_intent"),
+            "sentiment": session.get("sentiment")
+        }
+    except Exception as e:
+        import traceback
+        print(f"!!! Analytics endpoint error: {str(e)}")
+        print(f"!!! Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting analytics: {str(e)}")
+
+
+@app.get("/api/analytics/business/{business_id}")
+@limiter.limit("30/minute")
+async def get_business_analytics(business_id: str, hours: int = 24):
+    """
+    Get aggregated analytics for a business.
+    """
+    try:
+        aggregated = analytics.get_aggregated_metrics(business_id=business_id, time_range_hours=hours)
+        return {
+            "business_id": business_id,
+            "time_range_hours": hours,
+            **aggregated
+        }
+    except Exception as e:
+        import traceback
+        print(f"!!! Business analytics endpoint error: {str(e)}")
+        print(f"!!! Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting business analytics: {str(e)}")
 
 
 # --- 5. VOICE ENDPOINT ---
