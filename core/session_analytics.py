@@ -39,6 +39,10 @@ class SessionAnalytics:
                 "start_time": datetime.utcnow().isoformat()
             }
         
+        # Ensure events list exists (defensive check)
+        if "events" not in session["analytics"]:
+            session["analytics"]["events"] = []
+        
         event = {
             "type": event_type,
             "timestamp": datetime.utcnow().isoformat(),

@@ -1404,7 +1404,7 @@ async def handle_cta_click(request: Request):
 
 @app.get("/api/analytics/session/{session_id}")
 @limiter.limit("30/minute")
-async def get_session_analytics(session_id: str):
+async def get_session_analytics(request: Request, session_id: str):
     """
     Get analytics metrics for a specific session.
     """
@@ -1430,7 +1430,7 @@ async def get_session_analytics(session_id: str):
 
 @app.get("/api/analytics/business/{business_id}")
 @limiter.limit("30/minute")
-async def get_business_analytics(business_id: str, hours: int = 24):
+async def get_business_analytics(request: Request, business_id: str, hours: int = 24):
     """
     Get aggregated analytics for a business.
     """
