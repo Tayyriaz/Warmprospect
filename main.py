@@ -32,8 +32,6 @@ from core_tools.crm_functions import CRMTools
 # Business Configuration Manager
 from business_config import (
     config_manager,
-    DEFAULT_PRIMARY_CTAS,
-    DEFAULT_SECONDARY_CTAS,
 )
 
 # Dynamic Configuration System
@@ -524,55 +522,7 @@ def _get_entry_point_ctas(
     return []
 
 
-def _get_ctas_for_business(
-    business_id: Optional[str],
-    session: Optional[Dict[str, Any]] = None,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, Any]:
-    """
-    Get CTAs for business using dynamic CTA manager with context-aware selection.
-    (Legacy function - kept for backward compatibility)
-    
-    Args:
-        business_id: Business identifier
-        session: Current session context
-        conversation_history: Conversation history for context
-    
-    Returns:
-        Dictionary with primary, secondary, tertiary, and nested CTAs
-    """
-    if business_id:
-        config = config_manager.get_business(business_id)
-    else:
-        config = {}
-    
-    if not config:
-        # Return defaults if no config
-        return {
-            "primary": DEFAULT_PRIMARY_CTAS,
-            "secondary": DEFAULT_SECONDARY_CTAS,
-            "tertiary": [],
-            "nested": {}
-        }
-    
-    # Initialize rules engine and CTA manager
-    rules_engine = load_rules_from_config(config)
-    cta_manager = DynamicCTAManager(rules_engine=rules_engine)
-    
-    # Build context for CTA selection
-    context = {
-        "session": session or {},
-        "conversation_history": conversation_history or []
-    }
-    
-    # Get dynamic CTAs based on context
-    ctas = cta_manager.get_ctas_for_context(
-        context=context,
-        business_config=config,
-        conversation_history=conversation_history or []
-    )
-    
-    return ctas
+# Removed _get_ctas_for_business - now using only cta_tree approach
 
 
 def _should_attach_ctas(text: str) -> bool:
@@ -776,8 +726,6 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             website_url=website_url,
             contact_email=data.get("contact_email"),
             contact_phone=data.get("contact_phone"),
-            primary_ctas=data.get("primary_ctas"),
-            secondary_ctas=data.get("secondary_ctas"),
             cta_tree=data.get("cta_tree"),
             tertiary_ctas=data.get("tertiary_ctas"),
             nested_ctas=data.get("nested_ctas"),
@@ -884,8 +832,7 @@ async def get_business_config_for_widget(business_id: str):
         "themeColor": config.get("theme_color", "#2563eb"),
         "widgetPosition": config.get("widget_position", "center"),
         "appointmentLink": config.get("appointment_link"),
-        "primaryCtas": config.get("primary_ctas"),
-        "secondaryCtas": config.get("secondary_ctas"),
+        "ctaTree": config.get("cta_tree"),
     }
 
 @app.post("/chat")
@@ -1004,13 +951,11 @@ async def chat_endpoint(request: Request):
     hard_guard_response = check_hard_guards(user_input, session, session_key, user_id)
     if hard_guard_response:
         payload = {"response": hard_guard_response["response"]}
-        if hard_guard_response.get("cta_mode") == "primary":
-            # Get dynamic CTAs for hard guard responses
-            payload["ctas"] = _get_ctas_for_business(
-                business_id=business_id,
-                session=session,
-                conversation_history=[]
-            )
+        # Use cta_tree entry points instead of legacy primary/secondary CTAs
+        if business_id and hard_guard_response.get("cta_mode") == "primary":
+            entry_ctas = _get_entry_point_ctas(business_id, user_input)
+            if entry_ctas:
+                payload["ctas"] = entry_ctas
         return payload
 
     # 2.5. Dynamic Routing (Priority 2)
@@ -1310,30 +1255,19 @@ async def chat_endpoint(request: Request):
 
     response_payload = {"response": final_response_text}
     
-    # Tree-based CTA approach: Get entry point CTAs based on user intent
+    # Dynamic CTA approach: Only use cta_tree, AI chooses when to show CTAs
+    # CTAs are shown based on context and intent, not automatically on every message
     if business_id:
         config = config_manager.get_business(business_id)
         if config and config.get("cta_tree"):
-            # Use tree-based approach
-            entry_ctas = _get_entry_point_ctas(business_id, user_input)
-            if entry_ctas:
-                response_payload["ctas"] = entry_ctas
-        elif _should_attach_ctas(final_response_text):
-            # Fallback to legacy dynamic CTAs if no tree defined
+            # Get entry point CTAs based on user intent and conversation context
+            # Only show CTAs when appropriate (not on every message)
             chat_history = list(chat.get_history())
-            response_payload["ctas"] = _get_ctas_for_business(
-                business_id=business_id,
-                session=session,
-                conversation_history=chat_history
-            )
-    elif _should_attach_ctas(final_response_text):
-        # No business_id, use legacy approach
-        chat_history = list(chat.get_history())
-        response_payload["ctas"] = _get_ctas_for_business(
-            business_id=business_id,
-            session=session,
-            conversation_history=chat_history
-        )
+            entry_ctas = _get_entry_point_ctas(business_id, user_input)
+            # Only attach CTAs if intent detection suggests it's appropriate
+            # or if the response text indicates user should choose an option
+            if entry_ctas and (_should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
+                response_payload["ctas"] = entry_ctas
     
     return response_payload
 
