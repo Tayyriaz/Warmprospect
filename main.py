@@ -564,8 +564,14 @@ def _should_attach_ctas(text: str) -> bool:
 
 @app.get("/")
 async def root():
-    """Serve the simple chat frontend."""
-    return FileResponse("static/index.html")
+    """Serve the landing/marketing page."""
+    return FileResponse("static/landing.html")
+
+
+@app.get("/bot")
+async def bot():
+    """Serve the chatbot interface. Requires business_id query parameter."""
+    return FileResponse("static/bot.html")
 
 
 @app.get("/health")
@@ -734,6 +740,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             available_services=data.get("available_services"),
             topic_ctas=data.get("topic_ctas"),
             experiments=data.get("experiments"),
+            voice_enabled=data.get("voice_enabled", False),
         )
         
         # Trigger knowledge base build in background if website_url is provided
@@ -833,6 +840,7 @@ async def get_business_config_for_widget(business_id: str):
         "widgetPosition": config.get("widget_position", "center"),
         "appointmentLink": config.get("appointment_link"),
         "ctaTree": config.get("cta_tree"),
+        "voiceEnabled": config.get("voice_enabled", False),  # Voice bot is optional
     }
 
 @app.post("/chat")

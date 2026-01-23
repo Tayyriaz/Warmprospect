@@ -97,6 +97,7 @@ class BusinessConfig(Base):
             "available_services": json.loads(self.available_services) if hasattr(self, 'available_services') and self.available_services else [],
             "topic_ctas": json.loads(self.topic_ctas) if hasattr(self, 'topic_ctas') and self.topic_ctas else {},
             "experiments": json.loads(self.experiments) if hasattr(self, 'experiments') and self.experiments else [],
+            "voice_enabled": getattr(self, 'voice_enabled', False) if hasattr(self, 'voice_enabled') else False,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -158,6 +159,7 @@ class BusinessConfigDB:
         available_services = None,
         topic_ctas = None,
         experiments = None,
+        voice_enabled = False,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
         def _serialize_ctas(value):
@@ -221,6 +223,8 @@ class BusinessConfigDB:
                     existing.topic_ctas = _serialize_json(topic_ctas)
                 if hasattr(existing, 'experiments'):
                     existing.experiments = _serialize_json(experiments)
+                if hasattr(existing, 'voice_enabled'):
+                    existing.voice_enabled = voice_enabled
                 existing.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(existing)
@@ -251,6 +255,7 @@ class BusinessConfigDB:
                     available_services=_serialize_json(available_services),
                     topic_ctas=_serialize_json(topic_ctas),
                     experiments=_serialize_json(experiments),
+                    voice_enabled=voice_enabled if hasattr(BusinessConfig, 'voice_enabled') else False,
                 )
                 db.add(new_business)
                 db.commit()

@@ -77,6 +77,7 @@ class BusinessConfigManager:
         available_services: List[Dict[str, Any]] = None,
         topic_ctas: Dict[str, List[Dict[str, Any]]] = None,
         experiments: List[Dict[str, Any]] = None,
+        voice_enabled: bool = False,
     ) -> Dict[str, Any]:
         """
         Create or update a business configuration.
@@ -120,10 +121,11 @@ class BusinessConfigManager:
                     nested_ctas=nested_ctas,
                     rules=rules,
                     custom_routes=custom_routes,
-                    available_services=available_services,
-                    topic_ctas=topic_ctas,
-                    experiments=experiments,
-                )
+            available_services=available_services,
+            topic_ctas=topic_ctas,
+            experiments=experiments,
+            voice_enabled=voice_enabled,
+        )
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
                 self.use_database = False
@@ -153,6 +155,7 @@ class BusinessConfigManager:
             "available_services": available_services or [],
             "topic_ctas": topic_ctas or {},
             "experiments": experiments or [],
+            "voice_enabled": voice_enabled,
             "created_at": self._configs.get(business_id, {}).get("created_at", datetime.now().isoformat()),
             "updated_at": datetime.now().isoformat(),
         }

@@ -223,8 +223,8 @@
     <div class="messages" id="messages"></div>
 
     <div class="input-shell">
-      <!-- Call Button Row -->
-      <div style="padding: 10px 14px 0 14px; border-bottom: 1px solid var(--border);">
+      <!-- Call Button Row (Optional - only shown if business has voice enabled) -->
+      <div id="voiceCallSection" style="display: none; padding: 10px 14px 0 14px; border-bottom: 1px solid var(--border);">
         <details>
           <summary style="cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 600; padding-bottom: 8px;">
             📞 Make a Phone Call
@@ -256,9 +256,14 @@
   </div>
 
   <script>
-    // Get business_id from URL parameter
+    // Get business_id from URL parameter - REQUIRED
     const urlParams = new URLSearchParams(window.location.search);
-    const businessId = urlParams.get('business_id') || 'demo-business';
+    const businessId = urlParams.get('business_id');
+    
+    // Redirect to admin if business_id is missing
+    if (!businessId) {
+      window.location.href = '/admin';
+    }
     
     const DEFAULT_PRIMARY_CTAS = [
       { label: "Book an Appointment", action: "send" },
@@ -341,31 +346,49 @@
         const apiUrl = getApiUrl(`/api/business/${businessId}/config?t=${Date.now()}`);
         
         const res = await fetch(apiUrl);
-        if (res.ok) {
-          const config = await res.json();
-          CHATBOT_CONFIG = {
-            businessId: config.businessId || businessId,
-            businessName: config.businessName || CHATBOT_CONFIG.businessName,
-            businessPrimaryGoal: config.businessPrimaryGoal || CHATBOT_CONFIG.businessPrimaryGoal,
-            personalityPrompt: config.personalityPrompt || CHATBOT_CONFIG.personalityPrompt,
-            greetingMessage: config.greetingMessage || CHATBOT_CONFIG.greetingMessage,
-            privacyStatement: config.privacyStatement || CHATBOT_CONFIG.privacyStatement,
-            themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
-            widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
-            appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
-            primaryCtas: config.primaryCtas || CHATBOT_CONFIG.primaryCtas,
-            secondaryCtas: config.secondaryCtas || CHATBOT_CONFIG.secondaryCtas,
-          };
-          // Apply config immediately
-          applyConfig();
-          updateBusinessBranding();
-          ctaConfig = {
-            primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
-            secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
-          };
+        if (!res.ok) {
+          // If business not found, redirect to admin
+          if (res.status === 404) {
+            alert('Business not found. Redirecting to admin panel...');
+            window.location.href = '/admin';
+            return;
+          }
+          throw new Error(`HTTP ${res.status}`);
         }
+        
+        const config = await res.json();
+        CHATBOT_CONFIG = {
+          businessId: config.businessId || businessId,
+          businessName: config.businessName || CHATBOT_CONFIG.businessName,
+          businessPrimaryGoal: config.businessPrimaryGoal || CHATBOT_CONFIG.businessPrimaryGoal,
+          personalityPrompt: config.personalityPrompt || CHATBOT_CONFIG.personalityPrompt,
+          greetingMessage: config.greetingMessage || CHATBOT_CONFIG.greetingMessage,
+          privacyStatement: config.privacyStatement || CHATBOT_CONFIG.privacyStatement,
+          themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
+          widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
+          appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
+          primaryCtas: config.primaryCtas || CHATBOT_CONFIG.primaryCtas,
+          secondaryCtas: config.secondaryCtas || CHATBOT_CONFIG.secondaryCtas,
+          voiceEnabled: config.voiceEnabled || false, // Check if voice is enabled
+        };
+        // Apply config immediately
+        applyConfig();
+        updateBusinessBranding();
+        
+        // Show/hide voice call section based on config
+        const voiceSection = document.getElementById('voiceCallSection');
+        if (voiceSection) {
+          voiceSection.style.display = CHATBOT_CONFIG.voiceEnabled ? 'block' : 'none';
+        }
+        
+        ctaConfig = {
+          primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
+          secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
+        };
       } catch (err) {
-        console.log('Using default config (business not found or API error):', err.message);
+        console.error('Error loading business config:', err);
+        alert('Failed to load business configuration. Redirecting to admin panel...');
+        window.location.href = '/admin';
       }
     }
     

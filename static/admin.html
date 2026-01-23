@@ -278,7 +278,14 @@
     <div class="content">
       <div id="alertContainer"></div>
       
-      <form id="businessForm">
+      <!-- Toggle Form Button -->
+      <div style="margin-bottom: 20px; text-align: center;">
+        <button id="toggleFormBtn" class="btn btn-primary" onclick="toggleForm()">
+          ➕ Create New Business
+        </button>
+      </div>
+      
+      <form id="businessForm" style="display: none;">
         <div class="form-group">
           <label>Business ID <span class="required">*</span></label>
           <input type="text" id="business_id" name="business_id" required 
@@ -394,6 +401,14 @@
                  placeholder="+1 (555) 123-4567" />
         </div>
         
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="voice_enabled" name="voice_enabled" value="true" />
+            Enable Voice Bot (Phone Calls)
+          </label>
+          <div class="help-text">Check this to enable phone call functionality for this business. Not all tenants need voice capabilities.</div>
+        </div>
+        
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
           <button type="button" class="btn btn-secondary" onclick="loadBusinesses()">📋 View All Businesses</button>
@@ -405,7 +420,7 @@
       <div class="preview-section">
         <h2>📋 Configured Businesses</h2>
         <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px; background: #f0f9ff; padding: 12px; border-radius: 8px; border-left: 4px solid #2563eb;">
-          💡 <strong>How it works:</strong> Fill the form above with your business information → Click "Save Configuration" → Your chatbot is automatically created! Click "Test Chatbot" button to see it in action. All your settings (name, colors, greeting, system prompt) are automatically applied.
+          💡 <strong>How it works:</strong> Click "Create New Business" to show the form → Fill in your business information → Click "Save Configuration" → Your chatbot is automatically created! Click "Test Chatbot" button to see it in action.
         </p>
         <div id="businessList" class="business-list"></div>
       </div>
@@ -602,7 +617,7 @@ Your role is to help potential customers understand how GoAccel can help their h
             </div>
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.business_id}')">Edit</button>
-              <a href="${API_BASE}/?business_id=${business.business_id}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
+              <a href="${API_BASE}/bot?business_id=${business.business_id}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
               <button class="btn btn-danger btn-small" onclick="deleteBusiness('${business.business_id}')">Delete</button>
             </div>
           </div>
@@ -674,7 +689,16 @@ Your role is to help potential customers understand how GoAccel can help their h
         // Update integration code
         updateIntegrationCode(config.business_id);
         
-        showAlert('Business configuration loaded! <a href="' + API_BASE + '/?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
+        // Load voice_enabled checkbox
+        document.getElementById('voice_enabled').checked = config.voice_enabled || false;
+        
+        // Show form when editing
+        document.getElementById('businessForm').style.display = 'block';
+        document.getElementById('toggleFormBtn').textContent = '❌ Cancel';
+        document.getElementById('toggleFormBtn').classList.remove('btn-primary');
+        document.getElementById('toggleFormBtn').classList.add('btn-secondary');
+        
+        showAlert('Business configuration loaded! <a href="' + API_BASE + '/bot?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
       } catch (err) {
         console.error('Error loading business:', err);
         showAlert('Failed to load business: ' + err.message, 'error');
@@ -733,7 +757,7 @@ Your role is to help potential customers understand how GoAccel can help their h
     businessId: "${safeBusinessId}"
   };
 &lt;/script&gt;
-&lt;iframe src="${API_BASE}/?business_id=${safeBusinessId}" 
+&lt;iframe src="${API_BASE}/bot?business_id=${safeBusinessId}" 
          style="width: 440px; height: 600px; border: none;"&gt;&lt;/iframe&gt;
       `.trim();
     }
@@ -759,6 +783,7 @@ Your role is to help potential customers understand how GoAccel can help their h
       data.primary_ctas = primaryCtas;
       data.secondary_ctas = secondaryCtas;
       data.cta_tree = ctaTree;
+      data.voice_enabled = data.voice_enabled === 'true' || data.voice_enabled === true;
       
       // Validate required fields
       if (!data.business_id || !data.business_name || !data.system_prompt) {
@@ -803,7 +828,9 @@ Your role is to help potential customers understand how GoAccel can help their h
             showScrapingModal(data.business_id);
             startScrapingPoll(data.business_id);
           } else {
-            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+            // Hide form after successful save
+            toggleForm();
           }
         } else {
           showAlert('❌ Failed to save: ' + (result.detail || 'Unknown error'), 'error');
@@ -863,7 +890,7 @@ Your role is to help potential customers understand how GoAccel can help their h
               messageText = 'Your chatbot is now ready to use with the scraped knowledge base!';
               setTimeout(() => {
                 closeScrapingModal();
-                showAlert('✅ Knowledge base built successfully! Your chatbot is ready. <a href="' + API_BASE + '/?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+                showAlert('✅ Knowledge base built successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
               }, 2000);
               return; // Stop polling
             case 'failed':
@@ -904,6 +931,24 @@ Your role is to help potential customers understand how GoAccel can help their h
           scrapingPollInterval = null;
         }
       }, 15 * 60 * 1000);
+    }
+    
+    // Toggle form visibility
+    function toggleForm() {
+      const form = document.getElementById('businessForm');
+      const btn = document.getElementById('toggleFormBtn');
+      if (form.style.display === 'none') {
+        form.style.display = 'block';
+        btn.textContent = '❌ Cancel';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
+      } else {
+        form.style.display = 'none';
+        btn.textContent = '➕ Create New Business';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+        clearForm();
+      }
     }
     
     // Load businesses on page load
