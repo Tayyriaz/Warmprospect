@@ -17,7 +17,9 @@ router = APIRouter()
 
 def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0):
     """Update scraping status in a JSON file for frontend polling."""
-    status_file = os.path.join("data", business_id, "scraping_status.json")
+    # Use absolute paths to avoid issues with working directory
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
     os.makedirs(os.path.dirname(status_file), exist_ok=True)
     
     status_data = {
@@ -37,31 +39,48 @@ def trigger_kb_build(business_id: str, website_url: str):
     Runs the scraping script asynchronously and updates status.
     """
     try:
+        # Use absolute paths to avoid issues with working directory
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_path = os.path.join(base_dir, "scripts", "build_kb_for_business.py")
+        
+        print(f"[DEBUG] Base directory: {base_dir}")
+        print(f"[DEBUG] Script path: {script_path}")
+        print(f"[DEBUG] Script exists: {os.path.exists(script_path)}")
+        
         update_scraping_status(business_id, "pending", "Preparing to scrape website...", 0)
         
-        script_path = os.path.join("scripts", "build_kb_for_business.py")
         if not os.path.exists(script_path):
             error_msg = f"Scraping script not found: {script_path}"
-            print(f"[WARNING] {error_msg}")
+            print(f"[ERROR] {error_msg}")
             update_scraping_status(business_id, "failed", error_msg, 0)
             return
         
         # Run the scraping script in background
         cmd = [sys.executable, script_path, "--business_id", business_id, "--url", website_url]
         print(f"[INFO] Starting KB build for business: {business_id}, URL: {website_url}")
+        print(f"[INFO] Command: {' '.join(cmd)}")
         update_scraping_status(business_id, "scraping", "Scraping website content... This may take a few minutes.", 10)
         
-        # Increase timeout to 700 seconds (10+ minutes)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=700)
+        # Change to base directory to ensure relative paths work
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(base_dir)
+            # Increase timeout to 700 seconds (10+ minutes)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=700)
+        finally:
+            os.chdir(original_cwd)
         
         if result.returncode == 0:
             success_msg = "Knowledge base built successfully! Your chatbot is now ready to use."
             print(f"[SUCCESS] KB build completed for business: {business_id}")
+            print(f"[SUCCESS] Output: {result.stdout[:500]}")
             update_scraping_status(business_id, "completed", success_msg, 100)
         else:
-            error_msg = f"Scraping failed: {result.stderr[:200]}"
+            error_msg = f"Scraping failed: {result.stderr[:500] if result.stderr else result.stdout[:500]}"
             print(f"[ERROR] KB build failed for business: {business_id}")
+            print(f"[ERROR] Return code: {result.returncode}")
             print(f"[ERROR] Error output: {result.stderr}")
+            print(f"[ERROR] Standard output: {result.stdout}")
             update_scraping_status(business_id, "failed", error_msg, 0)
     except subprocess.TimeoutExpired:
         error_msg = "Scraping timed out. The website might be too large or slow."
@@ -70,6 +89,8 @@ def trigger_kb_build(business_id: str, website_url: str):
     except Exception as e:
         error_msg = f"Failed to build knowledge base: {str(e)}"
         print(f"[ERROR] Failed to trigger KB build for business {business_id}: {e}")
+        import traceback
+        traceback.print_exc()
         update_scraping_status(business_id, "failed", error_msg, 0)
 
 
@@ -79,7 +100,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
     Create or update a business configuration.
     Clients can use this to configure their chatbot.
     Accepts camelCase field names (standardized).
-    If websiteUrl is provided, automatically triggers knowledge base scraping.
+    Note: Knowledge base scraping must be triggered separately using the /scrape endpoint.
     """
     try:
         data = await request.json()
@@ -117,26 +138,111 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             business_logo=data.get("businessLogo"),
         )
         
-        # Trigger knowledge base build in background if website_url is provided
-        scraping_started = False
-        if website_url and website_url.strip():
-            background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
-            print(f"[INFO] Queued KB build for business: {business_id}, URL: {website_url}")
-            scraping_started = True
-        
         return {
             "success": True, 
-            "config": convert_config_to_camel(config),
-            "scrapingStarted": scraping_started
+            "config": convert_config_to_camel(config)
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/admin/business/{business_id}/scrape")
+async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
+    """
+    Manually trigger knowledge base scraping for a business.
+    Requires the business to have a websiteUrl configured.
+    """
+    try:
+        # Get business config to check if website_url exists
+        config = config_manager.get_business(business_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        website_url = config.get("website_url")
+        if not website_url or not website_url.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Business must have a websiteUrl configured to build knowledge base. Please set websiteUrl in the configuration first."
+            )
+        
+        # Trigger knowledge base build in background
+        background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
+        print(f"[INFO] Manually triggered KB build for business: {business_id}, URL: {website_url}")
+        
+        return {
+            "success": True,
+            "message": "Knowledge base scraping started",
+            "business_id": business_id,
+            "website_url": website_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start scraping: {str(e)}")
+
+
+@router.post("/admin/business/{business_id}/refresh-kb")
+async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
+    """
+    Refresh/rebuild the knowledge base for a business.
+    This will re-scrape the website and rebuild the knowledge base from scratch.
+    Useful when website content has been updated.
+    """
+    try:
+        # Get business config to check if website_url exists
+        config = config_manager.get_business(business_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        website_url = config.get("website_url")
+        if not website_url or not website_url.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Business must have a websiteUrl configured to refresh knowledge base. Please set websiteUrl in the configuration first."
+            )
+        
+        # Optional: Clear old index files before rebuilding
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
+        meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
+        
+        # Clear old files if they exist
+        if os.path.exists(index_path):
+            try:
+                os.remove(index_path)
+                print(f"[INFO] Removed old index: {index_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not remove old index: {e}")
+        
+        if os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+                print(f"[INFO] Removed old metadata: {meta_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not remove old metadata: {e}")
+        
+        # Trigger knowledge base build in background
+        background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
+        print(f"[INFO] Refreshing KB for business: {business_id}, URL: {website_url}")
+        
+        return {
+            "success": True,
+            "message": "Knowledge base refresh started. Old content has been cleared and will be rebuilt.",
+            "business_id": business_id,
+            "website_url": website_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh knowledge base: {str(e)}")
+
+
 @router.get("/admin/business/{business_id}/scraping-status")
 async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_key)):
     """Get current scraping status for a business."""
-    status_file = os.path.join("data", business_id, "scraping_status.json")
+    # Use absolute paths to avoid issues with working directory
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
     
     if not os.path.exists(status_file):
         return {

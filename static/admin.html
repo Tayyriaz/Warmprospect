@@ -227,6 +227,13 @@
     .btn-danger:hover {
       background: #dc2626;
     }
+    .btn-info {
+      background: #06b6d4;
+      color: white;
+    }
+    .btn-info:hover {
+      background: #0891b2;
+    }
     
     /* Scraping Modal */
     .modal-overlay {
@@ -812,6 +819,7 @@ Your role is to help potential customers understand how GoAccel can help their h
             </div>
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.businessId}')">Edit</button>
+              ${business.websiteUrl ? `<button class="btn btn-info btn-small" onclick="triggerScraping('${business.businessId}')" title="Build Knowledge Base from ${business.websiteUrl}">🌐 Build KB</button>` : ''}
               <a href="${API_BASE}/bot?business_id=${business.businessId}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
               <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.businessId}')">Delete</button>
             </div>
@@ -1038,15 +1046,9 @@ Your role is to help potential customers understand how GoAccel can help their h
           updateIntegrationCode(data.businessId);
           loadBusinesses();
           
-          // Check if scraping was started
-          if (result.scrapingStarted && data.websiteUrl) {
-            showScrapingModal(data.businessId);
-            startScrapingPoll(data.businessId);
-          } else {
-            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + data.businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
-            // Hide form after successful save
-            toggleForm();
-          }
+          showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + data.businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+          // Hide form after successful save
+          toggleForm();
         } else {
           showAlert('❌ Failed to save: ' + (result.detail || 'Unknown error'), 'error');
         }
@@ -1146,6 +1148,32 @@ Your role is to help potential customers understand how GoAccel can help their h
           scrapingPollInterval = null;
         }
       }, 15 * 60 * 1000);
+    }
+    
+    async function triggerScraping(businessId) {
+      if (!requireApiKey()) return;
+      
+      try {
+        const res = await fetch(`${API_BASE}/admin/business/${businessId}/scrape`, {
+          method: 'POST',
+          headers: getAdminHeaders()
+        });
+        
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.detail || `HTTP ${res.status}`);
+        }
+        
+        const result = await res.json();
+        if (result.success) {
+          showScrapingModal(businessId);
+          startScrapingPoll(businessId);
+          showAlert('🌐 Knowledge base scraping started!', 'success');
+        }
+      } catch (err) {
+        console.error('Error triggering scraping:', err);
+        showAlert('❌ Failed to start scraping: ' + err.message, 'error');
+      }
     }
     
     // Toggle form modal visibility
