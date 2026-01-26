@@ -51,8 +51,6 @@ class DynamicCTAManager:
         
         # Start with configured CTAs
         base_ctas = {
-            "primary": business_config.get("primary_ctas", []),
-            "secondary": business_config.get("secondary_ctas", []),
             "tertiary": business_config.get("tertiary_ctas", []),
             "nested": business_config.get("nested_ctas", {})
         }

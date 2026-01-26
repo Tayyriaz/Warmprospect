@@ -78,6 +78,8 @@ class BusinessConfigManager:
         topic_ctas: Dict[str, List[Dict[str, Any]]] = None,
         experiments: List[Dict[str, Any]] = None,
         voice_enabled: bool = False,
+        chatbot_button_text: str = None,
+        business_logo: str = None,
     ) -> Dict[str, Any]:
         """
         Create or update a business configuration.
@@ -125,6 +127,8 @@ class BusinessConfigManager:
             topic_ctas=topic_ctas,
             experiments=experiments,
             voice_enabled=voice_enabled,
+            chatbot_button_text=chatbot_button_text,
+            business_logo=business_logo,
         )
             except Exception as e:
                 print(f"[ERROR] Database operation failed, falling back to file storage: {e}")
@@ -156,6 +160,8 @@ class BusinessConfigManager:
             "topic_ctas": topic_ctas or {},
             "experiments": experiments or [],
             "voice_enabled": voice_enabled,
+            "chatbot_button_text": chatbot_button_text,
+            "business_logo": business_logo,
             "created_at": self._configs.get(business_id, {}).get("created_at", datetime.now().isoformat()),
             "updated_at": datetime.now().isoformat(),
         }

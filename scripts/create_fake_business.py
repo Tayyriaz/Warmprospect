@@ -14,12 +14,7 @@ def create_fake_business():
         "greeting_message": "Welcome to the future of IT. How can Nexus Tech Solutions accelerate your digital transformation today?",
         "appointment_link": "https://calendly.com/nexus-tech/discovery",
         "theme_color": "#0f172a",
-        "widget_position": "bottom-right",
-        "primary_ctas": [
-            {"label": "Cloud Migration", "action": "send"},
-            {"label": "Security Audit", "action": "send"},
-            {"label": "Talk to an Expert", "action": "send"}
-        ]
+        "widget_position": "bottom-right"
     }
     
     try:

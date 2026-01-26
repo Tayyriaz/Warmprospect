@@ -33,19 +33,7 @@ Your role is to help potential customers understand how GoAccel can help their h
     "contact_email": "info@goaccel.com",
     "contact_phone": "855.915.0747",
     "theme_color": "#667eea",
-    "widget_position": "center",
-    "primary_ctas": [
-        {"label": "Get Free Visibility Scan", "action": "send", "message": "I'd like to get a free visibility scan for my business."},
-        {"label": "Book a Growth Call", "action": "send", "message": "I want to book a 15-minute growth call to learn more."},
-        {"label": "Learn About Services", "action": "show_secondary"}
-    ],
-    "secondary_ctas": [
-        {"label": "Digital Agency Solutions", "action": "send", "message": "Tell me about your digital agency solutions and website design services."},
-        {"label": "CRM Software", "action": "send", "message": "I want to learn about your CRM software for home services businesses."},
-        {"label": "Marketing Automation", "action": "send", "message": "How does your marketing automation work?"},
-        {"label": "Industries We Serve", "action": "send", "message": "Which industries do you serve?"},
-        {"label": "Pricing Information", "action": "send", "message": "What are your pricing options?"}
-    ]
+    "widget_position": "center"
 }
 
 print("Creating GoAccel business configuration...")

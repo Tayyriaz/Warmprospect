@@ -11,7 +11,7 @@ import os
 import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -54,9 +54,10 @@ class BusinessConfig(Base):
     website_url = Column(String(500))
     contact_email = Column(String(255))
     contact_phone = Column(String(50))
-    primary_ctas = Column(Text)
-    secondary_ctas = Column(Text)
     cta_tree = Column(Text)  # Stores complete CTA tree structure as JSON
+    chatbot_button_text = Column(String(255))  # Text for the chatbot button (e.g., "Chat with us")
+    business_logo = Column(String(500))  # URL or path to business logo image
+    voice_enabled = Column(Boolean, default=False)  # Enable voice bot for this business
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -87,8 +88,6 @@ class BusinessConfig(Base):
             "website_url": self.website_url,
             "contact_email": self.contact_email,
             "contact_phone": self.contact_phone,
-            "primary_ctas": _parse_ctas(self.primary_ctas),
-            "secondary_ctas": _parse_ctas(self.secondary_ctas),
             "cta_tree": json.loads(self.cta_tree) if hasattr(self, 'cta_tree') and self.cta_tree else {},
             "tertiary_ctas": _parse_ctas(self.tertiary_ctas) if hasattr(self, 'tertiary_ctas') else None,
             "nested_ctas": json.loads(self.nested_ctas) if hasattr(self, 'nested_ctas') and self.nested_ctas else {},
@@ -98,6 +97,8 @@ class BusinessConfig(Base):
             "topic_ctas": json.loads(self.topic_ctas) if hasattr(self, 'topic_ctas') and self.topic_ctas else {},
             "experiments": json.loads(self.experiments) if hasattr(self, 'experiments') and self.experiments else [],
             "voice_enabled": getattr(self, 'voice_enabled', False) if hasattr(self, 'voice_enabled') else False,
+            "chatbot_button_text": getattr(self, 'chatbot_button_text', None) if hasattr(self, 'chatbot_button_text') else None,
+            "business_logo": getattr(self, 'business_logo', None) if hasattr(self, 'business_logo') else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -149,8 +150,6 @@ class BusinessConfigDB:
         website_url: str = None,
         contact_email: str = None,
         contact_phone: str = None,
-        primary_ctas = None,
-        secondary_ctas = None,
         cta_tree = None,
         tertiary_ctas = None,
         nested_ctas = None,
@@ -204,8 +203,6 @@ class BusinessConfigDB:
                 existing.website_url = website_url
                 existing.contact_email = contact_email
                 existing.contact_phone = contact_phone
-                existing.primary_ctas = _serialize_ctas(primary_ctas)
-                existing.secondary_ctas = _serialize_ctas(secondary_ctas)
                 if hasattr(existing, 'cta_tree'):
                     existing.cta_tree = _serialize_json(cta_tree)
                 # Store new dynamic fields as JSON strings
@@ -225,6 +222,10 @@ class BusinessConfigDB:
                     existing.experiments = _serialize_json(experiments)
                 if hasattr(existing, 'voice_enabled'):
                     existing.voice_enabled = voice_enabled
+                if hasattr(existing, 'chatbot_button_text'):
+                    existing.chatbot_button_text = chatbot_button_text
+                if hasattr(existing, 'business_logo'):
+                    existing.business_logo = business_logo
                 existing.updated_at = datetime.utcnow()
                 db.commit()
                 db.refresh(existing)
@@ -245,8 +246,6 @@ class BusinessConfigDB:
                     website_url=website_url,
                     contact_email=contact_email,
                     contact_phone=contact_phone,
-                    primary_ctas=_serialize_ctas(primary_ctas),
-                    secondary_ctas=_serialize_ctas(secondary_ctas),
                     cta_tree=_serialize_json(cta_tree),
                     tertiary_ctas=_serialize_json(tertiary_ctas),
                     nested_ctas=_serialize_json(nested_ctas),
@@ -256,6 +255,8 @@ class BusinessConfigDB:
                     topic_ctas=_serialize_json(topic_ctas),
                     experiments=_serialize_json(experiments),
                     voice_enabled=voice_enabled if hasattr(BusinessConfig, 'voice_enabled') else False,
+                    chatbot_button_text=chatbot_button_text if hasattr(BusinessConfig, 'chatbot_button_text') else None,
+                    business_logo=business_logo if hasattr(BusinessConfig, 'business_logo') else None,
                 )
                 db.add(new_business)
                 db.commit()

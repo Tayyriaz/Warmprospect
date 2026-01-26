@@ -1,53 +1,67 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: warmprospect_postgres
+    container_name: goaccel_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: goaccel_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-goaccel_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - goaccel_network
 
   redis:
     image: redis:7-alpine
-    container_name: warmprospect_redis
+    container_name: goaccel_redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - goaccel_network
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: warmprospect_app
+    container_name: goaccel_app
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/goaccel_db
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-goaccel_db}
       - REDIS_URL=redis://redis:6379/0
       - PORT=8000
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_MODEL_NAME=${GEMINI_MODEL_NAME:-}
       - MAX_HISTORY_TURNS=${MAX_HISTORY_TURNS:-20}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-["*"]}
       - DEFAULT_APPOINTMENT_LINK=${DEFAULT_APPOINTMENT_LINK:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-}
+      - NGROK_URL=${NGROK_URL:-}
     volumes:
       - ./data:/app/data
       - ./static:/app/static
@@ -56,15 +70,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - goaccel_network
     command: >
       sh -c "
         echo 'Waiting for database to be ready...' &&
-        sleep 5 &&
+        until python -c 'import psycopg2; psycopg2.connect(\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-goaccel_db}\")' 2>/dev/null; do
+          echo 'Waiting for postgres...'
+          sleep 2
+        done &&
+        echo 'Database ready!' &&
         python -c 'from database import init_db; init_db()' &&
         echo 'Starting application...' &&
-        uvicorn main:app --host 0.0.0.0 --port 8000
+        uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WORKERS:-1}
       "
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
+
+networks:
+  goaccel_network:
+    driver: bridge

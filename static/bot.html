@@ -265,24 +265,6 @@
       window.location.href = '/admin';
     }
     
-    const DEFAULT_PRIMARY_CTAS = [
-      { label: "Book an Appointment", action: "send" },
-      { label: "Speak to Sales", action: "send" },
-      { label: "Send More Information", action: "show_secondary" },
-    ];
-
-    const DEFAULT_SECONDARY_CTAS = [
-      { label: "Website Design Services", action: "send" },
-      { label: "Digital Agency Services", action: "send" },
-      { label: "Business Growth Services", action: "send" },
-      { label: "CRM Software Platform", action: "send" },
-      {
-        label: "All of the Above",
-        action: "send",
-        message: "Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?",
-      },
-    ];
-
     // Default configuration (will be overridden by API if business exists)
     let CHATBOT_CONFIG = {
       businessId: businessId,
@@ -295,8 +277,6 @@
       themeColor: "#2563eb",
       widgetPosition: "center",
       appointmentLink: "https://example.com/book",
-      primaryCtas: DEFAULT_PRIMARY_CTAS,
-      secondaryCtas: DEFAULT_SECONDARY_CTAS,
     };
     
     // Generate avatar initials from business name
@@ -367,8 +347,6 @@
           themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
           widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
           appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
-          primaryCtas: config.primaryCtas || CHATBOT_CONFIG.primaryCtas,
-          secondaryCtas: config.secondaryCtas || CHATBOT_CONFIG.secondaryCtas,
           voiceEnabled: config.voiceEnabled || false, // Check if voice is enabled
         };
         // Apply config immediately
@@ -380,11 +358,6 @@
         if (voiceSection) {
           voiceSection.style.display = CHATBOT_CONFIG.voiceEnabled ? 'block' : 'none';
         }
-        
-        ctaConfig = {
-          primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
-          secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
-        };
       } catch (err) {
         console.error('Error loading business config:', err);
         alert('Failed to load business configuration. Redirecting to admin panel...');
@@ -402,10 +375,7 @@
     // micBtn is declared later with the recording logic
     const quickOptionsEl = null;
     let typingNode = null;
-    let ctaConfig = {
-      primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
-      secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
-    };
+    let ctaConfig = {}; // Using dynamic CTA tree system only
 
     // --- Voice Recording Logic (WAV Encoding) ---
     const micBtn = document.getElementById("micBtn");
@@ -656,17 +626,13 @@
 
     // Apply immediately with defaults
     applyConfig();
-    let lastRenderedSecondary = 0;
-    let primaryRendered = false;
-    let secondaryRendered = false;
+    // Removed primary/secondary CTA tracking - using dynamic CTA tree system
     let lastOptionsNode = null;
 
     function clearOptions() {
       if (lastOptionsNode && lastOptionsNode.parentNode) {
         lastOptionsNode.parentNode.removeChild(lastOptionsNode);
       }
-      primaryRendered = false;
-      secondaryRendered = false;
       lastOptionsNode = null;
     }
 
@@ -703,13 +669,7 @@
       if (lastOptionsNode && lastOptionsNode.parentNode) {
         lastOptionsNode.parentNode.removeChild(lastOptionsNode);
       }
-      // when switching sets, reset the other flag
-      if (type === "secondary") {
-        primaryRendered = false;
-      }
-      if (type === "primary") {
-        secondaryRendered = false;
-      }
+      // Removed primary/secondary tracking - using dynamic CTA system
       const wrap = document.createElement("div");
       wrap.className = "msg bot";
       const row = document.createElement("div");
@@ -725,12 +685,7 @@
         btn.type = "button";
         btn.textContent = icon ? `${icon} ${label}` : label;
         btn.addEventListener("click", () => {
-          if (action === "show_secondary") {
-            lastRenderedSecondary = Date.now();
-            secondaryRendered = false;
-            addOptionChips(ctaConfig.secondary, "secondary");
-            return;
-          }
+          // Legacy show_secondary action removed - use CTA tree instead
           sendMessage(message);
         });
         row.appendChild(btn);
@@ -739,14 +694,7 @@
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       lastOptionsNode = wrap;
-      if (type === "primary") {
-        primaryRendered = true;
-        secondaryRendered = false;
-      }
-      if (type === "secondary") {
-        secondaryRendered = true;
-        primaryRendered = false;
-      }
+      // Removed primary/secondary tracking - using dynamic CTA system
     }
 
     function buildBusinessSystemPrompt() {
@@ -833,21 +781,7 @@
 
         // Render CTAs from the backend if provided
         if (data.ctas && Array.isArray(data.ctas.primary)) {
-          ctaConfig = {
-            primary: data.ctas.primary || [],
-            secondary: data.ctas.secondary || [],
-          };
-          primaryRendered = false;
-          secondaryRendered = false;
-          addOptionChips(ctaConfig.primary, "primary");
-        } else {
-          // Fallback: detect the prompt and use configured CTAs
-          const normalized = text.toLowerCase();
-          const hasPrimary = ["book an appointment", "speak to sales", "send more information"].every(t => normalized.includes(t));
-          if (hasPrimary && !primaryRendered) {
-            addOptionChips(ctaConfig.primary, "primary");
-          }
-        }
+          // Using dynamic CTA system - CTAs come from backend via cta field
       } catch (err) {
         hideTyping();
         console.error("Chat error:", err);
@@ -895,10 +829,6 @@
       updateBusinessBranding(); // Update branding from config
       
       // Update CTA config after loading business config
-      ctaConfig = {
-        primary: CHATBOT_CONFIG.primaryCtas || DEFAULT_PRIMARY_CTAS,
-        secondary: CHATBOT_CONFIG.secondaryCtas || DEFAULT_SECONDARY_CTAS,
-      };
       
       if (CHATBOT_CONFIG.privacyStatement) {
         addMessage(CHATBOT_CONFIG.privacyStatement, "meta");
@@ -908,12 +838,7 @@
         "Hi! I'm your AI assistant. Ask anything about services, pricing or booking and I'll guide you.";
       addMessage(initialGreeting, "bot");
       
-      // Show primary CTAs after greeting
-      if (ctaConfig.primary && ctaConfig.primary.length > 0) {
-        primaryRendered = false;
-        secondaryRendered = false;
-        addOptionChips(ctaConfig.primary, "primary");
-      }
+      // CTAs are now handled dynamically via the CTA tree system from backend
     }
     
     // Initialize chat after page loads

@@ -741,6 +741,8 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             topic_ctas=data.get("topic_ctas"),
             experiments=data.get("experiments"),
             voice_enabled=data.get("voice_enabled", False),
+            chatbot_button_text=data.get("chatbot_button_text"),
+            business_logo=data.get("business_logo"),
         )
         
         # Trigger knowledge base build in background if website_url is provided
@@ -823,15 +825,16 @@ async def get_business_config_for_widget(business_id: str):
     """
     Get business configuration for frontend widget.
     This endpoint is used by the chat widget to load business-specific settings.
+    Returns all fields that match the POST endpoint for consistency.
     """
     config = config_manager.get_business(business_id)
     if not config:
         raise HTTPException(status_code=404, detail="Business not found")
     
-    # Return only the fields needed for the frontend widget
+    # Return all fields matching POST endpoint structure
     return {
         "businessId": config.get("business_id"),
-        "businessName": config.get("business_name"),  # Added business name
+        "businessName": config.get("business_name"),
         "businessPrimaryGoal": config.get("primary_goal"),
         "personalityPrompt": config.get("personality"),
         "greetingMessage": config.get("greeting_message"),
@@ -839,8 +842,13 @@ async def get_business_config_for_widget(business_id: str):
         "themeColor": config.get("theme_color", "#2563eb"),
         "widgetPosition": config.get("widget_position", "center"),
         "appointmentLink": config.get("appointment_link"),
+        "websiteUrl": config.get("website_url"),
+        "contactEmail": config.get("contact_email"),
+        "contactPhone": config.get("contact_phone"),
         "ctaTree": config.get("cta_tree"),
-        "voiceEnabled": config.get("voice_enabled", False),  # Voice bot is optional
+        "voiceEnabled": config.get("voice_enabled", False),
+        "chatbotButtonText": config.get("chatbot_button_text"),
+        "businessLogo": config.get("business_logo"),
     }
 
 @app.post("/chat")
@@ -960,10 +968,11 @@ async def chat_endpoint(request: Request):
     if hard_guard_response:
         payload = {"response": hard_guard_response["response"]}
         # Use cta_tree entry points instead of legacy primary/secondary CTAs
+        # CTAs are ALWAYS separate, never in response
         if business_id and hard_guard_response.get("cta_mode") == "primary":
             entry_ctas = _get_entry_point_ctas(business_id, user_input)
             if entry_ctas:
-                payload["ctas"] = entry_ctas
+                payload["cta"] = entry_ctas  # Separate CTA field
         return payload
 
     # 2.5. Dynamic Routing (Priority 2)
@@ -1261,21 +1270,29 @@ async def chat_endpoint(request: Request):
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
     print(f"[ANALYTICS] Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
 
+    # Response payload - NEVER include CTAs in response
     response_payload = {"response": final_response_text}
     
-    # Dynamic CTA approach: Only use cta_tree, AI chooses when to show CTAs
-    # CTAs are shown based on context and intent, not automatically on every message
+    # Dynamic CTA approach: CTAs are ALWAYS separate, never in response
+    # Get CTAs separately based on context and intent
+    cta_payload = None
     if business_id:
         config = config_manager.get_business(business_id)
         if config and config.get("cta_tree"):
             # Get entry point CTAs based on user intent and conversation context
-            # Only show CTAs when appropriate (not on every message)
             chat_history = list(chat.get_history())
             entry_ctas = _get_entry_point_ctas(business_id, user_input)
-            # Only attach CTAs if intent detection suggests it's appropriate
+            # Only return CTAs if intent detection suggests it's appropriate
             # or if the response text indicates user should choose an option
             if entry_ctas and (_should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
-                response_payload["ctas"] = entry_ctas
+                cta_payload = {"cta": entry_ctas}
+    
+    # Return response and CTA separately - CTAs are NEVER in the response object
+    if cta_payload:
+        return {
+            "response": final_response_text,
+            "cta": cta_payload["cta"]  # Separate CTA field, not in response
+        }
     
     return response_payload
 
@@ -1332,7 +1349,7 @@ async def handle_cta_click(request: Request):
         
         return {
             "response": response_text,
-            "ctas": children
+            "cta": children  # Always separate CTA field, never in response text
         }
         
     except HTTPException:

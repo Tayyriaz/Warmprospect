@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from business_config import config_manager, DEFAULT_PRIMARY_CTAS, DEFAULT_SECONDARY_CTAS
+from business_config import config_manager
 
 print("Creating default demo-business...")
 try:
@@ -16,9 +16,7 @@ try:
         business_id="demo-business",
         business_name="GoAccel Demo",
         system_prompt="You are a helpful AI assistant for GoAccel. You help users understand our services.",
-        greeting_message="Hi! I'm the GoAccel Demo Bot. Ask me anything!",
-        primary_ctas=DEFAULT_PRIMARY_CTAS,
-        secondary_ctas=DEFAULT_SECONDARY_CTAS
+        greeting_message="Hi! I'm the GoAccel Demo Bot. Ask me anything!"
     )
     print("Done.")
 except Exception as e:

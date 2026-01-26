@@ -70,6 +70,7 @@
     input[type="email"],
     input[type="url"],
     input[type="color"],
+    input[type="file"],
     textarea,
     select {
       width: 100%;
@@ -80,7 +81,24 @@
       transition: border-color 0.2s;
       font-family: inherit;
     }
-    input:focus, textarea:focus, select:focus {
+    input[type="file"] {
+      padding: 8px;
+      cursor: pointer;
+    }
+    input[type="file"]::-webkit-file-upload-button {
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-right: 12px;
+    }
+    input[type="file"]::-webkit-file-upload-button:hover {
+      opacity: 0.9;
+    }
+    input:focus, textarea:focus, select:focus, input[type="file"]:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -347,127 +365,166 @@
               <button class="btn btn-close" onclick="toggleForm()" style="padding: 8px 16px;">✕ Close</button>
             </div>
             <form id="businessForm">
-        <div class="form-group">
-          <label>Business ID <span class="required">*</span></label>
-          <input type="text" id="business_id" name="business_id" required 
-                 placeholder="e.g., my-company-123" />
-          <div class="help-text">Unique identifier for your business (used in API calls)</div>
-        </div>
-        
-        <div class="form-group">
-          <label>Business Name <span class="required">*</span></label>
-          <input type="text" id="business_name" name="business_name" required 
-                 placeholder="e.g., My Company" />
-        </div>
-        
-        <div class="form-group">
-          <label>System Prompt / Instructions <span class="required">*</span></label>
-          <textarea id="system_prompt" name="system_prompt" required
-                    placeholder="Describe your business, services, products, and how the chatbot should behave. Be specific about what information to share and how to interact with customers."></textarea>
-          <div class="help-text">This is the main customization - describe your business, services, and chatbot behavior</div>
-        </div>
-        
-        <div class="form-row">
+        <!-- Basic Information Section -->
+        <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e5e7eb;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">📋 Basic Information</h3>
+          
           <div class="form-group">
-            <label>Primary Goal</label>
-            <input type="text" id="primary_goal" name="primary_goal" 
-                   placeholder="e.g., Generate more leads" />
+            <label>Business ID <span class="required">*</span></label>
+            <input type="text" id="business_id" name="business_id" required 
+                   placeholder="e.g., my-company-123" />
+            <div class="help-text">Unique identifier for your business (used in API calls)</div>
           </div>
           
           <div class="form-group">
-            <label>Personality</label>
-            <input type="text" id="personality" name="personality" 
-                   placeholder="e.g., Friendly and professional" />
-          </div>
-        </div>
-        
-        <div class="form-group">
-          <label>Greeting Message</label>
-          <input type="text" id="greeting_message" name="greeting_message" 
-                 placeholder="e.g., Hi! How can we help you today?" />
-          <div class="help-text">Initial message shown when chat opens</div>
-        </div>
-        
-        <div class="form-group">
-          <label>Appointment/Booking Link</label>
-          <input type="url" id="appointment_link" name="appointment_link" 
-                 placeholder="https://example.com/book" />
-          <div class="help-text">URL for booking appointments or scheduling</div>
-        </div>
-        
-        <div class="form-group">
-          <label>Privacy Statement</label>
-          <textarea id="privacy_statement" name="privacy_statement"
-                    placeholder="We collect your information only to provide better service..."></textarea>
-          <div class="help-text">Shown when collecting customer information</div>
-        </div>
-
-        <div class="form-group">
-          <label>Primary CTAs (JSON)</label>
-          <textarea id="primary_ctas" name="primary_ctas"
-                    placeholder='[{"label":"Book an Appointment","action":"send"}]'></textarea>
-          <div class="help-text">JSON array of CTA objects: label, action (send/show_secondary), message (optional)</div>
-        </div>
-
-        <div class="form-group">
-          <label>Secondary CTAs (JSON)</label>
-          <textarea id="secondary_ctas" name="secondary_ctas"
-                    placeholder='[{"label":"Website Design Services","action":"send"}]'></textarea>
-          <div class="help-text">Shown after clicking a CTA with action show_secondary</div>
-        </div>
-
-        <div class="form-group">
-          <label>CTA Tree (JSON) - Tree-based Structure</label>
-          <textarea id="cta_tree" name="cta_tree" style="min-height: 300px; font-family: monospace;"
-                    placeholder='{"learn_services": {"id": "learn_services", "label": "Learn About Services", "action": "show_children", "children": ["digital_agency", "website_design"]}, ...}'></textarea>
-          <div class="help-text">
-            <strong>Tree-based CTA structure.</strong> Each CTA has: id, label, action (show_children/redirect/send), children (array of child IDs), url (if redirect), message (if send).
-            See team lead's document for complete example.
-          </div>
-        </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label>Theme Color</label>
-            <input type="color" id="theme_color" name="theme_color" value="#2563eb" />
+            <label>Business Name <span class="required">*</span></label>
+            <input type="text" id="business_name" name="business_name" required 
+                   placeholder="e.g., My Company" />
           </div>
           
           <div class="form-group">
-            <label>Widget Position</label>
-            <select id="widget_position" name="widget_position">
-              <option value="center">Center</option>
-              <option value="bottom-right">Bottom Right</option>
-              <option value="bottom-left">Bottom Left</option>
-            </select>
+            <label>System Prompt / Instructions <span class="required">*</span></label>
+            <textarea id="system_prompt" name="system_prompt" required
+                      placeholder="Describe your business, services, products, and how the chatbot should behave. Be specific about what information to share and how to interact with customers."></textarea>
+            <div class="help-text">This is the main customization - describe your business, services, and chatbot behavior</div>
           </div>
         </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label>Website URL</label>
-            <input type="url" id="website_url" name="website_url" 
-                   placeholder="https://example.com" />
+
+        <!-- Branding & Appearance Section -->
+        <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e5e7eb;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">🎨 Branding & Appearance</h3>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Theme Color</label>
+              <input type="color" id="theme_color" name="theme_color" value="#2563eb" />
+            </div>
+            
+            <div class="form-group">
+              <label>Widget Position</label>
+              <select id="widget_position" name="widget_position">
+                <option value="center">Center</option>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+              </select>
+            </div>
           </div>
           
           <div class="form-group">
-            <label>Contact Email</label>
-            <input type="email" id="contact_email" name="contact_email" 
-                   placeholder="contact@example.com" />
+            <label>Chatbot Button Text</label>
+            <input type="text" id="chatbot_button_text" name="chatbot_button_text" 
+                   placeholder="e.g., Chat with us" />
+            <div class="help-text">Text displayed on the chatbot button/widget</div>
+          </div>
+          
+          <div class="form-group">
+            <label>Business Logo</label>
+            <input type="file" id="business_logo_file" accept="image/*" 
+                   style="margin-bottom: 8px;" />
+            <div class="help-text">Upload your business logo image (PNG, JPG, SVG, etc.) - Max 2MB</div>
+            <div id="logoPreview" style="margin-top: 12px; display: none;">
+              <img id="logoPreviewImg" src="" alt="Logo preview" style="max-width: 200px; max-height: 100px; border: 2px solid #e5e7eb; border-radius: 8px; padding: 8px; background: #f9fafb;" />
+              <div style="margin-top: 8px;">
+                <button type="button" class="btn btn-secondary btn-small" onclick="clearLogo()">Remove Logo</button>
+              </div>
+            </div>
+            <input type="hidden" id="business_logo" name="business_logo" />
           </div>
         </div>
-        
-        <div class="form-group">
-          <label>Contact Phone</label>
-          <input type="text" id="contact_phone" name="contact_phone" 
-                 placeholder="+1 (555) 123-4567" />
+
+        <!-- Messaging & Personality Section -->
+        <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e5e7eb;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">💬 Messaging & Personality</h3>
+          
+          <div class="form-group">
+            <label>Greeting Message</label>
+            <input type="text" id="greeting_message" name="greeting_message" 
+                   placeholder="e.g., Hi! How can we help you today?" />
+            <div class="help-text">Initial message shown when chat opens</div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Primary Goal</label>
+              <input type="text" id="primary_goal" name="primary_goal" 
+                     placeholder="e.g., Generate more leads" />
+            </div>
+            
+            <div class="form-group">
+              <label>Personality</label>
+              <input type="text" id="personality" name="personality" 
+                     placeholder="e.g., Friendly and professional" />
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Privacy Statement</label>
+            <textarea id="privacy_statement" name="privacy_statement"
+                      placeholder="We collect your information only to provide better service..."></textarea>
+            <div class="help-text">Shown when collecting customer information</div>
+          </div>
         </div>
-        
-        <div class="form-group">
-          <label>
-            <input type="checkbox" id="voice_enabled" name="voice_enabled" value="true" />
-            Enable Voice Bot (Phone Calls)
-          </label>
-          <div class="help-text">Check this to enable phone call functionality for this business. Not all tenants need voice capabilities.</div>
+
+        <!-- Contact Information Section -->
+        <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e5e7eb;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">📞 Contact Information</h3>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Website URL</label>
+              <input type="url" id="website_url" name="website_url" 
+                     placeholder="https://example.com" />
+            </div>
+            
+            <div class="form-group">
+              <label>Contact Email</label>
+              <input type="email" id="contact_email" name="contact_email" 
+                     placeholder="contact@example.com" />
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Contact Phone</label>
+              <input type="text" id="contact_phone" name="contact_phone" 
+                     placeholder="+1 (555) 123-4567" />
+            </div>
+            
+            <div class="form-group">
+              <label>Appointment/Booking Link</label>
+              <input type="url" id="appointment_link" name="appointment_link" 
+                     placeholder="https://example.com/book" />
+              <div class="help-text">URL for booking appointments or scheduling</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Call-to-Actions Section -->
+        <div style="margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #e5e7eb;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">🔘 Call-to-Actions (CTAs)</h3>
+          
+          <div class="form-group">
+            <label>CTA Tree (JSON) - Tree-based Structure</label>
+            <textarea id="cta_tree" name="cta_tree" style="min-height: 300px; font-family: monospace;"
+                      placeholder='{"learn_services": {"id": "learn_services", "label": "Learn About Services", "action": "show_children", "children": ["digital_agency", "website_design"]}, ...}'></textarea>
+            <div class="help-text">
+              <strong>Tree-based CTA structure.</strong> Each CTA has: id, label, action (show_children/redirect/send), children (array of child IDs), url (if redirect), message (if send).
+              See team lead's document for complete example.
+            </div>
+          </div>
+        </div>
+
+        <!-- Features Section -->
+        <div style="margin-bottom: 32px;">
+          <h3 style="margin-bottom: 20px; color: #374151; font-size: 18px;">⚙️ Features</h3>
+          
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="voice_enabled" name="voice_enabled" value="true" />
+              Enable Voice Bot (Phone Calls)
+            </label>
+            <div class="help-text">Check this to enable phone call functionality for this business. Not all tenants need voice capabilities.</div>
+          </div>
         </div>
         
         <div class="btn-group">
@@ -560,6 +617,53 @@
     const API_BASE = window.location.protocol === 'file:' 
       ? 'http://localhost:8000'
       : window.location.origin;
+    
+    // Handle logo file upload and convert to base64
+    document.getElementById('business_logo_file').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) {
+        clearLogo();
+        return;
+      }
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        showAlert('Please select an image file (PNG, JPG, SVG, etc.)', 'error');
+        e.target.value = '';
+        return;
+      }
+      
+      // Validate file size (max 2MB)
+      if (file.size > 2 * 1024 * 1024) {
+        showAlert('Image file size must be less than 2MB', 'error');
+        e.target.value = '';
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const base64 = event.target.result;
+        document.getElementById('business_logo').value = base64;
+        
+        // Show preview
+        const preview = document.getElementById('logoPreview');
+        const previewImg = document.getElementById('logoPreviewImg');
+        previewImg.src = base64;
+        preview.style.display = 'block';
+      };
+      reader.onerror = function() {
+        showAlert('Error reading file. Please try again.', 'error');
+        e.target.value = '';
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // Clear logo function
+    function clearLogo() {
+      document.getElementById('business_logo_file').value = '';
+      document.getElementById('business_logo').value = '';
+      document.getElementById('logoPreview').style.display = 'none';
+    }
 
     // Admin API Key - Get from localStorage or input field
     let ADMIN_API_KEY = localStorage.getItem('admin_api_key');
@@ -617,28 +721,6 @@
       }
     }
 
-    const DEFAULT_PRIMARY_CTAS = [
-      { label: "Book an Appointment", action: "send" },
-      { label: "Speak to Sales", action: "send" },
-      { label: "Send More Information", action: "show_secondary" },
-    ];
-
-    const DEFAULT_SECONDARY_CTAS = [
-      { label: "Website Design Services", action: "send" },
-      { label: "Digital Agency Services", action: "send" },
-      { label: "Business Growth Services", action: "send" },
-      { label: "CRM Software Platform", action: "send" },
-      {
-        label: "All of the Above",
-        action: "send",
-        message: "Can you explain Website Design Services, Digital Agency Services, Business Growth Services, CRM Software Platform?",
-      },
-    ];
-
-    function setDefaultCtas() {
-      document.getElementById('primary_ctas').value = JSON.stringify(DEFAULT_PRIMARY_CTAS, null, 2);
-      document.getElementById('secondary_ctas').value = JSON.stringify(DEFAULT_SECONDARY_CTAS, null, 2);
-    }
     
     function showAlert(message, type = 'info') {
       const container = document.getElementById('alertContainer');
@@ -651,6 +733,7 @@
     function clearForm() {
       document.getElementById('businessForm').reset();
       document.getElementById('theme_color').value = '#2563eb';
+      clearLogo();
       setDefaultCtas();
     }
     
@@ -678,23 +761,11 @@ Your role is to help potential customers understand how GoAccel can help their h
       document.getElementById('website_url').value = 'https://warmprospect.com/goaccel-website/';
       document.getElementById('contact_email').value = 'info@goaccel.com';
       document.getElementById('contact_phone').value = '855.915.0747';
+      document.getElementById('chatbot_button_text').value = 'Chat with us';
+      clearLogo();
       document.getElementById('theme_color').value = '#667eea';
       document.getElementById('widget_position').value = 'center';
       
-      // Set GoAccel-specific CTAs
-      document.getElementById('primary_ctas').value = JSON.stringify([
-        {"label": "Get Free Visibility Scan", "action": "send", "message": "I'd like to get a free visibility scan for my business."},
-        {"label": "Book a Growth Call", "action": "send", "message": "I want to book a 15-minute growth call to learn more."},
-        {"label": "Learn About Services", "action": "show_secondary"}
-      ], null, 2);
-      
-      document.getElementById('secondary_ctas').value = JSON.stringify([
-        {"label": "Digital Agency Solutions", "action": "send", "message": "Tell me about your digital agency solutions and website design services."},
-        {"label": "CRM Software", "action": "send", "message": "I want to learn about your CRM software for home services businesses."},
-        {"label": "Marketing Automation", "action": "send", "message": "How does your marketing automation work?"},
-        {"label": "Industries We Serve", "action": "send", "message": "Which industries do you serve?"},
-        {"label": "Pricing Information", "action": "send", "message": "What are your pricing options?"}
-      ], null, 2);
       
       // Update integration code
       updateIntegrationCode('goaccel-website');
@@ -793,16 +864,22 @@ Your role is to help potential customers understand how GoAccel can help their h
         document.getElementById('website_url').value = config.website_url || '';
         document.getElementById('contact_email').value = config.contact_email || '';
         document.getElementById('contact_phone').value = config.contact_phone || '';
-        document.getElementById('primary_ctas').value = JSON.stringify(
-          config.primary_ctas || DEFAULT_PRIMARY_CTAS,
-          null,
-          2
-        );
-        document.getElementById('secondary_ctas').value = JSON.stringify(
-          config.secondary_ctas || DEFAULT_SECONDARY_CTAS,
-          null,
-          2
-        );
+        document.getElementById('chatbot_button_text').value = config.chatbot_button_text || '';
+        
+        // Handle logo (base64 or URL)
+        const logoValue = config.business_logo || '';
+        if (logoValue) {
+          document.getElementById('business_logo').value = logoValue;
+          // If it's base64 (starts with data:), show preview
+          if (logoValue.startsWith('data:image/')) {
+            const preview = document.getElementById('logoPreview');
+            const previewImg = document.getElementById('logoPreviewImg');
+            previewImg.src = logoValue;
+            preview.style.display = 'block';
+          }
+        } else {
+          clearLogo();
+        }
         
         // Load CTA tree if available
         document.getElementById('cta_tree').value = JSON.stringify(
@@ -916,21 +993,15 @@ Your role is to help potential customers understand how GoAccel can help their h
       
       const formData = new FormData(e.target);
       const data = Object.fromEntries(formData.entries());
-      let primaryCtas;
-      let secondaryCtas;
       let ctaTree = {};
       try {
-        primaryCtas = JSON.parse(data.primary_ctas || "[]");
-        secondaryCtas = JSON.parse(data.secondary_ctas || "[]");
         if (data.cta_tree && data.cta_tree.trim()) {
           ctaTree = JSON.parse(data.cta_tree);
         }
       } catch (err) {
-        showAlert('CTAs and CTA Tree must be valid JSON.', 'error');
+        showAlert('CTA Tree must be valid JSON.', 'error');
         return;
       }
-      data.primary_ctas = primaryCtas;
-      data.secondary_ctas = secondaryCtas;
       data.cta_tree = ctaTree;
       data.voice_enabled = data.voice_enabled === 'true' || data.voice_enabled === true;
       
@@ -1135,7 +1206,6 @@ Your role is to help potential customers understand how GoAccel can help their h
     });
     
     // Load businesses on page load
-    setDefaultCtas();
     updateIntegrationCodeOnLoad();
     loadBusinesses();
   </script>

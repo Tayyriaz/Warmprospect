@@ -86,17 +86,7 @@ Your role is to help potential customers understand how Sidhya Asia's products c
     "contact_email": "info@sidhyaasia.com",
     "contact_phone": "+91 99 444 798 55",
     "theme_color": "#FFA500",  # Orange/Yellow theme (matching their brand)
-    "widget_position": "center",
-    "primary_ctas": [
-        {"label": "Request Product Information", "action": "send", "message": "I'd like to know more about your concrete solutions and construction chemicals."},
-        {"label": "Get Technical Support", "action": "send", "message": "I need technical support for my construction project."},
-        {"label": "View Product Categories", "action": "show_secondary"}
-    ],
-    "secondary_ctas": [
-        {"label": "Concrete Solutions", "action": "send", "message": "Tell me about your concrete solutions products."},
-        {"label": "Precast Solutions", "action": "send", "message": "I want to know about your precast solutions."},
-        {"label": "Tunnel Solutions", "action": "send", "message": "What tunnel solutions do you offer?"},
-        {"label": "Interlock & Tiles Solutions", "action": "send", "message": "Tell me about your interlock and tiles solutions."},
+    "widget_position": "center"
         {"label": "Contact Sales Team", "action": "send", "message": "I'd like to speak with your sales team."},
         {"label": "Quality Certifications", "action": "send", "message": "What quality certifications do you have?"}
     ]
