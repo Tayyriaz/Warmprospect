@@ -1,9 +1,9 @@
 {
 	"info": {
-		"name": "WarmProspect Chatbot Platform API",
-		"description": "Complete API collection for WarmProspect Chatbot Platform - Multi-tenant AI concierge system",
+		"name": "GoAccel Chatbot Platform API",
+		"description": "Complete API collection for GoAccel Chatbot Platform - Multi-tenant AI concierge system",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "warmprospect"
+		"_exporter_id": "goaccel"
 	},
 	"item": [
 		{
@@ -104,6 +104,34 @@
 						"description": "Test RAG retrieval for a specific business"
 					},
 					"response": []
+				},
+				{
+					"name": "Handle CTA Click",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"business_id\": \"example_business\",\n  \"session_id\": \"user_123\",\n  \"cta_id\": \"learn_services\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat/cta",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "cta"]
+						},
+						"description": "Handle CTA click - return children CTAs for the clicked CTA. Tree-based approach: Frontend sends CTA ID, backend returns children.\n\n**Required Fields:**\n- `business_id`: Identifies which business's chatbot to use\n- `cta_id`: ID of the clicked CTA\n- `session_id`: (optional) Session ID for analytics tracking\n\n**Response:**\n- `response`: Response message\n- `ctas`: Array of child CTA objects for the clicked CTA"
+					},
+					"response": []
 				}
 			],
 			"description": "Public endpoints that don't require authentication"
@@ -128,7 +156,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"business_id\": \"example_business\",\n  \"business_name\": \"Example Business Name\",\n  \"system_prompt\": \"You are a friendly AI assistant for Example Business.\",\n  \"greeting_message\": \"Welcome! How can I help you today?\",\n  \"appointment_link\": \"https://calendly.com/example\",\n  \"primary_goal\": \"Lead generation and customer support\",\n  \"personality\": \"Friendly, professional, and helpful\",\n  \"privacy_statement\": \"We respect your privacy...\",\n  \"theme_color\": \"#2563eb\",\n  \"widget_position\": \"center\",\n  \"website_url\": \"https://example.com\",\n  \"contact_email\": \"contact@example.com\",\n  \"contact_phone\": \"+1234567890\",\n  \"primary_ctas\": [\n    {\"label\": \"Book an Appointment\", \"action\": \"send\"},\n    {\"label\": \"Speak to Sales\", \"action\": \"send\"},\n    {\"label\": \"Send More Information\", \"action\": \"show_secondary\"}\n  ],\n  \"secondary_ctas\": [\n    {\"label\": \"Service 1\", \"action\": \"send\"},\n    {\"label\": \"Service 2\", \"action\": \"send\"}\n  ]\n}",
+							"raw": "{\n  \"business_id\": \"example_business\",\n  \"business_name\": \"Example Business Name\",\n  \"system_prompt\": \"You are a friendly AI assistant for Example Business.\",\n  \"greeting_message\": \"Welcome! How can I help you today?\",\n  \"appointment_link\": \"https://calendly.com/example\",\n  \"primary_goal\": \"Lead generation and customer support\",\n  \"personality\": \"Friendly, professional, and helpful\",\n  \"privacy_statement\": \"We respect your privacy...\",\n  \"theme_color\": \"#2563eb\",\n  \"widget_position\": \"center\",\n  \"website_url\": \"https://example.com\",\n  \"contact_email\": \"contact@example.com\",\n  \"contact_phone\": \"+1234567890\",\n  \"voice_enabled\": false,\n  \"cta_tree\": {\n    \"get_started\": {\n      \"id\": \"get_started\",\n      \"label\": \"Get Started\",\n      \"action\": \"show_children\",\n      \"children\": [\"learn_more\", \"book_call\"]\n    },\n    \"learn_more\": {\n      \"id\": \"learn_more\",\n      \"label\": \"Learn More\",\n      \"action\": \"send\",\n      \"message\": \"Tell me more about your services\"\n    },\n    \"book_call\": {\n      \"id\": \"book_call\",\n      \"label\": \"Book a Call\",\n      \"action\": \"redirect\",\n      \"url\": \"https://calendly.com/example\"\n    }\n  }\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -140,7 +168,7 @@
 							"host": ["{{base_url}}"],
 							"path": ["admin", "business"]
 						},
-						"description": "Create or update a business configuration. If `website_url` is provided, automatically triggers knowledge base scraping in the background.\n\n**Required Fields:**\n- `business_id`: Unique identifier for the business\n\n**Optional Fields:**\n- `business_name`: Display name for the business\n- `system_prompt`: Business-specific system prompt/instructions\n- `greeting_message`: Initial greeting message\n- `appointment_link`: URL for appointment booking\n- `primary_goal`: Primary business goal\n- `personality`: Personality description\n- `privacy_statement`: Privacy statement text\n- `theme_color`: Theme color (hex code)\n- `widget_position`: Widget position (center, bottom-right, etc.)\n- `website_url`: Website URL for knowledge base scraping\n- `contact_email`: Contact email\n- `contact_phone`: Contact phone number\n- `primary_ctas`: Array of primary CTA objects\n- `secondary_ctas`: Array of secondary CTA objects"
+						"description": "Create or update a business configuration. If `website_url` is provided, automatically triggers knowledge base scraping in the background.\n\n**Required Fields:**\n- `business_id`: Unique identifier for the business\n- `business_name`: Display name for the business\n- `system_prompt`: Business-specific system prompt/instructions\n\n**Optional Fields:**\n- `greeting_message`: Initial greeting message\n- `appointment_link`: URL for appointment booking\n- `primary_goal`: Primary business goal\n- `personality`: Personality description\n- `privacy_statement`: Privacy statement text\n- `theme_color`: Theme color (hex code)\n- `widget_position`: Widget position (center, bottom-right, etc.)\n- `website_url`: Website URL for knowledge base scraping\n- `contact_email`: Contact email\n- `contact_phone`: Contact phone number\n- `primary_ctas`: Array of primary CTA objects (legacy, use cta_tree instead)\n- `secondary_ctas`: Array of secondary CTA objects (legacy, use cta_tree instead)\n- `cta_tree`: JSON object defining multi-level CTA tree structure\n- `voice_enabled`: Boolean to enable voice bot (phone calls) for this business"
 					},
 					"response": []
 				},
@@ -244,6 +272,59 @@
 				}
 			],
 			"description": "Admin endpoints protected by API key authentication. Use X-Admin-API-Key header."
+		},
+		{
+			"name": "Analytics Endpoints",
+			"item": [
+				{
+					"name": "Get Session Analytics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/analytics/session/:session_id",
+							"host": ["{{base_url}}"],
+							"path": ["api", "analytics", "session", ":session_id"],
+							"variable": [
+								{
+									"key": "session_id",
+									"value": "user_123"
+								}
+							]
+						},
+						"description": "Get analytics metrics for a specific session. Rate limited to 30 requests per minute.\n\n**Response:**\n- `session_id`: Session identifier\n- `metrics`: Session metrics (message count, CTA clicks, etc.)\n- `conversation_plan`: Conversation plan progress\n- `current_state`: Current conversation state\n- `intent`: Detected intent\n- `sentiment`: Sentiment analysis"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Business Analytics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/analytics/business/:business_id?hours=24",
+							"host": ["{{base_url}}"],
+							"path": ["api", "analytics", "business", ":business_id"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							],
+							"query": [
+								{
+									"key": "hours",
+									"value": "24",
+									"description": "Time range in hours (default: 24)"
+								}
+							]
+						},
+						"description": "Get aggregated analytics for a business. Rate limited to 30 requests per minute.\n\n**Query Parameters:**\n- `hours`: Time range in hours (default: 24)\n\n**Response:**\n- `business_id`: Business identifier\n- `time_range_hours`: Time range used\n- Aggregated metrics (total sessions, messages, CTAs clicked, etc.)"
+					},
+					"response": []
+				}
+			],
+			"description": "Analytics endpoints for tracking session and business metrics. Rate limited to 30 requests per minute."
 		},
 		{
 			"name": "Voice Endpoints",
@@ -359,7 +440,7 @@
 	"variable": [
 		{
 			"key": "base_url",
-			"value": "http://72.52.132.145:8000/",
+			"value": "https://wpgrowth.site:8000",
 			"type": "string"
 		},
 		{

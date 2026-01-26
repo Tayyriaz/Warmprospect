@@ -72,18 +72,17 @@ class GoAccelRetriever:
 
 def format_context(hits: List[Dict[str, Any]]) -> Optional[str]:
     """
-    Builds a concise context block with citations.
+    Builds a concise context block without source citations.
+    Sources are not included to prevent the AI from mentioning URLs or sources.
     """
     if not hits:
         return None
     lines = []
     for h in hits:
         snippet = h.get("text", "").strip()
-        url = h.get("url", "")
-        title = h.get("title", "")
         if len(snippet) > 500:
             snippet = snippet[:500] + "..."
-        cite = url or title
-        lines.append(f"- {snippet} (source: {cite})")
+        # Only include the text snippet, no source/URL information
+        lines.append(f"- {snippet}")
     return "Context:\n" + "\n".join(lines)
 
