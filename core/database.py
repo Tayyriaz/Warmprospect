@@ -26,6 +26,13 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/goaccel_db",
 )
 
+# Force synchronous psycopg2 driver (not asyncpg)
+# SQLAlchemy might try to use asyncpg if the URL doesn't specify a driver
+if DATABASE_URL.startswith("postgresql://") and "psycopg2" not in DATABASE_URL and "asyncpg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+
 # Create engine
 engine = create_engine(DATABASE_URL, echo=False)
 
