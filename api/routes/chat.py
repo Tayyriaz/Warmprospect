@@ -23,6 +23,9 @@ from core.cta_tree import detect_intent_from_message
 from core_tools.crm_functions import CRMTools
 
 router = APIRouter()
+
+# Limiter - will use app.state.limiter from main.py via request object
+# The @limiter.limit decorator accesses app.state.limiter automatically
 limiter = Limiter(key_func=get_remote_address)
 
 # Initialize CRM Tool Handler
@@ -78,12 +81,30 @@ def init_chat_router(client, model_name: str, max_history_turns: int):
 
 
 @router.post("/chat")
-@limiter.limit("20/minute")
 async def chat_endpoint(request: Request):
     """
     Main API endpoint to handle incoming chat messages, manages state,
     calls Gemini with tools, and handles the function response loop.
     """
+    try:
+        return await _handle_chat_request(request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        full_traceback = traceback.format_exc()
+        print(f"[CRITICAL ERROR] Unhandled exception in chat endpoint: {error_msg}")
+        print(f"[CRITICAL ERROR] Full traceback:\n{full_traceback}")
+        # Return error details for debugging (remove in production)
+        return {
+            "error": error_msg,
+            "traceback": full_traceback.split('\n')[-10:] if len(full_traceback) > 500 else full_traceback.split('\n')
+        }
+
+
+async def _handle_chat_request(request: Request):
+    """Internal handler for chat requests."""
     print(f"[DEBUG] ===== CHAT REQUEST RECEIVED =====")
     try:
         data = await request.json()
@@ -97,6 +118,8 @@ async def chat_endpoint(request: Request):
 
     except Exception as e:
         print(f"[ERROR] Failed to parse request: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail="Invalid request format.")
 
     # Basic validation
@@ -149,6 +172,12 @@ async def chat_endpoint(request: Request):
     session["system_instruction"] = system_instruction
     
     # 4. Get or Create Chat Session
+    # Validate that client and model are initialized
+    if _client is None or _model_name is None:
+        error_msg = "Chat service not initialized. Please check server logs."
+        print(f"[ERROR] {error_msg} - _client={_client is not None}, _model_name={_model_name}")
+        raise HTTPException(status_code=500, detail=error_msg)
+    
     stored_history = session.get("history", [])
     chat = get_or_create_chat_session(
         session_key,
@@ -213,6 +242,9 @@ async def chat_endpoint(request: Request):
     
     def run_conversation_with_chat_recursive(current_contents: List[types.Content]) -> str:
         """Recursive function call handler."""
+        if _client is None or _model_name is None:
+            raise Exception("Chat client not initialized")
+        
         gemini_response = _client.models.generate_content(
             model=_model_name,
             contents=current_contents,
@@ -264,13 +296,17 @@ async def chat_endpoint(request: Request):
         error_text = str(e)
         print(f"!!! Error in chat endpoint: {error_text}")
         import traceback
-        traceback.print_exc()
+        full_traceback = traceback.format_exc()
+        print(f"!!! Full traceback:\n{full_traceback}")
         
+        # Return error details for debugging
         if "quota" in error_text.lower() or "rate limit" in error_text.lower():
             user_friendly = "I'm experiencing high demand right now. Please try again in a moment."
             return {"response": user_friendly}
         
+        # For debugging, return more details
         error_msg = f"Sorry, I encountered an error. Please try again. ({error_text[:100]})"
+        print(f"[ERROR] Returning error message to user: {error_msg}")
         return {"response": error_msg}
     
     # 8. Track assistant message and update analytics

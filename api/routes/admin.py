@@ -58,10 +58,23 @@ def trigger_kb_build(business_id: str, website_url: str):
         # Run the scraping script in background
         # Use absolute path for script
         abs_script_path = os.path.abspath(script_path)
+        
+        # Ensure script path is absolute and exists
+        if not os.path.isabs(abs_script_path):
+            abs_script_path = os.path.abspath(os.path.join(base_dir, script_path))
+        
+        if not os.path.exists(abs_script_path):
+            error_msg = f"Scraping script not found at: {abs_script_path}"
+            print(f"[ERROR] {error_msg}")
+            print(f"[ERROR] Base dir: {base_dir}, Script path: {script_path}")
+            update_scraping_status(business_id, "failed", error_msg, 0)
+            return
+        
         cmd = [sys.executable, abs_script_path, "--business_id", business_id, "--url", website_url]
         print(f"[INFO] Starting KB build for business: {business_id}, URL: {website_url}")
         print(f"[INFO] Command: {' '.join(cmd)}")
         print(f"[INFO] Working directory will be: {base_dir}")
+        print(f"[INFO] Script absolute path: {abs_script_path}")
         update_scraping_status(business_id, "scraping", "Scraping website content... This may take a few minutes.", 10)
         
         # Change to base directory to ensure relative paths work
@@ -88,6 +101,11 @@ def trigger_kb_build(business_id: str, website_url: str):
                 cwd=base_dir,
                 env=dict(os.environ, PYTHONUNBUFFERED="1")  # Ensure output is not buffered
             )
+        except FileNotFoundError as e:
+            error_msg = f"Python executable not found: {sys.executable}. Error: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            update_scraping_status(business_id, "failed", error_msg, 0)
+            return
         finally:
             os.chdir(original_cwd)
         

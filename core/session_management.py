@@ -55,7 +55,13 @@ def get_session(user_id: str) -> Dict[str, Any]:
     Get or create a session for the given user_id.
     Uses Redis if available, falls back to in-memory cache.
     """
-    session = load_session(user_id)
+    def create_default_session():
+        """Factory function to create a new session."""
+        session = initialize_session_state()
+        session["user_id"] = user_id
+        return session
+    
+    session = load_session(user_id, create_default_session)
     if not session:
         session = initialize_session_state()
         session["user_id"] = user_id

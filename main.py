@@ -87,6 +87,9 @@ initialize_default_retriever()
 # Initialize chat router with dependencies
 chat.init_chat_router(client, MODEL_NAME, MAX_HISTORY_TURNS)
 
+# Note: Limiters in routers will use app.state.limiter automatically via request
+# The limiter decorator accesses app.state.limiter through the request object
+
 # Serve static frontend
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

@@ -243,7 +243,7 @@
         <button id="micBtn" class="mic-btn" title="Hold to speak">
            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
         </button>
-        <button id="sendBtn" class="send-btn" disabled>Send</button>
+        <button id="sendBtn" class="send-btn">Send</button>
         <input id="userId" class="hidden" value="demo-user" />
       </div>
       <div class="hint-row">
@@ -359,7 +359,6 @@
           voiceSection.style.display = CHATBOT_CONFIG.voiceEnabled ? 'block' : 'none';
         }
       } catch (err) {
-        console.error('Error loading business config:', err);
         alert('Failed to load business configuration. Redirecting to admin panel...');
         window.location.href = '/admin';
       }
@@ -731,19 +730,14 @@
       inputEl.value = "";
       inputEl.focus();
       sendBtn.disabled = true;
-      document.getElementById("charCount").textContent = "0/300";
+      const charCountEl = document.getElementById("charCount");
+      if (charCountEl) {
+        charCountEl.textContent = "0/300";
+      }
       showTyping();
 
       try {
-        console.log("Sending message to /chat:", {
-          message,
-          user_id: userId,
-          business_id: CHATBOT_CONFIG.businessId
-        });
-        
-        // Use helper
         const chatUrl = getApiUrl('/chat');
-        
         const res = await fetch(chatUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -756,17 +750,13 @@
           }),
         });
         
-        console.log("Response status:", res.status, res.statusText);
-        
         // Check if response is OK
         if (!res.ok) {
           const errorText = await res.text();
-          console.error("API Error:", res.status, errorText);
           throw new Error(`Server error: ${res.status} - ${errorText.substring(0, 100)}`);
         }
         
         const data = await res.json();
-        console.log("Response data:", data);
         const text = data.response || JSON.stringify(data);
 
         // If the bot lists options in text, keep only the first line for display
@@ -780,11 +770,12 @@
         addMessage(displayText, "bot");
 
         // Render CTAs from the backend if provided
-        if (data.ctas && Array.isArray(data.ctas.primary)) {
+        if (data.cta && Array.isArray(data.cta)) {
           // Using dynamic CTA system - CTAs come from backend via cta field
+          addOptionChips(data.cta, "cta");
+        }
       } catch (err) {
         hideTyping();
-        console.error("Chat error:", err);
         let errorMsg = "Error connecting to the assistant. ";
         
         if (window.location.protocol === 'file:') {
@@ -802,25 +793,36 @@
       }
     }
 
-    sendBtn.addEventListener("click", () => sendMessage());
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-
-    inputEl.addEventListener("input", () => {
-      const text = inputEl.value;
-      const max = 300;
-      const trimmed = text.slice(0, max);
-      if (trimmed !== text) {
-        inputEl.value = trimmed;
-      }
-      const current = inputEl.value.trim().length;
-      document.getElementById("charCount").textContent = `${current}/${max}`;
-      sendBtn.disabled = current === 0;
-    });
+    // Attach event listeners
+    if (sendBtn) {
+      sendBtn.addEventListener("click", () => sendMessage());
+    }
+    
+    if (inputEl) {
+      inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+      
+      inputEl.addEventListener("input", () => {
+        const text = inputEl.value;
+        const max = 300;
+        const trimmed = text.slice(0, max);
+        if (trimmed !== text) {
+          inputEl.value = trimmed;
+        }
+        const current = inputEl.value.trim().length;
+        const charCountEl = document.getElementById("charCount");
+        if (charCountEl) {
+          charCountEl.textContent = `${current}/${max}`;
+        }
+        if (sendBtn) {
+          sendBtn.disabled = current === 0;
+        }
+      });
+    }
 
     // Show privacy + greeting based on config so each client feels customized
     // Wait for config to load, then show initial messages
