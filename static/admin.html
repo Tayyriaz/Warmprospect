@@ -8,25 +8,28 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #f5f7fb;
       min-height: 100vh;
-      padding: 20px;
+      padding: 0;
+      margin: 0;
       color: #333;
     }
     .container {
-      max-width: 900px;
-      margin: 0 auto;
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
       background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      overflow: hidden;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: visible;
     }
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 30px;
-      text-align: center;
+      padding: 30px 40px;
+      text-align: left;
       position: relative;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     .header h1 { font-size: 28px; margin-bottom: 8px; }
     .header p { opacity: 0.9; font-size: 14px; }
@@ -54,6 +57,8 @@
     }
     .content {
       padding: 40px;
+      max-width: 1400px;
+      margin: 0 auto;
     }
     .form-group {
       margin-bottom: 24px;
@@ -175,6 +180,7 @@
       margin-top: 40px;
       padding-top: 40px;
       border-top: 2px solid #e5e7eb;
+      width: 100%;
     }
     .preview-section h2 {
       margin-bottom: 20px;
@@ -315,7 +321,7 @@
       background: #e5e7eb;
     }
     .modal-large {
-      max-width: 900px;
+      max-width: 1200px;
       max-height: 90vh;
       overflow-y: auto;
     }
@@ -547,7 +553,7 @@
       <div class="preview-section">
         <h2>📋 Configured Businesses</h2>
         <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px; background: #f0f9ff; padding: 12px; border-radius: 8px; border-left: 4px solid #2563eb;">
-          💡 <strong>How it works:</strong> Click "Create New Business" to show the form → Fill in your business information → Click "Save Configuration" → Your chatbot is automatically created! Click "Test Chatbot" button to see it in action.
+          💡 <strong>How it works:</strong> Click "Create New Business" to show the form → Fill in your business information → Click "Save Configuration" → Your chatbot is automatically created! Use "Build KB" button to scrape website content for knowledge base. Click "Test Chatbot" button to see it in action.
         </p>
         <div id="businessList" class="business-list"></div>
       </div>

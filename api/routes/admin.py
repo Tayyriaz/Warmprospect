@@ -56,17 +56,38 @@ def trigger_kb_build(business_id: str, website_url: str):
             return
         
         # Run the scraping script in background
-        cmd = [sys.executable, script_path, "--business_id", business_id, "--url", website_url]
+        # Use absolute path for script
+        abs_script_path = os.path.abspath(script_path)
+        cmd = [sys.executable, abs_script_path, "--business_id", business_id, "--url", website_url]
         print(f"[INFO] Starting KB build for business: {business_id}, URL: {website_url}")
         print(f"[INFO] Command: {' '.join(cmd)}")
+        print(f"[INFO] Working directory will be: {base_dir}")
         update_scraping_status(business_id, "scraping", "Scraping website content... This may take a few minutes.", 10)
         
         # Change to base directory to ensure relative paths work
         original_cwd = os.getcwd()
         try:
             os.chdir(base_dir)
+            print(f"[DEBUG] Changed working directory to: {base_dir}")
+            print(f"[DEBUG] Current directory: {os.getcwd()}")
+            print(f"[DEBUG] Python executable: {sys.executable}")
+            print(f"[DEBUG] Script path (absolute): {abs_script_path}")
+            print(f"[DEBUG] Script exists: {os.path.exists(abs_script_path)}")
+            
+            # Check if script is readable
+            if not os.access(abs_script_path, os.R_OK):
+                raise Exception(f"Script is not readable: {abs_script_path}")
+            
             # Increase timeout to 700 seconds (10+ minutes)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=700)
+            # Use shell=False but ensure paths are absolute
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=700,
+                cwd=base_dir,
+                env=dict(os.environ, PYTHONUNBUFFERED="1")  # Ensure output is not buffered
+            )
         finally:
             os.chdir(original_cwd)
         
