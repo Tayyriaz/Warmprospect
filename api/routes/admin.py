@@ -144,37 +144,42 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
     try:
         data = await request.json()
         
-        business_id = data.get("businessId")
+        # Accept both camelCase (businessId) and snake_case (business_id) for compatibility
+        business_id = data.get("businessId") or data.get("business_id")
         if not business_id:
-            raise HTTPException(status_code=400, detail="businessId is required")
+            raise HTTPException(
+                status_code=400, 
+                detail="businessId (or business_id) is required. Please include either 'businessId' or 'business_id' in your request."
+            )
         
-        website_url = data.get("websiteUrl")
+        # Accept both camelCase and snake_case for all fields
+        website_url = data.get("websiteUrl") or data.get("website_url")
         
         config = config_manager.create_or_update_business(
             business_id=business_id,
-            business_name=data.get("businessName", business_id),
-            system_prompt=data.get("systemPrompt", ""),
-            greeting_message=data.get("greetingMessage"),
-            appointment_link=data.get("appointmentLink"),
-            primary_goal=data.get("primaryGoal"),
+            business_name=data.get("businessName") or data.get("business_name") or business_id,
+            system_prompt=data.get("systemPrompt") or data.get("system_prompt") or "",
+            greeting_message=data.get("greetingMessage") or data.get("greeting_message"),
+            appointment_link=data.get("appointmentLink") or data.get("appointment_link"),
+            primary_goal=data.get("primaryGoal") or data.get("primary_goal"),
             personality=data.get("personality"),
-            privacy_statement=data.get("privacyStatement"),
-            theme_color=data.get("themeColor", "#2563eb"),
-            widget_position=data.get("widgetPosition", "center"),
+            privacy_statement=data.get("privacyStatement") or data.get("privacy_statement"),
+            theme_color=data.get("themeColor") or data.get("theme_color") or "#2563eb",
+            widget_position=data.get("widgetPosition") or data.get("widget_position") or "center",
             website_url=website_url,
-            contact_email=data.get("contactEmail"),
-            contact_phone=data.get("contactPhone"),
-            cta_tree=data.get("ctaTree"),
-            tertiary_ctas=data.get("tertiaryCtas"),
-            nested_ctas=data.get("nestedCtas"),
+            contact_email=data.get("contactEmail") or data.get("contact_email"),
+            contact_phone=data.get("contactPhone") or data.get("contact_phone"),
+            cta_tree=data.get("ctaTree") or data.get("cta_tree"),
+            tertiary_ctas=data.get("tertiaryCtas") or data.get("tertiary_ctas"),
+            nested_ctas=data.get("nestedCtas") or data.get("nested_ctas"),
             rules=data.get("rules"),
-            custom_routes=data.get("customRoutes"),
-            available_services=data.get("availableServices"),
-            topic_ctas=data.get("topicCtas"),
+            custom_routes=data.get("customRoutes") or data.get("custom_routes"),
+            available_services=data.get("availableServices") or data.get("available_services"),
+            topic_ctas=data.get("topicCtas") or data.get("topic_ctas"),
             experiments=data.get("experiments"),
-            voice_enabled=data.get("voiceEnabled", False),
-            chatbot_button_text=data.get("chatbotButtonText"),
-            business_logo=data.get("businessLogo"),
+            voice_enabled=data.get("voiceEnabled") if "voiceEnabled" in data else (data.get("voice_enabled") if "voice_enabled" in data else False),
+            chatbot_button_text=data.get("chatbotButtonText") or data.get("chatbot_button_text"),
+            business_logo=data.get("businessLogo") or data.get("business_logo"),
         )
         
         return {
