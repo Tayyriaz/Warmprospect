@@ -1,5 +1,5 @@
 [Unit]
-Description=GoAccel Chatbot API
+Description=GoAccel Chatbot Service
 After=network.target postgresql.service redis-server.service
 Requires=postgresql.service
 Wants=redis-server.service
