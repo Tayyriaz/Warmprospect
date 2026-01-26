@@ -266,6 +266,23 @@
     .btn-close:hover {
       background: #e5e7eb;
     }
+    .modal-large {
+      max-width: 900px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-large .modal-content {
+      padding: 0;
+    }
+    .delete-modal .modal {
+      max-width: 450px;
+    }
+    .delete-modal .modal h2 {
+      color: #ef4444;
+    }
+    .delete-modal .modal-actions {
+      justify-content: flex-end;
+    }
   </style>
 </head>
 <body>
@@ -278,6 +295,14 @@
     <div class="content">
       <div id="alertContainer"></div>
       
+      <!-- Admin API Key Input -->
+      <div class="form-group" style="background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 24px; border: 2px solid #e5e7eb;">
+        <label>Admin API Key <span class="required">*</span></label>
+        <input type="password" id="adminApiKey" placeholder="Enter Admin API Key from .env file" 
+               style="margin-bottom: 8px;" />
+        <div class="help-text">Enter your Admin API Key to access the configuration panel</div>
+      </div>
+      
       <!-- Toggle Form Button -->
       <div style="margin-bottom: 20px; text-align: center;">
         <button id="toggleFormBtn" class="btn btn-primary" onclick="toggleForm()">
@@ -285,7 +310,15 @@
         </button>
       </div>
       
-      <form id="businessForm" style="display: none;">
+      <!-- Business Form Modal -->
+      <div id="businessFormModal" class="modal-overlay">
+        <div class="modal modal-large">
+          <div style="padding: 32px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+              <h2 style="margin: 0;">🤖 Business Configuration</h2>
+              <button class="btn btn-close" onclick="toggleForm()" style="padding: 8px 16px;">✕ Close</button>
+            </div>
+            <form id="businessForm">
         <div class="form-group">
           <label>Business ID <span class="required">*</span></label>
           <input type="text" id="business_id" name="business_id" required 
@@ -415,7 +448,10 @@
           <button type="button" class="btn btn-secondary" onclick="loadGoAccelTemplate()">🚀 Load GoAccel Template</button>
           <button type="button" class="btn btn-secondary" onclick="clearForm()">🔄 Clear Form</button>
         </div>
-      </form>
+            </form>
+          </div>
+        </div>
+      </div>
       
       <div class="preview-section">
         <h2>📋 Configured Businesses</h2>
@@ -456,31 +492,70 @@
     </div>
   </div>
 
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="modal-overlay delete-modal">
+    <div class="modal">
+      <h2>⚠️ Delete Business</h2>
+      <p id="deleteModalMessage">Are you sure you want to delete this business? This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-close" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Detects the current origin or defaults to localhost (port 80)
     const API_BASE = window.location.protocol === 'file:' 
       ? 'http://localhost:8000'
       : window.location.origin;
 
-    // Admin API Key - Get from localStorage or prompt user
+    // Admin API Key - Get from localStorage or input field
     let ADMIN_API_KEY = localStorage.getItem('admin_api_key');
     
-    // If no API key in localStorage, prompt user to enter it
-    if (!ADMIN_API_KEY) {
-      const storedKey = prompt('Enter Admin API Key (from .env file):');
-      if (storedKey) {
-        ADMIN_API_KEY = storedKey;
-        localStorage.setItem('admin_api_key', storedKey);
+    // Function to get API key from input field
+    function getApiKeyFromInput() {
+      const input = document.getElementById('adminApiKey');
+      if (input && input.value) {
+        ADMIN_API_KEY = input.value;
+        localStorage.setItem('admin_api_key', input.value);
+        return input.value;
       }
+      return ADMIN_API_KEY;
+    }
+    
+    // Update API key when input changes
+    document.getElementById('adminApiKey').addEventListener('input', function(e) {
+      if (e.target.value) {
+        ADMIN_API_KEY = e.target.value;
+        localStorage.setItem('admin_api_key', e.target.value);
+      }
+    });
+    
+    // Load API key from localStorage into input field
+    if (ADMIN_API_KEY) {
+      document.getElementById('adminApiKey').value = ADMIN_API_KEY;
     }
     
     // Helper function to get headers with API key
     function getAdminHeaders() {
       const headers = { 'Content-Type': 'application/json' };
-      if (ADMIN_API_KEY) {
-        headers['X-Admin-API-Key'] = ADMIN_API_KEY;
+      const apiKey = getApiKeyFromInput();
+      if (apiKey) {
+        headers['X-Admin-API-Key'] = apiKey;
       }
       return headers;
+    }
+    
+    // Function to show error if API key is missing
+    function requireApiKey() {
+      const apiKey = getApiKeyFromInput();
+      if (!apiKey) {
+        showAlert('Please enter your Admin API Key in the field above.', 'error');
+        document.getElementById('adminApiKey').focus();
+        return false;
+      }
+      return true;
     }
 
     // Update integration code display with dynamic API_BASE
@@ -577,6 +652,8 @@ Your role is to help potential customers understand how GoAccel can help their h
     }
     
     async function loadBusinesses() {
+      if (!requireApiKey()) return;
+      
       try {
         console.log('Loading businesses from:', `${API_BASE}/admin/business`);
         const res = await fetch(`${API_BASE}/admin/business`, {
@@ -586,16 +663,13 @@ Your role is to help potential customers understand how GoAccel can help their h
         if (!res.ok) {
           const errorText = await res.text();
           if (res.status === 403 || res.status === 500) {
-            // API key issue - clear and prompt again
+            // API key issue - clear and show error
             localStorage.removeItem('admin_api_key');
             ADMIN_API_KEY = null;
-            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
-            if (newKey) {
-              ADMIN_API_KEY = newKey;
-              localStorage.setItem('admin_api_key', newKey);
-              // Retry
-              return loadBusinesses();
-            }
+            document.getElementById('adminApiKey').value = '';
+            showAlert('Invalid or missing API key. Please enter a valid Admin API Key.', 'error');
+            document.getElementById('adminApiKey').focus();
+            return;
           }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
@@ -618,7 +692,7 @@ Your role is to help potential customers understand how GoAccel can help their h
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.business_id}')">Edit</button>
               <a href="${API_BASE}/bot?business_id=${business.business_id}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
-              <button class="btn btn-danger btn-small" onclick="deleteBusiness('${business.business_id}')">Delete</button>
+              <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.business_id}')">Delete</button>
             </div>
           </div>
         `).join('');
@@ -629,6 +703,8 @@ Your role is to help potential customers understand how GoAccel can help their h
     }
     
     async function loadBusiness(businessId) {
+      if (!requireApiKey()) return;
+      
       try {
         console.log('Loading business:', businessId);
         const res = await fetch(`${API_BASE}/admin/business/${businessId}`, {
@@ -640,12 +716,10 @@ Your role is to help potential customers understand how GoAccel can help their h
           if (res.status === 403 || res.status === 500) {
             localStorage.removeItem('admin_api_key');
             ADMIN_API_KEY = null;
-            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
-            if (newKey) {
-              ADMIN_API_KEY = newKey;
-              localStorage.setItem('admin_api_key', newKey);
-              return loadBusiness(businessId);
-            }
+            document.getElementById('adminApiKey').value = '';
+            showAlert('Invalid or missing API key. Please enter a valid Admin API Key.', 'error');
+            document.getElementById('adminApiKey').focus();
+            return;
           }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
@@ -692,11 +766,13 @@ Your role is to help potential customers understand how GoAccel can help their h
         // Load voice_enabled checkbox
         document.getElementById('voice_enabled').checked = config.voice_enabled || false;
         
-        // Show form when editing
-        document.getElementById('businessForm').style.display = 'block';
-        document.getElementById('toggleFormBtn').textContent = '❌ Cancel';
-        document.getElementById('toggleFormBtn').classList.remove('btn-primary');
-        document.getElementById('toggleFormBtn').classList.add('btn-secondary');
+        // Show form modal when editing
+        const modal = document.getElementById('businessFormModal');
+        const btn = document.getElementById('toggleFormBtn');
+        modal.classList.add('active');
+        btn.textContent = '❌ Cancel';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
         
         showAlert('Business configuration loaded! <a href="' + API_BASE + '/bot?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
       } catch (err) {
@@ -705,10 +781,32 @@ Your role is to help potential customers understand how GoAccel can help their h
       }
     }
     
-    async function deleteBusiness(businessId) {
-      if (!confirm(`Are you sure you want to delete business "${businessId}"?`)) {
+    let pendingDeleteBusinessId = null;
+    
+    function showDeleteModal(businessId) {
+      pendingDeleteBusinessId = businessId;
+      const modal = document.getElementById('deleteModal');
+      const messageEl = document.getElementById('deleteModalMessage');
+      messageEl.textContent = `Are you sure you want to delete business "${businessId}"? This action cannot be undone.`;
+      modal.classList.add('active');
+    }
+    
+    function closeDeleteModal() {
+      const modal = document.getElementById('deleteModal');
+      modal.classList.remove('active');
+      pendingDeleteBusinessId = null;
+    }
+    
+    async function confirmDelete() {
+      if (!pendingDeleteBusinessId) return;
+      
+      if (!requireApiKey()) {
+        closeDeleteModal();
         return;
       }
+      
+      const businessId = pendingDeleteBusinessId;
+      closeDeleteModal();
       
       try {
         console.log('Deleting business:', businessId);
@@ -722,12 +820,10 @@ Your role is to help potential customers understand how GoAccel can help their h
           if (res.status === 403 || res.status === 500) {
             localStorage.removeItem('admin_api_key');
             ADMIN_API_KEY = null;
-            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
-            if (newKey) {
-              ADMIN_API_KEY = newKey;
-              localStorage.setItem('admin_api_key', newKey);
-              return deleteBusiness(businessId);
-            }
+            document.getElementById('adminApiKey').value = '';
+            showAlert('Invalid or missing API key. Please enter a valid Admin API Key.', 'error');
+            document.getElementById('adminApiKey').focus();
+            return;
           }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
@@ -764,6 +860,8 @@ Your role is to help potential customers understand how GoAccel can help their h
     
     document.getElementById('businessForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      
+      if (!requireApiKey()) return;
       
       const formData = new FormData(e.target);
       const data = Object.fromEntries(formData.entries());
@@ -804,14 +902,10 @@ Your role is to help potential customers understand how GoAccel can help their h
           if (res.status === 403 || res.status === 500) {
             localStorage.removeItem('admin_api_key');
             ADMIN_API_KEY = null;
-            const newKey = prompt('Invalid or missing API key. Enter Admin API Key:');
-            if (newKey) {
-              ADMIN_API_KEY = newKey;
-              localStorage.setItem('admin_api_key', newKey);
-              // Retry by re-submitting form
-              e.target.dispatchEvent(new Event('submit', { cancelable: true }));
-              return;
-            }
+            document.getElementById('adminApiKey').value = '';
+            showAlert('Invalid or missing API key. Please enter a valid Admin API Key.', 'error');
+            document.getElementById('adminApiKey').focus();
+            return;
           }
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
@@ -933,23 +1027,40 @@ Your role is to help potential customers understand how GoAccel can help their h
       }, 15 * 60 * 1000);
     }
     
-    // Toggle form visibility
+    // Toggle form modal visibility
     function toggleForm() {
-      const form = document.getElementById('businessForm');
+      const modal = document.getElementById('businessFormModal');
       const btn = document.getElementById('toggleFormBtn');
-      if (form.style.display === 'none') {
-        form.style.display = 'block';
-        btn.textContent = '❌ Cancel';
-        btn.classList.remove('btn-primary');
-        btn.classList.add('btn-secondary');
-      } else {
-        form.style.display = 'none';
+      if (modal.classList.contains('active')) {
+        modal.classList.remove('active');
         btn.textContent = '➕ Create New Business';
         btn.classList.remove('btn-secondary');
         btn.classList.add('btn-primary');
         clearForm();
+      } else {
+        modal.classList.add('active');
+        btn.textContent = '❌ Cancel';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
       }
     }
+    
+    // Close form modal when clicking overlay
+    document.getElementById('businessFormModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        toggleForm();
+      }
+    });
+    
+    // Set up delete confirmation button
+    document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDelete);
+    
+    // Close delete modal when clicking overlay
+    document.getElementById('deleteModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeDeleteModal();
+      }
+    });
     
     // Load businesses on page load
     setDefaultCtas();
