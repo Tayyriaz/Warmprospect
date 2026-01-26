@@ -35,6 +35,9 @@ logs/
 # data/*.faiss
 # data/*.jsonl
 
+# Business configuration files (file-based storage fallback)
+business_configs.json
+
 # Build files
 dist/
 build/
