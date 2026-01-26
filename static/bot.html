@@ -277,6 +277,7 @@
       themeColor: "#2563eb",
       widgetPosition: "center",
       appointmentLink: "https://example.com/book",
+      chatbotButtonText: "Send",
     };
     
     // Generate avatar initials from business name
@@ -307,6 +308,11 @@
         if (footerEl) footerEl.textContent = `Powered by ${businessName} • AI assistant`;
         // Update page title
         document.title = `${businessName} - Chat Assistant`;
+      }
+      
+      // Update chat button text
+      if (CHATBOT_CONFIG.chatbotButtonText && sendBtn) {
+        sendBtn.textContent = CHATBOT_CONFIG.chatbotButtonText;
       }
     }
     
@@ -348,6 +354,7 @@
           widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
           appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
           voiceEnabled: config.voiceEnabled || false, // Check if voice is enabled
+          chatbotButtonText: config.chatbotButtonText || "Send", // Chat button text
         };
         // Apply config immediately
         applyConfig();
