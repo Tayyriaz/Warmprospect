@@ -371,20 +371,20 @@
           
           <div class="form-group">
             <label>Business ID <span class="required">*</span></label>
-            <input type="text" id="business_id" name="business_id" required 
+            <input type="text" id="businessId" name="businessId" required 
                    placeholder="e.g., my-company-123" />
             <div class="help-text">Unique identifier for your business (used in API calls)</div>
           </div>
           
           <div class="form-group">
             <label>Business Name <span class="required">*</span></label>
-            <input type="text" id="business_name" name="business_name" required 
+            <input type="text" id="businessName" name="businessName" required 
                    placeholder="e.g., My Company" />
           </div>
           
           <div class="form-group">
             <label>System Prompt / Instructions <span class="required">*</span></label>
-            <textarea id="system_prompt" name="system_prompt" required
+            <textarea id="systemPrompt" name="systemPrompt" required
                       placeholder="Describe your business, services, products, and how the chatbot should behave. Be specific about what information to share and how to interact with customers."></textarea>
             <div class="help-text">This is the main customization - describe your business, services, and chatbot behavior</div>
           </div>
@@ -397,12 +397,12 @@
           <div class="form-row">
             <div class="form-group">
               <label>Theme Color</label>
-              <input type="color" id="theme_color" name="theme_color" value="#2563eb" />
+              <input type="color" id="themeColor" name="themeColor" value="#2563eb" />
             </div>
             
             <div class="form-group">
               <label>Widget Position</label>
-              <select id="widget_position" name="widget_position">
+              <select id="widgetPosition" name="widgetPosition">
                 <option value="center">Center</option>
                 <option value="bottom-right">Bottom Right</option>
                 <option value="bottom-left">Bottom Left</option>
@@ -412,14 +412,14 @@
           
           <div class="form-group">
             <label>Chatbot Button Text</label>
-            <input type="text" id="chatbot_button_text" name="chatbot_button_text" 
+            <input type="text" id="chatbotButtonText" name="chatbotButtonText" 
                    placeholder="e.g., Chat with us" />
             <div class="help-text">Text displayed on the chatbot button/widget</div>
           </div>
           
           <div class="form-group">
             <label>Business Logo</label>
-            <input type="file" id="business_logo_file" accept="image/*" 
+            <input type="file" id="businessLogoFile" accept="image/*" 
                    style="margin-bottom: 8px;" />
             <div class="help-text">Upload your business logo image (PNG, JPG, SVG, etc.) - Max 2MB</div>
             <div id="logoPreview" style="margin-top: 12px; display: none;">
@@ -428,7 +428,7 @@
                 <button type="button" class="btn btn-secondary btn-small" onclick="clearLogo()">Remove Logo</button>
               </div>
             </div>
-            <input type="hidden" id="business_logo" name="business_logo" />
+            <input type="hidden" id="businessLogo" name="businessLogo" />
           </div>
         </div>
 
@@ -438,7 +438,7 @@
           
           <div class="form-group">
             <label>Greeting Message</label>
-            <input type="text" id="greeting_message" name="greeting_message" 
+            <input type="text" id="greetingMessage" name="greetingMessage" 
                    placeholder="e.g., Hi! How can we help you today?" />
             <div class="help-text">Initial message shown when chat opens</div>
           </div>
@@ -446,7 +446,7 @@
           <div class="form-row">
             <div class="form-group">
               <label>Primary Goal</label>
-              <input type="text" id="primary_goal" name="primary_goal" 
+              <input type="text" id="primaryGoal" name="primaryGoal" 
                      placeholder="e.g., Generate more leads" />
             </div>
             
@@ -459,7 +459,7 @@
           
           <div class="form-group">
             <label>Privacy Statement</label>
-            <textarea id="privacy_statement" name="privacy_statement"
+            <textarea id="privacyStatement" name="privacyStatement"
                       placeholder="We collect your information only to provide better service..."></textarea>
             <div class="help-text">Shown when collecting customer information</div>
           </div>
@@ -472,13 +472,13 @@
           <div class="form-row">
             <div class="form-group">
               <label>Website URL</label>
-              <input type="url" id="website_url" name="website_url" 
+              <input type="url" id="websiteUrl" name="websiteUrl" 
                      placeholder="https://example.com" />
             </div>
             
             <div class="form-group">
               <label>Contact Email</label>
-              <input type="email" id="contact_email" name="contact_email" 
+              <input type="email" id="contactEmail" name="contactEmail" 
                      placeholder="contact@example.com" />
             </div>
           </div>
@@ -486,13 +486,13 @@
           <div class="form-row">
             <div class="form-group">
               <label>Contact Phone</label>
-              <input type="text" id="contact_phone" name="contact_phone" 
+              <input type="text" id="contactPhone" name="contactPhone" 
                      placeholder="+1 (555) 123-4567" />
             </div>
             
             <div class="form-group">
               <label>Appointment/Booking Link</label>
-              <input type="url" id="appointment_link" name="appointment_link" 
+              <input type="url" id="appointmentLink" name="appointmentLink" 
                      placeholder="https://example.com/book" />
               <div class="help-text">URL for booking appointments or scheduling</div>
             </div>
@@ -505,7 +505,7 @@
           
           <div class="form-group">
             <label>CTA Tree (JSON) - Tree-based Structure</label>
-            <textarea id="cta_tree" name="cta_tree" style="min-height: 300px; font-family: monospace;"
+            <textarea id="ctaTree" name="ctaTree" style="min-height: 300px; font-family: monospace;"
                       placeholder='{"learn_services": {"id": "learn_services", "label": "Learn About Services", "action": "show_children", "children": ["digital_agency", "website_design"]}, ...}'></textarea>
             <div class="help-text">
               <strong>Tree-based CTA structure.</strong> Each CTA has: id, label, action (show_children/redirect/send), children (array of child IDs), url (if redirect), message (if send).
@@ -520,7 +520,7 @@
           
           <div class="form-group">
             <label>
-              <input type="checkbox" id="voice_enabled" name="voice_enabled" value="true" />
+              <input type="checkbox" id="voiceEnabled" name="voiceEnabled" value="true" />
               Enable Voice Bot (Phone Calls)
             </label>
             <div class="help-text">Check this to enable phone call functionality for this business. Not all tenants need voice capabilities.</div>
@@ -619,7 +619,7 @@
       : window.location.origin;
     
     // Handle logo file upload and convert to base64
-    document.getElementById('business_logo_file').addEventListener('change', function(e) {
+    document.getElementById('businessLogoFile').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (!file) {
         clearLogo();
@@ -643,7 +643,7 @@
       const reader = new FileReader();
       reader.onload = function(event) {
         const base64 = event.target.result;
-        document.getElementById('business_logo').value = base64;
+        document.getElementById('businessLogo').value = base64;
         
         // Show preview
         const preview = document.getElementById('logoPreview');
@@ -660,8 +660,8 @@
     
     // Clear logo function
     function clearLogo() {
-      document.getElementById('business_logo_file').value = '';
-      document.getElementById('business_logo').value = '';
+      document.getElementById('businessLogoFile').value = '';
+      document.getElementById('businessLogo').value = '';
       document.getElementById('logoPreview').style.display = 'none';
     }
 
@@ -732,16 +732,15 @@
     
     function clearForm() {
       document.getElementById('businessForm').reset();
-      document.getElementById('theme_color').value = '#2563eb';
+      document.getElementById('themeColor').value = '#2563eb';
       clearLogo();
-      setDefaultCtas();
     }
     
     function loadGoAccelTemplate() {
       // Fill all fields with GoAccel default values
-      document.getElementById('business_id').value = 'goaccel-website';
-      document.getElementById('business_name').value = 'GoAccel';
-      document.getElementById('system_prompt').value = `GoAccel is an all-in-one growth and operations system built specifically for home services and skilled trade businesses. We combine customer acquisition, automation, CRM, scheduling, and operational systems into a single platform designed to help owners scale predictably and build long-term enterprise value.
+      document.getElementById('businessId').value = 'goaccel-website';
+      document.getElementById('businessName').value = 'GoAccel';
+      document.getElementById('systemPrompt').value = `GoAccel is an all-in-one growth and operations system built specifically for home services and skilled trade businesses. We combine customer acquisition, automation, CRM, scheduling, and operational systems into a single platform designed to help owners scale predictably and build long-term enterprise value.
 
 Our services include:
 - Digital Agency Solutions: Full-service digital agency/lead gen services including websites, paid ads, and conversion tracking
@@ -753,18 +752,18 @@ We serve industries including HVAC, plumbing, electrical, window cleaning, appli
 
 Your role is to help potential customers understand how GoAccel can help their home services business grow. Be friendly, knowledgeable, and focus on how we can help them achieve predictable growth and build business value.`;
       
-      document.getElementById('primary_goal').value = 'Help home services businesses scale predictably and build long-term enterprise value';
+      document.getElementById('primaryGoal').value = 'Help home services businesses scale predictably and build long-term enterprise value';
       document.getElementById('personality').value = 'Friendly, knowledgeable, and growth-focused';
-      document.getElementById('greeting_message').value = 'Hi! Welcome to GoAccel. I\'m here to help you understand how we can accelerate your home services business growth. What would you like to know?';
-      document.getElementById('appointment_link').value = 'https://warmprospect.com/goaccel-website/';
-      document.getElementById('privacy_statement').value = 'We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.';
-      document.getElementById('website_url').value = 'https://warmprospect.com/goaccel-website/';
-      document.getElementById('contact_email').value = 'info@goaccel.com';
-      document.getElementById('contact_phone').value = '855.915.0747';
-      document.getElementById('chatbot_button_text').value = 'Chat with us';
+      document.getElementById('greetingMessage').value = 'Hi! Welcome to GoAccel. I\'m here to help you understand how we can accelerate your home services business growth. What would you like to know?';
+      document.getElementById('appointmentLink').value = 'https://warmprospect.com/goaccel-website/';
+      document.getElementById('privacyStatement').value = 'We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.';
+      document.getElementById('websiteUrl').value = 'https://warmprospect.com/goaccel-website/';
+      document.getElementById('contactEmail').value = 'info@goaccel.com';
+      document.getElementById('contactPhone').value = '855.915.0747';
+      document.getElementById('chatbotButtonText').value = 'Chat with us';
       clearLogo();
-      document.getElementById('theme_color').value = '#667eea';
-      document.getElementById('widget_position').value = 'center';
+      document.getElementById('themeColor').value = '#667eea';
+      document.getElementById('widgetPosition').value = 'center';
       
       
       // Update integration code
@@ -808,13 +807,13 @@ Your role is to help potential customers understand how GoAccel can help their h
         listEl.innerHTML = Object.values(data.businesses).map(business => `
           <div class="business-card">
             <div>
-              <h3>${business.business_name || business.business_id}</h3>
-              <p>ID: ${business.business_id} • Updated: ${new Date(business.updated_at).toLocaleString()}</p>
+              <h3>${business.businessName || business.businessId}</h3>
+              <p>ID: ${business.businessId} • Updated: ${new Date(business.updatedAt || business.updated_at).toLocaleString()}</p>
             </div>
             <div class="business-actions">
-              <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.business_id}')">Edit</button>
-              <a href="${API_BASE}/bot?business_id=${business.business_id}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
-              <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.business_id}')">Delete</button>
+              <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.businessId}')">Edit</button>
+              <a href="${API_BASE}/bot?business_id=${business.businessId}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
+              <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.businessId}')">Delete</button>
             </div>
           </div>
         `).join('');
@@ -850,26 +849,26 @@ Your role is to help potential customers understand how GoAccel can help their h
         const config = data.config;
         console.log('Business config loaded:', config);
         
-        // Populate form
-        document.getElementById('business_id').value = config.business_id || '';
-        document.getElementById('business_name').value = config.business_name || '';
-        document.getElementById('system_prompt').value = config.system_prompt || '';
-        document.getElementById('primary_goal').value = config.primary_goal || '';
+        // Populate form - using camelCase from API
+        document.getElementById('businessId').value = config.businessId || '';
+        document.getElementById('businessName').value = config.businessName || '';
+        document.getElementById('systemPrompt').value = config.systemPrompt || '';
+        document.getElementById('primaryGoal').value = config.primaryGoal || '';
         document.getElementById('personality').value = config.personality || '';
-        document.getElementById('greeting_message').value = config.greeting_message || '';
-        document.getElementById('appointment_link').value = config.appointment_link || '';
-        document.getElementById('privacy_statement').value = config.privacy_statement || '';
-        document.getElementById('theme_color').value = config.theme_color || '#2563eb';
-        document.getElementById('widget_position').value = config.widget_position || 'center';
-        document.getElementById('website_url').value = config.website_url || '';
-        document.getElementById('contact_email').value = config.contact_email || '';
-        document.getElementById('contact_phone').value = config.contact_phone || '';
-        document.getElementById('chatbot_button_text').value = config.chatbot_button_text || '';
+        document.getElementById('greetingMessage').value = config.greetingMessage || '';
+        document.getElementById('appointmentLink').value = config.appointmentLink || '';
+        document.getElementById('privacyStatement').value = config.privacyStatement || '';
+        document.getElementById('themeColor').value = config.themeColor || '#2563eb';
+        document.getElementById('widgetPosition').value = config.widgetPosition || 'center';
+        document.getElementById('websiteUrl').value = config.websiteUrl || '';
+        document.getElementById('contactEmail').value = config.contactEmail || '';
+        document.getElementById('contactPhone').value = config.contactPhone || '';
+        document.getElementById('chatbotButtonText').value = config.chatbotButtonText || '';
         
         // Handle logo (base64 or URL)
-        const logoValue = config.business_logo || '';
+        const logoValue = config.businessLogo || '';
         if (logoValue) {
-          document.getElementById('business_logo').value = logoValue;
+          document.getElementById('businessLogo').value = logoValue;
           // If it's base64 (starts with data:), show preview
           if (logoValue.startsWith('data:image/')) {
             const preview = document.getElementById('logoPreview');
@@ -882,17 +881,17 @@ Your role is to help potential customers understand how GoAccel can help their h
         }
         
         // Load CTA tree if available
-        document.getElementById('cta_tree').value = JSON.stringify(
-          config.cta_tree || {},
+        document.getElementById('ctaTree').value = JSON.stringify(
+          config.ctaTree || {},
           null,
           2
         );
         
         // Update integration code
-        updateIntegrationCode(config.business_id);
+        updateIntegrationCode(config.businessId);
         
-        // Load voice_enabled checkbox
-        document.getElementById('voice_enabled').checked = config.voice_enabled || false;
+        // Load voiceEnabled checkbox
+        document.getElementById('voiceEnabled').checked = config.voiceEnabled || false;
         
         // Show form modal when editing
         const modal = document.getElementById('businessFormModal');
@@ -902,7 +901,7 @@ Your role is to help potential customers understand how GoAccel can help their h
         btn.classList.remove('btn-primary');
         btn.classList.add('btn-secondary');
         
-        showAlert('Business configuration loaded! <a href="' + API_BASE + '/bot?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
+        showAlert('Business configuration loaded! <a href="' + API_BASE + '/bot?business_id=' + (config.businessId || businessId) + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Your Chatbot →</a>', 'success');
       } catch (err) {
         console.error('Error loading business:', err);
         showAlert('Failed to load business: ' + err.message, 'error');
@@ -995,24 +994,24 @@ Your role is to help potential customers understand how GoAccel can help their h
       const data = Object.fromEntries(formData.entries());
       let ctaTree = {};
       try {
-        if (data.cta_tree && data.cta_tree.trim()) {
-          ctaTree = JSON.parse(data.cta_tree);
+        if (data.ctaTree && data.ctaTree.trim()) {
+          ctaTree = JSON.parse(data.ctaTree);
         }
       } catch (err) {
         showAlert('CTA Tree must be valid JSON.', 'error');
         return;
       }
-      data.cta_tree = ctaTree;
-      data.voice_enabled = data.voice_enabled === 'true' || data.voice_enabled === true;
+      data.ctaTree = ctaTree;
+      data.voiceEnabled = data.voiceEnabled === 'true' || data.voiceEnabled === true;
       
       // Validate required fields
-      if (!data.business_id || !data.business_name || !data.system_prompt) {
+      if (!data.businessId || !data.businessName || !data.systemPrompt) {
         showAlert('❌ Please fill in all required fields (Business ID, Name, and System Prompt)', 'error');
         return;
       }
       
       try {
-        console.log('Saving business:', data.business_id);
+        console.log('Saving business:', data.businessId);
         const res = await fetch(`${API_BASE}/admin/business`, {
           method: 'POST',
           headers: getAdminHeaders(),
@@ -1036,15 +1035,15 @@ Your role is to help potential customers understand how GoAccel can help their h
         console.log('Save response:', result);
         
         if (result.success) {
-          updateIntegrationCode(data.business_id);
+          updateIntegrationCode(data.businessId);
           loadBusinesses();
           
           // Check if scraping was started
-          if (result.scraping_started && data.website_url) {
-            showScrapingModal(data.business_id);
-            startScrapingPoll(data.business_id);
+          if (result.scrapingStarted && data.websiteUrl) {
+            showScrapingModal(data.businessId);
+            startScrapingPoll(data.businessId);
           } else {
-            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + data.business_id + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
+            showAlert('✅ Configuration saved successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + data.businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
             // Hide form after successful save
             toggleForm();
           }
@@ -1057,8 +1056,8 @@ Your role is to help potential customers understand how GoAccel can help their h
       }
     });
     
-    // Update integration code when business_id changes
-    document.getElementById('business_id').addEventListener('input', (e) => {
+    // Update integration code when businessId changes
+    document.getElementById('businessId').addEventListener('input', (e) => {
       updateIntegrationCode(e.target.value || 'your-business-id');
     });
     

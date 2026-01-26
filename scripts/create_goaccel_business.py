@@ -7,7 +7,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from business_config import config_manager
+from core.config.business_config import config_manager
 
 # GoAccel business configuration
 business_config = {

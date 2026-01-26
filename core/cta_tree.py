@@ -253,58 +253,8 @@ def get_entry_point_cta(
     # Extract intent string from result (backward compatibility)
     intent = intent_result.get("intent", "general_inquiry") if isinstance(intent_result, dict) else intent_result
     
-    message_lower = message.lower()
-    
-    # Map intent to entry point CTA IDs
-    # Check for specific keywords first
-    if "website" in message_lower or "design" in message_lower:
-        entry_cta = get_cta_by_id(cta_tree, "website_design")
-        if entry_cta:
-            return entry_cta
-    
-    if "crm" in message_lower or "software" in message_lower:
-        entry_cta = get_cta_by_id(cta_tree, "crm_platform")
-        if entry_cta:
-            return entry_cta
-    
-    if any(word in message_lower for word in ["growth", "scale", "expand", "grow"]):
-        entry_cta = get_cta_by_id(cta_tree, "business_growth")
-        if entry_cta:
-            return entry_cta
-    
-    # Map intent to default entry points
-    if intent == "service_inquiry" or intent == "product_inquiry":
-        entry_cta = get_cta_by_id(cta_tree, "learn_services")
-        if entry_cta:
-            return entry_cta
-    
-    elif intent == "appointment_inquiry":
-        entry_cta = get_cta_by_id(cta_tree, "book_appointment")
-        if entry_cta:
-            return entry_cta
-    
-    elif intent == "sales_inquiry":
-        entry_cta = get_cta_by_id(cta_tree, "speak_sales")
-        if entry_cta:
-            return entry_cta
-    
-    elif intent == "pricing_inquiry":
-        # Try to find pricing-related CTA
-        entry_cta = get_cta_by_id(cta_tree, "learn_services")
-        if entry_cta:
-            return entry_cta
-    
-    elif intent == "technical_support":
-        entry_cta = get_cta_by_id(cta_tree, "speak_sales")
-        if entry_cta:
-            return entry_cta
-    
-    # Default fallback
-    entry_cta = get_cta_by_id(cta_tree, "learn_services")
-    if entry_cta:
-        return entry_cta
-    
-    # If no specific entry point found, return first available CTA with show_children
+    # No hardcoded CTA IDs - use generic fallback to find first available entry point
+    # Return first available CTA with show_children action (entry point)
     for cta_id, cta in cta_tree.items():
         if cta.get("action") == "show_children":
             return get_cta_by_id(cta_tree, cta_id)

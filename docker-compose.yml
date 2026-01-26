@@ -87,7 +87,7 @@ services:
           sleep 2
         done &&
         echo 'Database ready!' &&
-        python -c 'from database import init_db; init_db()' &&
+        python -c 'from core.database import init_db; init_db()' &&
         echo 'Starting application...' &&
         uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WORKERS:-1}
       "

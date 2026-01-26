@@ -11,7 +11,7 @@ from datetime import datetime
 
 # Try to import database manager
 try:
-    from database import db_manager
+    from core.database import db_manager
     USE_DATABASE = True
 except ImportError:
     USE_DATABASE = False

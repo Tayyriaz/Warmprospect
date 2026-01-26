@@ -182,39 +182,8 @@ class DynamicCTAManager:
             "nested": {}
         }
         
-        # Detect user intent and generate relevant CTAs
-        intent = context.get("conversation", {}).get("intent")
+        # Generate CTAs based on configured topic_ctas only (no hardcoded CTAs)
         topic = context.get("conversation", {}).get("topic")
-        
-        # Generate based on intent
-        if intent == "pricing_inquiry":
-            dynamic_ctas["primary"].append({
-                "label": "Get Pricing Information",
-                "action": "send",
-                "message": "I'd like to know more about pricing",
-                "priority": 5
-            })
-        
-        elif intent == "service_inquiry":
-            # Generate CTAs for available services
-            services = business_config.get("available_services", [])
-            for service in services[:3]:  # Limit to 3
-                dynamic_ctas["secondary"].append({
-                    "label": f"Learn About {service.get('name', 'Service')}",
-                    "action": "send",
-                    "message": f"Tell me about {service.get('name', 'this service')}",
-                    "priority": service.get("priority", 0)
-                })
-        
-        elif intent == "booking_inquiry":
-            dynamic_ctas["primary"].append({
-                "label": "Book Now",
-                "action": "send",
-                "message": "I'd like to book an appointment",
-                "priority": 10
-            })
-        
-        # Generate based on conversation topic
         if topic:
             topic_ctas = business_config.get("topic_ctas", {}).get(topic, [])
             dynamic_ctas["secondary"].extend(topic_ctas)
