@@ -120,7 +120,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
         # Trigger knowledge base build in background if website_url is provided
         scraping_started = False
         if website_url and website_url.strip():
-            background_tasks.add_task(trigger_kb_build_wrapper, business_id, website_url.strip())
+            background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
             print(f"[INFO] Queued KB build for business: {business_id}, URL: {website_url}")
             scraping_started = True
         

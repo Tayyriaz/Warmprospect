@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, Request, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from google.genai import types
 from rag.retriever import format_context
 from core.session_management import get_session

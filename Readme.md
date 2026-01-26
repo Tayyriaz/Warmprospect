@@ -357,3 +357,6 @@ Copy the generated key and add it to your `.env` file as `ADMIN_API_KEY=...`. Th
 - Never commit the `.env` file to version control
 - Rotate keys periodically in production
 - Use different keys for development and production environments
+
+**Commands **
+cd /var/www/chatbot && git pull && source venv/bin/activate && python scripts/migrate_db.py && sudo systemctl restart goaccel.service
