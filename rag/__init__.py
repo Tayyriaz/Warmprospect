@@ -2,8 +2,8 @@
 RAG (Retrieval-Augmented Generation) package.
 """
 
-from .retriever import Retriever
+from .retriever import GoAccelRetriever
 
 __all__ = [
-    "Retriever",
+    "GoAccelRetriever",
 ]
