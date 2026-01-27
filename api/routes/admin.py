@@ -17,20 +17,31 @@ router = APIRouter()
 
 def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0):
     """Update scraping status in a JSON file for frontend polling."""
-    # Use absolute paths to avoid issues with working directory
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-    os.makedirs(os.path.dirname(status_file), exist_ok=True)
-    
-    status_data = {
-        "status": status,  # "pending", "scraping", "indexing", "completed", "failed"
-        "message": message,
-        "progress": progress,  # 0-100
-        "updated_at": time.time()
-    }
-    
-    with open(status_file, "w", encoding="utf-8") as f:
-        json.dump(status_data, f)
+    try:
+        # Use absolute paths to avoid issues with working directory
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
+        status_dir = os.path.dirname(status_file)
+        
+        # Create directory if it doesn't exist
+        os.makedirs(status_dir, exist_ok=True)
+        
+        status_data = {
+            "status": status,  # "pending", "scraping", "indexing", "completed", "failed"
+            "message": message,
+            "progress": progress,  # 0-100
+            "updated_at": time.time()
+        }
+        
+        # Write status file
+        with open(status_file, "w", encoding="utf-8") as f:
+            json.dump(status_data, f)
+        
+        print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message}")
+    except Exception as e:
+        print(f"[ERROR] Failed to update scraping status: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def trigger_kb_build(business_id: str, website_url: str):
@@ -38,6 +49,7 @@ def trigger_kb_build(business_id: str, website_url: str):
     Background task to build knowledge base for a business website.
     Runs the scraping script asynchronously and updates status.
     """
+    print(f"[INFO] Background task started for business: {business_id}, URL: {website_url}")
     try:
         # Use absolute paths to avoid issues with working directory
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -207,6 +219,10 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
                 detail="Business must have a websiteUrl configured to build knowledge base. Please set websiteUrl in the configuration first."
             )
         
+        # Set initial status immediately (before background task starts)
+        update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
+        print(f"[INFO] Setting initial status for business: {business_id}")
+        
         # Trigger knowledge base build in background
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
         print(f"[INFO] Manually triggered KB build for business: {business_id}, URL: {website_url}")
@@ -220,6 +236,14 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[ERROR] Failed to start scraping: {e}")
+        import traceback
+        traceback.print_exc()
+        # Update status to failed
+        try:
+            update_scraping_status(business_id, "failed", f"Failed to start scraping: {str(e)}", 0)
+        except:
+            pass
         raise HTTPException(status_code=500, detail=f"Failed to start scraping: {str(e)}")
 
 
@@ -262,6 +286,10 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
                 print(f"[INFO] Removed old metadata: {meta_path}")
             except Exception as e:
                 print(f"[WARNING] Could not remove old metadata: {e}")
+        
+        # Set initial status immediately (before background task starts)
+        update_scraping_status(business_id, "pending", "Starting knowledge base refresh...", 0)
+        print(f"[INFO] Setting initial status for refresh: {business_id}")
         
         # Trigger knowledge base build in background
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
