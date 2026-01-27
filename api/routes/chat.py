@@ -148,16 +148,21 @@ async def _handle_chat_request(request: Request):
     session["sentiment"] = sentiment_result.get("sentiment")
     
     # 2. Hard Guard Check (Priority 1)
-    hard_guard_response = check_hard_guards(user_input, session, session_key, user_id)
+    hard_guard_response = check_hard_guards(user_input, session, session_key, user_id, business_id)
     if hard_guard_response:
-        payload = {"response": hard_guard_response["response"]}
+        # Use business greeting_message if available, otherwise let AI handle it naturally
+        payload = {}
+        if hard_guard_response.get("response"):
+            payload["response"] = hard_guard_response["response"]
         # Use cta_tree entry points instead of legacy primary/secondary CTAs
         # CTAs are ALWAYS separate, never in response
         if business_id and hard_guard_response.get("cta_mode") == "primary":
             entry_ctas = get_entry_point_ctas(business_id, user_input)
             if entry_ctas:
                 payload["cta"] = entry_ctas  # Separate CTA field
-        return payload
+        # Only return if we have a response or CTAs to show
+        if payload:
+            return payload
 
     # 3. Build System Instruction
     business_config = config_manager.get_business(business_id) if business_id else None

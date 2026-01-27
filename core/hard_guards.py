@@ -12,6 +12,7 @@ def check_hard_guards(
     session: Dict[str, Any],
     session_key: str,
     original_user_id: str,
+    business_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Checks for strict hard guards (Intro Token) before calling Gemini.
@@ -34,11 +35,24 @@ def check_hard_guards(
         clear_chat_session_cache(session_key)
         # Save to Redis immediately
         save_session(session_key, session)
-        # Return a friendly prompt - CTAs will be provided dynamically from cta_tree
-        return {
-            "response": "Please choose one of the options below.",
-            "cta_mode": "primary",
-        }
+        
+        # Use business greeting_message if available, otherwise return None to let AI handle it
+        from core.config.business_config import config_manager
+        greeting_message = None
+        if business_id:
+            config = config_manager.get_business(business_id)
+            if config:
+                greeting_message = config.get("greeting_message")
+        
+        # Return greeting message if available, otherwise return None to let AI generate natural response
+        if greeting_message:
+            return {
+                "response": greeting_message,
+                "cta_mode": "primary",
+            }
+        # Return None - session is reset, but let normal chat flow generate the greeting naturally
+        # CTAs will be attached by the normal flow based on should_attach_ctas() logic
+        return None
         
     # Note: Appointment booking is now handled via CTA tree
     # Users click CTAs with action="redirect" and url pointing to appointment links
