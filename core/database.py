@@ -199,7 +199,7 @@ class BusinessConfigDB:
             ).first()
             
             if existing:
-                # Update existing
+                # Update existing - only update columns that exist in the model
                 existing.business_name = business_name
                 existing.system_prompt = system_prompt
                 existing.greeting_message = greeting_message
@@ -212,35 +212,19 @@ class BusinessConfigDB:
                 existing.website_url = website_url
                 existing.contact_email = contact_email
                 existing.contact_phone = contact_phone
-                if hasattr(existing, 'cta_tree'):
-                    existing.cta_tree = _serialize_json(cta_tree)
-                # Store new dynamic fields as JSON strings
-                if hasattr(existing, 'tertiary_ctas'):
-                    existing.tertiary_ctas = _serialize_json(tertiary_ctas)
-                if hasattr(existing, 'nested_ctas'):
-                    existing.nested_ctas = _serialize_json(nested_ctas)
-                if hasattr(existing, 'rules'):
-                    existing.rules = _serialize_json(rules)
-                if hasattr(existing, 'custom_routes'):
-                    existing.custom_routes = _serialize_json(custom_routes)
-                if hasattr(existing, 'available_services'):
-                    existing.available_services = _serialize_json(available_services)
-                if hasattr(existing, 'topic_ctas'):
-                    existing.topic_ctas = _serialize_json(topic_ctas)
-                if hasattr(existing, 'experiments'):
-                    existing.experiments = _serialize_json(experiments)
-                if hasattr(existing, 'voice_enabled'):
-                    existing.voice_enabled = voice_enabled
-                if hasattr(existing, 'chatbot_button_text'):
-                    existing.chatbot_button_text = chatbot_button_text
-                if hasattr(existing, 'business_logo'):
-                    existing.business_logo = business_logo
+                existing.cta_tree = _serialize_json(cta_tree)
+                existing.voice_enabled = voice_enabled
+                existing.chatbot_button_text = chatbot_button_text
+                existing.business_logo = business_logo
                 existing.updated_at = datetime.utcnow()
+                # Note: tertiary_ctas, nested_ctas, rules, custom_routes, 
+                # available_services, topic_ctas, experiments are not stored as 
+                # separate columns - they can be included in cta_tree if needed
                 db.commit()
                 db.refresh(existing)
                 return existing.to_dict()
             else:
-                # Create new
+                # Create new - only pass columns that exist in the model
                 new_business = BusinessConfig(
                     business_id=business_id,
                     business_name=business_name,
@@ -256,17 +240,13 @@ class BusinessConfigDB:
                     contact_email=contact_email,
                     contact_phone=contact_phone,
                     cta_tree=_serialize_json(cta_tree),
-                    tertiary_ctas=_serialize_json(tertiary_ctas),
-                    nested_ctas=_serialize_json(nested_ctas),
-                    rules=_serialize_json(rules),
-                    custom_routes=_serialize_json(custom_routes),
-                    available_services=_serialize_json(available_services),
-                    topic_ctas=_serialize_json(topic_ctas),
-                    experiments=_serialize_json(experiments),
-                    voice_enabled=voice_enabled if hasattr(BusinessConfig, 'voice_enabled') else False,
-                    chatbot_button_text=chatbot_button_text if hasattr(BusinessConfig, 'chatbot_button_text') else None,
-                    business_logo=business_logo if hasattr(BusinessConfig, 'business_logo') else None,
+                    voice_enabled=voice_enabled,
+                    chatbot_button_text=chatbot_button_text,
+                    business_logo=business_logo,
                 )
+                # Note: tertiary_ctas, nested_ctas, rules, custom_routes, 
+                # available_services, topic_ctas, experiments are not stored as 
+                # separate columns - they can be included in cta_tree if needed
                 db.add(new_business)
                 db.commit()
                 db.refresh(new_business)
