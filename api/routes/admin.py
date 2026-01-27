@@ -170,8 +170,6 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             contact_email=data.get("contactEmail") or data.get("contact_email"),
             contact_phone=data.get("contactPhone") or data.get("contact_phone"),
             cta_tree=data.get("ctaTree") or data.get("cta_tree"),
-            tertiary_ctas=data.get("tertiaryCtas") or data.get("tertiary_ctas"),
-            nested_ctas=data.get("nestedCtas") or data.get("nested_ctas"),
             rules=data.get("rules"),
             custom_routes=data.get("customRoutes") or data.get("custom_routes"),
             available_services=data.get("availableServices") or data.get("available_services"),

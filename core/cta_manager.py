@@ -1,34 +1,25 @@
 """
 Dynamic CTA (Call-to-Action) Management System
-Supports multi-level CTAs, context-aware selection, and dynamic generation.
+Supports tree-based CTAs with context-aware selection.
+Uses only cta_tree structure - no primary/secondary/nested CTAs.
 """
 
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 from enum import Enum
-import json
 from core.rules_engine import BusinessRulesEngine, RuleType
-
-
-class CTALevel(Enum):
-    """CTA hierarchy levels."""
-    PRIMARY = "primary"
-    SECONDARY = "secondary"
-    TERTIARY = "tertiary"
-    NESTED = "nested"
+from core.cta_tree import get_cta_children, get_entry_point_cta
 
 
 class CTAAction(Enum):
     """Types of CTA actions."""
     SEND = "send"  # Send a message
-    SHOW_NEXT = "show_next"  # Show next level CTAs
-    REDIRECT = "redirect"  # Redirect to URL
-    FUNCTION = "function"  # Call a function
-    CONDITIONAL = "conditional"  # Conditional action based on context
+    SHOW_CHILDREN = "show_children"  # Show next level CTAs
+    LINK = "link"  # Redirect to URL
 
 
 class DynamicCTAManager:
     """
-    Manages dynamic, multi-level CTA system with context-aware selection.
+    Manages dynamic CTA system using only cta_tree structure.
     """
     
     def __init__(self, rules_engine: Optional[BusinessRulesEngine] = None):
@@ -39,21 +30,25 @@ class DynamicCTAManager:
         context: Dict[str, Any],
         business_config: Dict[str, Any],
         conversation_history: List[Dict[str, Any]] = None
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> List[Dict[str, Any]]:
         """
         Get CTAs based on current context and conversation state.
+        Returns only CTAs from cta_tree structure.
+        
+        Args:
+            context: Current conversation context
+            business_config: Business configuration containing cta_tree
+            conversation_history: List of conversation messages
         
         Returns:
-            Dictionary with keys: "primary", "secondary", "tertiary", "nested"
-            Each containing a list of CTA objects
+            List of CTA objects from cta_tree
         """
         conversation_history = conversation_history or []
         
-        # Start with configured CTAs
-        base_ctas = {
-            "tertiary": business_config.get("tertiary_ctas", []),
-            "nested": business_config.get("nested_ctas", {})
-        }
+        # Get cta_tree from business config
+        cta_tree = business_config.get("cta_tree", {})
+        if not cta_tree or not isinstance(cta_tree, dict):
+            return []
         
         # Build full context for rule evaluation
         full_context = {
@@ -77,60 +72,65 @@ class DynamicCTAManager:
             }
         }
         
-        # Evaluate CTA visibility rules
+        # Evaluate CTA visibility rules if rules engine is available
         if self.rules_engine:
             _, full_context = self.rules_engine.evaluate_rules(
                 RuleType.CTA_VISIBILITY,
                 full_context
             )
         
-        # Filter CTAs based on visibility rules
-        filtered_ctas = self._filter_ctas_by_rules(base_ctas, full_context)
+        # Get entry point CTA based on user message/intent
+        last_user_message = ""
+        if conversation_history:
+            for msg in reversed(conversation_history):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    parts = msg.get("parts", [])
+                    if parts and isinstance(parts[0], dict):
+                        last_user_message = parts[0].get("text", "")
+                        break
         
-        # Generate dynamic CTAs if needed
-        dynamic_ctas = self._generate_dynamic_ctas(full_context, business_config)
+        # Get entry point CTA from tree
+        entry_cta = get_entry_point_cta(cta_tree, last_user_message, None, conversation_history)
         
-        # Merge base and dynamic CTAs
-        merged_ctas = self._merge_ctas(filtered_ctas, dynamic_ctas)
+        if entry_cta:
+            # Return entry point CTA
+            return [entry_cta]
         
-        # Sort by priority
-        for level in merged_ctas:
-            merged_ctas[level] = sorted(
-                merged_ctas[level],
-                key=lambda cta: cta.get("priority", 0),
-                reverse=True
-            )
-        
-        return merged_ctas
+        # If no entry point found, return empty list
+        return []
     
-    def _filter_ctas_by_rules(
+    def get_cta_children(
         self,
-        ctas: Dict[str, List[Dict[str, Any]]],
-        context: Dict[str, Any]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Filter CTAs based on visibility conditions."""
-        filtered = {
-            "primary": [],
-            "secondary": [],
-            "tertiary": [],
-            "nested": {}
-        }
+        cta_tree: Dict[str, Any],
+        cta_id: str,
+        context: Dict[str, Any] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get children CTAs for a given CTA ID from cta_tree.
         
-        for level, cta_list in ctas.items():
-            if level == "nested":
-                # Handle nested CTAs (dictionary structure)
-                filtered["nested"] = {}
-                for key, nested_ctas in cta_list.items():
-                    visible = self._should_show_cta_group(nested_ctas, context)
-                    if visible:
-                        filtered["nested"][key] = nested_ctas
-                continue
-            
-            for cta in cta_list:
+        Args:
+            cta_tree: Complete CTA tree dictionary
+            cta_id: ID of the CTA to get children for
+            context: Optional context for filtering
+        
+        Returns:
+            List of child CTA objects
+        """
+        if not cta_tree or not isinstance(cta_tree, dict):
+            return []
+        
+        # Get children from tree
+        children = get_cta_children(cta_tree, cta_id)
+        
+        # Filter by visibility rules if context provided
+        if context and self.rules_engine:
+            filtered_children = []
+            for cta in children:
                 if self._should_show_cta(cta, context):
-                    filtered[level].append(cta)
+                    filtered_children.append(cta)
+            return filtered_children
         
-        return filtered
+        return children
     
     def _should_show_cta(self, cta: Dict[str, Any], context: Dict[str, Any]) -> bool:
         """Check if a CTA should be shown based on its conditions."""
@@ -152,85 +152,6 @@ class DynamicCTAManager:
                     return False
         
         return True
-    
-    def _should_show_cta_group(
-        self,
-        cta_group: List[Dict[str, Any]],
-        context: Dict[str, Any]
-    ) -> bool:
-        """Check if a group of CTAs should be shown."""
-        # If any CTA in the group should be shown, show the group
-        return any(self._should_show_cta(cta, context) for cta in cta_group)
-    
-    def _generate_dynamic_ctas(
-        self,
-        context: Dict[str, Any],
-        business_config: Dict[str, Any]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Generate CTAs dynamically based on context.
-        
-        Examples:
-        - Generate CTAs based on detected intent
-        - Generate CTAs based on available services/products
-        - Generate CTAs based on conversation topic
-        """
-        dynamic_ctas = {
-            "primary": [],
-            "secondary": [],
-            "tertiary": [],
-            "nested": {}
-        }
-        
-        # Generate CTAs based on configured topic_ctas only (no hardcoded CTAs)
-        topic = context.get("conversation", {}).get("topic")
-        if topic:
-            topic_ctas = business_config.get("topic_ctas", {}).get(topic, [])
-            dynamic_ctas["secondary"].extend(topic_ctas)
-        
-        # Use rules engine to generate CTAs
-        if self.rules_engine:
-            actions, _ = self.rules_engine.evaluate_rules(
-                RuleType.CTA_GENERATION,
-                context
-            )
-            
-            for action in actions:
-                if action.get("type") == "add_cta":
-                    level = action.get("level", "secondary")
-                    cta = action.get("cta", {})
-                    if level in dynamic_ctas:
-                        dynamic_ctas[level].append(cta)
-        
-        return dynamic_ctas
-    
-    def _merge_ctas(
-        self,
-        base_ctas: Dict[str, List[Dict[str, Any]]],
-        dynamic_ctas: Dict[str, List[Dict[str, Any]]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Merge base and dynamic CTAs, avoiding duplicates."""
-        merged = {
-            "primary": base_ctas["primary"].copy(),
-            "secondary": base_ctas["secondary"].copy(),
-            "tertiary": base_ctas["tertiary"].copy(),
-            "nested": base_ctas["nested"].copy()
-        }
-        
-        # Add dynamic CTAs that don't duplicate existing ones
-        seen_labels = {cta.get("label") for level in merged.values() 
-                      for cta in (level if isinstance(level, list) else [])}
-        
-        for level, ctas in dynamic_ctas.items():
-            if level == "nested":
-                merged["nested"].update(ctas)
-            else:
-                for cta in ctas:
-                    if cta.get("label") not in seen_labels:
-                        merged[level].append(cta)
-                        seen_labels.add(cta.get("label"))
-        
-        return merged
     
     def _detect_topic(self, conversation_history) -> Optional[str]:
         """Detect conversation topic from history."""

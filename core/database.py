@@ -96,8 +96,6 @@ class BusinessConfig(Base):
             "contact_email": self.contact_email,
             "contact_phone": self.contact_phone,
             "cta_tree": json.loads(self.cta_tree) if hasattr(self, 'cta_tree') and self.cta_tree else {},
-            "tertiary_ctas": _parse_ctas(self.tertiary_ctas) if hasattr(self, 'tertiary_ctas') else None,
-            "nested_ctas": json.loads(self.nested_ctas) if hasattr(self, 'nested_ctas') and self.nested_ctas else {},
             "rules": json.loads(self.rules) if hasattr(self, 'rules') and self.rules else [],
             "custom_routes": json.loads(self.custom_routes) if hasattr(self, 'custom_routes') and self.custom_routes else {},
             "available_services": json.loads(self.available_services) if hasattr(self, 'available_services') and self.available_services else [],
@@ -158,8 +156,6 @@ class BusinessConfigDB:
         contact_email: str = None,
         contact_phone: str = None,
         cta_tree = None,
-        tertiary_ctas = None,
-        nested_ctas = None,
         rules = None,
         custom_routes = None,
         available_services = None,
@@ -217,9 +213,8 @@ class BusinessConfigDB:
                 existing.chatbot_button_text = chatbot_button_text
                 existing.business_logo = business_logo
                 existing.updated_at = datetime.utcnow()
-                # Note: tertiary_ctas, nested_ctas, rules, custom_routes, 
-                # available_services, topic_ctas, experiments are not stored as 
-                # separate columns - they can be included in cta_tree if needed
+                # Note: rules, custom_routes, available_services, topic_ctas, experiments 
+                # are not stored as separate columns - they can be included in cta_tree if needed
                 db.commit()
                 db.refresh(existing)
                 return existing.to_dict()
@@ -244,9 +239,8 @@ class BusinessConfigDB:
                     chatbot_button_text=chatbot_button_text,
                     business_logo=business_logo,
                 )
-                # Note: tertiary_ctas, nested_ctas, rules, custom_routes, 
-                # available_services, topic_ctas, experiments are not stored as 
-                # separate columns - they can be included in cta_tree if needed
+                # Note: rules, custom_routes, available_services, topic_ctas, experiments 
+                # are not stored as separate columns - they can be included in cta_tree if needed
                 db.add(new_business)
                 db.commit()
                 db.refresh(new_business)
