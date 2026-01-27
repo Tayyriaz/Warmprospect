@@ -34,7 +34,7 @@ elif DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
 
 # Create engine
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -166,6 +166,8 @@ class BusinessConfigDB:
         topic_ctas = None,
         experiments = None,
         voice_enabled = False,
+        chatbot_button_text: str = None,
+        business_logo: str = None,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
         def _serialize_ctas(value):
@@ -292,7 +294,15 @@ class BusinessConfigDB:
         db = self._get_session()
         try:
             businesses = db.query(BusinessConfig).all()
-            return {b.business_id: b.to_dict() for b in businesses}
+            print(f"[DEBUG] get_all_businesses: queried {len(businesses)} businesses from database")
+            result = {b.business_id: b.to_dict() for b in businesses}
+            print(f"[DEBUG] get_all_businesses: returning {len(result)} businesses")
+            return result
+        except Exception as e:
+            print(f"[ERROR] get_all_businesses failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         finally:
             db.close()
     

@@ -320,15 +320,22 @@ async def get_business_config(business_id: str, api_key: str = Depends(get_api_k
 async def list_all_businesses(api_key: str = Depends(get_api_key)):
     """List all configured businesses. Returns camelCase field names."""
     try:
+        print(f"[DEBUG] list_all_businesses: calling config_manager.get_all_businesses()")
         businesses = config_manager.get_all_businesses()
-        print(f"[DEBUG] list_all_businesses: found {len(businesses)} businesses")
+        print(f"[DEBUG] list_all_businesses: config_manager returned {len(businesses)} businesses")
+        print(f"[DEBUG] list_all_businesses: business IDs: {list(businesses.keys())}")
+        
         # Convert all business configs to camelCase
         camel_businesses = {}
         for business_id, config in businesses.items():
             camel_businesses[business_id] = convert_config_to_camel(config)
+        
+        print(f"[DEBUG] list_all_businesses: returning {len(camel_businesses)} businesses in camelCase")
         return {"success": True, "businesses": camel_businesses}
     except Exception as e:
         print(f"[ERROR] list_all_businesses failed: {e}")
+        import traceback
+        traceback.print_exc()
         return {"success": False, "businesses": {}, "error": str(e)}
 
 
