@@ -6,10 +6,11 @@ from fastapi import APIRouter, Request, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from core.config.business_config import config_manager
-from core.cta_tree import get_cta_children
+from core.cta_tree import get_cta_children, get_cta_by_id
 from core.session_management import get_session
 from core.session_store import save_session
 from core.session_analytics import analytics
+from core_tools.crm_manager import crm_manager
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -44,13 +45,54 @@ async def handle_cta_click(request: Request):
         if not cta_tree or not isinstance(cta_tree, dict):
             raise HTTPException(status_code=400, detail="CTA tree not configured for this business")
         
-        # Get children CTAs
+        # Get the clicked CTA
+        cta_node = get_cta_by_id(cta_tree, cta_id)
+        if not cta_node:
+            raise HTTPException(status_code=404, detail="CTA not found")
+        
+        action = cta_node.get("action")
+        
+        # Handle CRM function action
+        if action == "crm_function":
+            function_name = cta_node.get("function_name")
+            if not function_name:
+                raise HTTPException(status_code=400, detail="CRM function name not specified in CTA")
+            
+            # Get function parameters from CTA or request
+            function_params = cta_node.get("function_params", {})
+            # Allow overriding params from request
+            if "function_params" in data:
+                function_params.update(data.get("function_params", {}))
+            
+            # Execute CRM function
+            crm_result = crm_manager.execute_crm_function(
+                business_id=business_id,
+                function_name=function_name,
+                **function_params
+            )
+            
+            # Track CTA click
+            if session_id:
+                session = get_session(session_id)
+                session = analytics.track_cta_click(
+                    session,
+                    cta_id,
+                    cta_node.get("label", cta_id)
+                )
+                save_session(session_id, session)
+            
+            # Return CRM function result
+            return {
+                "response": crm_result.get("status", "CRM function executed"),
+                "crm_result": crm_result  # Include full result for frontend
+            }
+        
+        # Handle show_children action (default)
         children = get_cta_children(cta_tree, cta_id)
         
         # Track CTA click in analytics
         if session_id:
             session = get_session(session_id)
-            cta_node = cta_tree.get(cta_id, {})
             session = analytics.track_cta_click(
                 session,
                 cta_id,
@@ -59,7 +101,6 @@ async def handle_cta_click(request: Request):
             save_session(session_id, session)
         
         # Generate appropriate response message
-        cta_node = cta_tree.get(cta_id)
         if cta_node:
             response_text = f"Here are your options for {cta_node.get('label', 'this category')}:"
         else:

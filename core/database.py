@@ -52,7 +52,7 @@ class BusinessConfig(Base):
     business_name = Column(String(255), nullable=False)
     system_prompt = Column(Text, nullable=False)
     greeting_message = Column(Text)
-    appointment_link = Column(String(500))
+    # appointment_link removed - now handled via CTA tree (redirect action with URL)
     primary_goal = Column(Text)
     personality = Column(Text)
     privacy_statement = Column(Text)
@@ -86,7 +86,7 @@ class BusinessConfig(Base):
             "business_name": self.business_name,
             "system_prompt": self.system_prompt,
             "greeting_message": self.greeting_message,
-            "appointment_link": self.appointment_link,
+            # appointment_link removed - use CTA tree instead
             "primary_goal": self.primary_goal,
             "personality": self.personality,
             "privacy_statement": self.privacy_statement,
@@ -146,7 +146,7 @@ class BusinessConfigDB:
         business_name: str,
         system_prompt: str,
         greeting_message: str = None,
-        appointment_link: str = None,
+        # appointment_link removed - use CTA tree instead
         primary_goal: str = None,
         personality: str = None,
         privacy_statement: str = None,
@@ -199,7 +199,7 @@ class BusinessConfigDB:
                 existing.business_name = business_name
                 existing.system_prompt = system_prompt
                 existing.greeting_message = greeting_message
-                existing.appointment_link = appointment_link
+                # appointment_link removed - use CTA tree instead
                 existing.primary_goal = primary_goal
                 existing.personality = personality
                 existing.privacy_statement = privacy_statement
@@ -225,7 +225,7 @@ class BusinessConfigDB:
                     business_name=business_name,
                     system_prompt=system_prompt,
                     greeting_message=greeting_message,
-                    appointment_link=appointment_link,
+                    # appointment_link removed - use CTA tree instead
                     primary_goal=primary_goal,
                     personality=personality,
                     privacy_statement=privacy_statement,

@@ -160,7 +160,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             business_name=data.get("businessName") or data.get("business_name") or business_id,
             system_prompt=data.get("systemPrompt") or data.get("system_prompt") or "",
             greeting_message=data.get("greetingMessage") or data.get("greeting_message"),
-            appointment_link=data.get("appointmentLink") or data.get("appointment_link"),
+            # appointment_link removed - use CTA tree with redirect action instead
             primary_goal=data.get("primaryGoal") or data.get("primary_goal"),
             personality=data.get("personality"),
             privacy_statement=data.get("privacyStatement") or data.get("privacy_statement"),

@@ -33,12 +33,29 @@ def get_entry_point_ctas(
     if not cta_tree or not isinstance(cta_tree, dict):
         return []
     
-    # Get entry point CTA based on intent
-    entry_cta = get_entry_point_cta(cta_tree, user_message)
-    if entry_cta:
-        return [entry_cta]
+    # Get entry point CTAs based on intent
+    # Return ALL entry point CTAs (CTAs with action="show_children" at root level)
+    entry_ctas = []
+    for cta_id, cta in cta_tree.items():
+        if cta.get("action") == "show_children":
+            cta_obj = {
+                "id": cta.get("id", cta_id),
+                "label": cta.get("label", cta_id),
+                "action": cta.get("action", "show_children")
+            }
+            if cta.get("url"):
+                cta_obj["url"] = cta["url"]
+            if cta.get("message"):
+                cta_obj["message"] = cta["message"]
+            entry_ctas.append(cta_obj)
     
-    return []
+    # If no entry points found, try to get one using intent detection
+    if not entry_ctas:
+        entry_cta = get_entry_point_cta(cta_tree, user_message)
+        if entry_cta:
+            return [entry_cta]
+    
+    return entry_ctas
 
 
 def should_attach_ctas(text: str) -> bool:

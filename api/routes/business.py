@@ -29,7 +29,7 @@ async def get_business_config_for_widget(business_id: str):
         "privacyStatement": config.get("privacy_statement"),
         "themeColor": config.get("theme_color", "#2563eb"),
         "widgetPosition": config.get("widget_position", "center"),
-        "appointmentLink": config.get("appointment_link"),
+        # appointmentLink removed - use CTA tree with redirect action instead
         "websiteUrl": config.get("website_url"),
         "contactEmail": config.get("contact_email"),
         "contactPhone": config.get("contact_phone"),

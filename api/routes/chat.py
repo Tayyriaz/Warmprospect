@@ -112,7 +112,7 @@ async def _handle_chat_request(request: Request):
         user_input = data.get("message", "")
         user_id = data.get("user_id", "default_user")
         business_id = data.get("business_id")
-        appointment_link_override = data.get("appointment_link")
+        # appointment_link removed - use CTA tree with redirect action instead
 
         print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...'")
 
@@ -214,6 +214,8 @@ async def _handle_chat_request(request: Request):
                 function_args = dict(call.args)
                 
                 try:
+                    # Get CRM tools for this business (per-tenant)
+                    crm_tools = crm_manager.get_crm_tools(business_id)
                     func_to_call = getattr(crm_tools, function_name)
                     tool_output = func_to_call(**function_args)
                     
@@ -236,14 +238,17 @@ async def _handle_chat_request(request: Request):
 
             # For function responses, we need to use generate_content with chat's current history
             contents_with_tool_response = list(chat_session.get_history()) + tool_responses
-            return run_conversation_with_chat_recursive(contents_with_tool_response)
+            return run_conversation_with_chat_recursive(contents_with_tool_response, business_id)
         
         return response.text if response.text else ""
     
-    def run_conversation_with_chat_recursive(current_contents: List[types.Content]) -> str:
+    def run_conversation_with_chat_recursive(current_contents: List[types.Content], business_id: Optional[str] = None) -> str:
         """Recursive function call handler."""
         if _client is None or _model_name is None:
             raise Exception("Chat client not initialized")
+        
+        # Get CRM tools for this business (per-tenant)
+        crm_tools = crm_manager.get_crm_tools(business_id)
         
         gemini_response = _client.models.generate_content(
             model=_model_name,
@@ -277,7 +282,7 @@ async def _handle_chat_request(request: Request):
                 types.Content(role="model", parts=gemini_response.candidates[0].content.parts),
                 types.Content(role="user", parts=tool_responses)
             ]
-            return run_conversation_with_chat_recursive(contents_with_tool_response)
+            return run_conversation_with_chat_recursive(contents_with_tool_response, business_id)
         
         return gemini_response.text if gemini_response.text else ""
     

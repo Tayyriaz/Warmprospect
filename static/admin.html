@@ -503,12 +503,8 @@
                      placeholder="+1 (555) 123-4567" />
             </div>
             
-            <div class="form-group">
-              <label>Appointment/Booking Link</label>
-              <input type="url" id="appointmentLink" name="appointmentLink" 
-                     placeholder="https://example.com/book" />
-              <div class="help-text">URL for booking appointments or scheduling</div>
-            </div>
+            <!-- Appointment/Booking Link removed - use CTA Tree with redirect action instead -->
+            <!-- Example CTA: {"appt_growth_call": {"id": "appt_growth_call", "label": "15-Min Growth Call", "action": "redirect", "url": "https://calendly.com/goaccel/growth-call"}} -->
           </div>
         </div>
 
@@ -768,7 +764,7 @@ Your role is to help potential customers understand how GoAccel can help their h
       document.getElementById('primaryGoal').value = 'Help home services businesses scale predictably and build long-term enterprise value';
       document.getElementById('personality').value = 'Friendly, knowledgeable, and growth-focused';
       document.getElementById('greetingMessage').value = 'Hi! Welcome to GoAccel. I\'m here to help you understand how we can accelerate your home services business growth. What would you like to know?';
-      document.getElementById('appointmentLink').value = 'https://warmprospect.com/goaccel-website/';
+      // appointmentLink removed - use CTA tree with redirect action instead
       document.getElementById('privacyStatement').value = 'We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.';
       document.getElementById('websiteUrl').value = 'https://warmprospect.com/goaccel-website/';
       document.getElementById('contactEmail').value = 'info@goaccel.com';
@@ -870,7 +866,7 @@ Your role is to help potential customers understand how GoAccel can help their h
         document.getElementById('primaryGoal').value = config.primaryGoal || '';
         document.getElementById('personality').value = config.personality || '';
         document.getElementById('greetingMessage').value = config.greetingMessage || '';
-        document.getElementById('appointmentLink').value = config.appointmentLink || '';
+        // appointmentLink removed - use CTA tree with redirect action instead
         document.getElementById('privacyStatement').value = config.privacyStatement || '';
         document.getElementById('themeColor').value = config.themeColor || '#2563eb';
         document.getElementById('widgetPosition').value = config.widgetPosition || 'center';

@@ -22,7 +22,7 @@ def initialize_session_state() -> Dict[str, Any]:
         # Business / tenant-level config (optional, per user or per channel)
         "business_id": None,
         "system_instruction": None,  # full effective system prompt for this session
-        "appointment_link": None,    # override default appointment link if provided
+        # appointment_link removed - use CTA tree with redirect action instead
 
         # PII and IDs (Memory/Field Lock)
         "first_name": None,

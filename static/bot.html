@@ -276,7 +276,7 @@
         "We collect contact information only for keeping you up to date regarding our products, services, and special offers. Please review our privacy policy for more details.",
       themeColor: "#2563eb",
       widgetPosition: "center",
-      appointmentLink: "https://example.com/book",
+      // appointmentLink removed - use CTA tree with redirect action instead
       chatbotButtonText: "Send",
     };
     
@@ -352,7 +352,7 @@
           privacyStatement: config.privacyStatement || CHATBOT_CONFIG.privacyStatement,
           themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
           widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
-          appointmentLink: config.appointmentLink || CHATBOT_CONFIG.appointmentLink,
+          // appointmentLink removed - use CTA tree with redirect action instead
           voiceEnabled: config.voiceEnabled || false, // Check if voice is enabled
           chatbotButtonText: config.chatbotButtonText || "Send", // Chat button text
         };
@@ -753,7 +753,7 @@
             user_id: userId,
             business_id: CHATBOT_CONFIG.businessId,
             system_prompt: buildBusinessSystemPrompt(),
-            appointment_link: CHATBOT_CONFIG.appointmentLink,
+            // appointment_link removed - use CTA tree with redirect action instead
           }),
         });
         

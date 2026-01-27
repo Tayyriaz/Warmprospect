@@ -7,18 +7,16 @@ from typing import Dict, Any, Optional
 from core.session_management import initialize_session_state, clear_chat_session_cache
 from core.session_store import save_session
 
-# Appointment Hard Guard defaults (can be overridden per session)
-APPOINTMENT_LINK = os.getenv("DEFAULT_APPOINTMENT_LINK", "") 
-APPOINTMENT_RESPONSE_TEMPLATE = "You can check our availability and schedule directly through our calendar here: {link}."
-
-
 def check_hard_guards(
     user_input: str,
     session: Dict[str, Any],
     session_key: str,
     original_user_id: str,
 ) -> Optional[Dict[str, Any]]:
-    """Checks for strict hard guards (Intro Token, Appointment) before calling Gemini."""
+    """
+    Checks for strict hard guards (Intro Token) before calling Gemini.
+    Note: Appointment booking is now handled via CTA tree (redirect action with URL).
+    """
     
     clean_input = user_input.lower().strip()
     
@@ -41,30 +39,9 @@ def check_hard_guards(
             "response": "Please choose one of the options below.",
             "cta_mode": "primary",
         }
-
-    # Check for APPOINTMENT HARD GUARD
-    appointment_triggers = [
-        "booking",
-        "book an appointment",
-        "book appointment",
-        "rescheduling",
-        "canceling",
-        "updating",
-        "finding",
-        "availability",
-        "meeting",
-        "call",
-        "calendar",
-    ]
-    
-    if any(trigger in clean_input for trigger in appointment_triggers):
-        # Choose appointment link: per-session override first, then global default
-        appointment_link = session.get("appointment_link") or APPOINTMENT_LINK
-        response_text = APPOINTMENT_RESPONSE_TEMPLATE.format(link=appointment_link)
-        # Update route and return the fixed response
-        session["current_route"] = "appointments"
-        # Save to Redis immediately
-        save_session(session_key, session)
-        return {"response": response_text}
+        
+    # Note: Appointment booking is now handled via CTA tree
+    # Users click CTAs with action="redirect" and url pointing to appointment links
+    # This allows multiple appointment links per tenant (e.g., different departments)
         
     return None  # No hard guard triggered
