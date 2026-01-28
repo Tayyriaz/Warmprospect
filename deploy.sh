@@ -2,6 +2,13 @@
 # Deploy script for GoAccel Chatbot
 # Handles both initial setup and regular deployments
 
+# Ensure script is run with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "❌ This script must be run with bash, not sh"
+    echo "   Usage: bash deploy.sh or ./deploy.sh"
+    exit 1
+fi
+
 set -e
 
 echo "🚀 GoAccel Deployment Script"
@@ -10,7 +17,11 @@ echo ""
 
 # Check if running as root for service operations
 NEED_ROOT=false
-if [ "$EUID" -ne 0 ]; then 
+# Check EUID (Effective User ID) - available in bash
+if [ -n "$EUID" ] && [ "$EUID" -ne 0 ]; then 
+    NEED_ROOT=true
+elif [ "$(id -u)" -ne 0 ]; then
+    # Fallback if EUID not available
     NEED_ROOT=true
 fi
 
@@ -74,8 +85,10 @@ if [ "$SERVICE_EXISTS" = false ]; then
     # Get port from existing service or default to 8001 (matching goaccel.service)
     PORT=8001
     if [ -f "$SERVICE_FILE" ]; then
-        EXISTING_PORT=$(grep -oP '--port \K\d+' "$SERVICE_FILE" || echo "8001")
-        PORT=${EXISTING_PORT:-8001}
+        EXISTING_PORT=$(grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8001")
+        if [ -n "$EXISTING_PORT" ] && [ "$EXISTING_PORT" -gt 0 ] 2>/dev/null; then
+            PORT=$EXISTING_PORT
+        fi
     fi
     
     # Create service file
@@ -186,10 +199,11 @@ fi
 echo ""
 echo "🐍 Step 2: Setting up Python environment..."
 if [ -d "venv" ]; then
-    source venv/bin/activate
+    # Use . instead of source for better compatibility, but source should work in bash
+    . venv/bin/activate || source venv/bin/activate
     echo "✅ Virtual environment activated"
 elif [ -d ".venv" ]; then
-    source .venv/bin/activate
+    . .venv/bin/activate || source .venv/bin/activate
     echo "✅ Virtual environment activated"
 else
     echo "⚠️  No virtual environment found, using system Python"
