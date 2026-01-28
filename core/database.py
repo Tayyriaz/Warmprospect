@@ -10,10 +10,9 @@ Important:
 import os
 import json
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
@@ -39,8 +38,9 @@ engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for models
-Base = declarative_base()
+# Base class for models (SQLAlchemy 2.0+ style)
+class Base(DeclarativeBase):
+    pass
 
 
 class BusinessConfig(Base):
@@ -65,8 +65,8 @@ class BusinessConfig(Base):
     chatbot_button_text = Column(String(255))  # Text for the chatbot button (e.g., "Chat with us")
     business_logo = Column(String(500))  # URL or path to business logo image
     voice_enabled = Column(Boolean, default=False)  # Enable voice bot for this business
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model to dictionary."""
@@ -95,15 +95,10 @@ class BusinessConfig(Base):
             "website_url": self.website_url,
             "contact_email": self.contact_email,
             "contact_phone": self.contact_phone,
-            "cta_tree": json.loads(self.cta_tree) if hasattr(self, 'cta_tree') and self.cta_tree else {},
-            "rules": json.loads(self.rules) if hasattr(self, 'rules') and self.rules else [],
-            "custom_routes": json.loads(self.custom_routes) if hasattr(self, 'custom_routes') and self.custom_routes else {},
-            "available_services": json.loads(self.available_services) if hasattr(self, 'available_services') and self.available_services else [],
-            "topic_ctas": json.loads(self.topic_ctas) if hasattr(self, 'topic_ctas') and self.topic_ctas else {},
-            "experiments": json.loads(self.experiments) if hasattr(self, 'experiments') and self.experiments else [],
-            "voice_enabled": getattr(self, 'voice_enabled', False) if hasattr(self, 'voice_enabled') else False,
-            "chatbot_button_text": getattr(self, 'chatbot_button_text', None) if hasattr(self, 'chatbot_button_text') else None,
-            "business_logo": getattr(self, 'business_logo', None) if hasattr(self, 'business_logo') else None,
+            "cta_tree": json.loads(self.cta_tree) if self.cta_tree else {},
+            "voice_enabled": self.voice_enabled if hasattr(self, 'voice_enabled') else False,
+            "chatbot_button_text": self.chatbot_button_text if hasattr(self, 'chatbot_button_text') else None,
+            "business_logo": self.business_logo if hasattr(self, 'business_logo') else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -212,7 +207,7 @@ class BusinessConfigDB:
                 existing.voice_enabled = voice_enabled
                 existing.chatbot_button_text = chatbot_button_text
                 existing.business_logo = business_logo
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(timezone.utc)
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed
                 db.commit()

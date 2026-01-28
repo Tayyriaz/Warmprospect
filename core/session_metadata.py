@@ -4,7 +4,7 @@ Supports custom attributes and metadata storage per session.
 """
 
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class SessionMetadataManager:
@@ -75,7 +75,7 @@ class SessionMetadataManager:
         """
         if "metadata" in session and key in session["metadata"]:
             del session["metadata"][key]
-            session["metadata"]["_last_updated"] = datetime.utcnow().isoformat()
+            session["metadata"]["_last_updated"] = datetime.now(timezone.utc).isoformat()
         
         return session
     

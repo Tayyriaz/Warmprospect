@@ -4,7 +4,7 @@ Tracking and analytics for session data.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
 
@@ -36,7 +36,7 @@ class SessionAnalytics:
             session["analytics"] = {
                 "events": [],
                 "metrics": {},
-                "start_time": datetime.utcnow().isoformat()
+                "start_time": datetime.now(timezone.utc).isoformat()
             }
         
         # Ensure events list exists (defensive check)
@@ -45,12 +45,12 @@ class SessionAnalytics:
         
         event = {
             "type": event_type,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": event_data or {}
         }
         
         session["analytics"]["events"].append(event)
-        session["analytics"]["last_event_time"] = datetime.utcnow().isoformat()
+        session["analytics"]["last_event_time"] = datetime.now(timezone.utc).isoformat()
         
         # Update metrics
         if "metrics" not in session["analytics"]:
@@ -195,7 +195,7 @@ class SessionAnalytics:
         Returns:
             Dictionary of aggregated metrics
         """
-        cutoff_time = datetime.utcnow() - timedelta(hours=time_range_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=time_range_hours)
         
         filtered_events = []
         for event in self.session_events:

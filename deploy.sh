@@ -151,6 +151,13 @@ EOF
         chmod 600 "$PROJECT_PATH/.env" 2>/dev/null || true
     fi
     
+    # Remove deprecated files
+    echo "  Cleaning up deprecated files..."
+    if [ -f "$PROJECT_PATH/business_configs.json" ]; then
+        rm -f "$PROJECT_PATH/business_configs.json"
+        echo "  ✅ Removed deprecated business_configs.json"
+    fi
+    
     echo "✅ Permissions setup complete"
     
     SERVICE_EXISTS=true
@@ -188,9 +195,18 @@ else
     echo "⚠️  No virtual environment found, using system Python"
 fi
 
-# Step 3: Ensure data directory exists and is writable
+# Step 3: Clean up deprecated files
 echo ""
-echo "📁 Step 3: Ensuring data directory is writable..."
+echo "🧹 Step 3: Cleaning up deprecated files..."
+# Remove old file-based config (now using database only)
+if [ -f "business_configs.json" ]; then
+    rm -f business_configs.json
+    echo "✅ Removed deprecated business_configs.json (now using database only)"
+fi
+
+# Step 4: Ensure data directory exists and is writable
+echo ""
+echo "📁 Step 4: Ensuring data directory is writable..."
 if [ "$NEED_ROOT" = false ]; then
     mkdir -p data
     chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
@@ -200,9 +216,9 @@ else
     echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
 fi
 
-# Step 4: Install/update dependencies
+# Step 5: Install/update dependencies
 echo ""
-echo "📦 Step 4: Installing dependencies..."
+echo "📦 Step 5: Installing dependencies..."
 if [ -f "requirements.txt" ]; then
     pip install -q -r requirements.txt
     echo "✅ requirements.txt installed"
@@ -215,9 +231,9 @@ if [ -f "requirements_voice.txt" ]; then
     echo "✅ requirements_voice.txt installed"
 fi
 
-# Step 5: Restart service
+# Step 6: Restart service
 echo ""
-echo "🔄 Step 5: Restarting service..."
+echo "🔄 Step 6: Restarting service..."
 
 if [ "$NEED_ROOT" = true ]; then
     echo "⚠️  Root access required to restart service."
@@ -231,7 +247,7 @@ else
     
     # Check status
     echo ""
-    echo "📊 Step 6: Checking service status..."
+    echo "📊 Step 7: Checking service status..."
     systemctl status $SERVICE_NAME --no-pager -l | head -20
 fi
 

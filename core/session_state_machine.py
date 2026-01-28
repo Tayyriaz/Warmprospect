@@ -5,7 +5,7 @@ Manages complex conversation flow with state transitions.
 
 from typing import Dict, Any, Optional, List, Callable
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ConversationState(Enum):
@@ -178,7 +178,7 @@ class SessionStateMachine:
         session["state_history"].append({
             "from_state": previous_state,
             "to_state": state,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "reason": reason
         })
         

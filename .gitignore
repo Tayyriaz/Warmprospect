@@ -35,7 +35,8 @@ logs/
 # data/*.faiss
 # data/*.jsonl
 
-# Business configuration files (file-based storage fallback)
+# Business configuration files (DEPRECATED - now using database only)
+# This file should not exist - kept in .gitignore for cleanup
 business_configs.json
 
 # Build files

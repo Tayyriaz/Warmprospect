@@ -21,6 +21,7 @@ from core.session_analytics import analytics
 from core.sentiment_analysis import sentiment_analyzer
 from core.cta_tree import detect_intent_from_message
 from core_tools.crm_functions import CRMTools
+from core_tools.crm_manager import crm_manager
 
 router = APIRouter()
 
