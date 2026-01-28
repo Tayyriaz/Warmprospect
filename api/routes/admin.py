@@ -19,7 +19,8 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
     """Update scraping status in a JSON file for frontend polling."""
     try:
         # Use absolute paths to avoid issues with working directory
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
         status_dir = os.path.dirname(status_file)
         
@@ -52,7 +53,8 @@ def trigger_kb_build(business_id: str, website_url: str):
     print(f"[INFO] Background task started for business: {business_id}, URL: {website_url}")
     try:
         # Use absolute paths to avoid issues with working directory
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         script_path = os.path.join(base_dir, "scripts", "build_kb_for_business.py")
         
         print(f"[DEBUG] Base directory: {base_dir}")
@@ -268,7 +270,8 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
             )
         
         # Optional: Clear old index files before rebuilding
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
         meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
         
@@ -311,7 +314,8 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
 async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_key)):
     """Get current scraping status for a business."""
     # Use absolute paths to avoid issues with working directory
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
     
     if not os.path.exists(status_file):
