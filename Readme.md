@@ -16,11 +16,11 @@ todos: []
 
 - **Backend Framework**: FastAPI (Python)
 - **AI/ML**: Google Gemini API (gemini-2.5-flash, gemini-2.0-flash-exp for voice)
-- **Database**: PostgreSQL (with JSON file fallback)
+- **Database**: PostgreSQL (database-only, no file fallback)
 - **Session Storage**: Redis (with in-memory fallback)
 - **Voice Services**: Twilio (phone calls), Edge TTS (text-to-speech)
 - **RAG**: FAISS vector search with Google embeddings
-- **Deployment**: Docker, VPS
+- **Deployment**: Docker, VPS (with automated deploy.sh script)
 
 
 ## Key Features
@@ -30,16 +30,17 @@ todos: []
   - Each business has unique `business_id` identifier
   - Business CRUD operations via admin API (create, edit, delete, view)
   - No data or configuration leakage between tenants
-  - Chat API requires `business_id`, `session_id`, and `message` parameters
+  - Chat API requires `business_id`, `user_id` (or `session_id`), and `message` parameters
   - Each business instance operates independently
 
 - **Business Configuration & Customization**
   - Unique system prompts and personality traits per business
-  - Custom branding (colors, widget positioning, greeting messages)
-  - Business-specific call-to-action (CTA) structures
+  - Custom branding (colors, widget positioning, greeting messages, logo)
+  - Business-specific hierarchical CTA tree structure (cta_tree)
   - Custom business rules and logic for conversation flows
-  - Currently static configuration (architecture supports dynamic, rule-based system)
-  - Designed for multi-level hierarchical CTAs with context-aware selection
+  - Database-only storage (PostgreSQL) - no file-based fallback
+  - Multi-level hierarchical CTAs with context-aware selection
+  - Separate knowledge base scraping endpoint (not automatic on save)
 
 - **Session & Conversation Management**
   - Sessions uniquely identified by `business_id:session_id` combination
@@ -100,7 +101,7 @@ todos: []
 - **Multi-tenant business management**: CRUD operations for businesses via admin API
 - **Session management**: Redis-based storage with TTL, session isolation by business_id:session_id
 - **Chat engine**: Gemini Chat API integration with automatic history management
-- **Business configuration**: System prompts, branding, greeting messages, basic CTAs
+- **Business configuration**: System prompts, branding, greeting messages, hierarchical CTA tree
 - **RAG integration**: FAISS vector indexes per business with Google embeddings
 - **CRM tool framework**: Function calling structure for contact and deal management
 - **Voice API**: Twilio phone call integration with Gemini Live API
@@ -108,35 +109,44 @@ todos: []
 - **Security**: API key authentication, CORS configuration, rate limiting
 - **Hard guards**: Intro token detection and appointment guard
 - **Response formatting**: Paragraph + CTA format enforcement, HTML support
+- **Session metadata**: Custom attributes and metadata storage per session
+- **Session state machine**: Complex conversation flow management with state transitions
+- **Session analytics**: Tracking and analytics for session data with API endpoints
+- **Intent detection**: Classify user intent to improve routing and responses
+- **Sentiment analysis**: Personalized responses based on user sentiment
+- **Multi-turn conversation planning**: Better handling of complex, multi-step conversations
+- **Business rules engine**: Pluggable rule system for conditional logic in conversation flow
+- **A/B testing framework**: Support for experimentation and testing different configurations
+- **Dynamic CTA integration**: Context-aware CTA selection and injection into responses
 
 ### Tasks To Be Completed 📋
 
 #### High Priority - Dynamic Configuration
 
-- [ ] **Multi-level CTA system**: Implement hierarchical, dynamic CTA structure (primary, secondary, tertiary, nested)
-- [ ] **Context-aware CTA selection**: Select CTAs based on conversation flow and user intent
-- [ ] **Conditional CTA logic**: CTAs that appear/disappear based on user responses, conversation state, business rules, or metadata
+- [x] **Multi-level CTA system**: Implemented hierarchical CTA tree structure (cta_tree)
+- [x] **Context-aware CTA selection**: CTA selection based on conversation flow and user intent
+- [ ] **Conditional CTA logic**: CTAs that appear/disappear based on user responses, conversation state, business rules, or metadata (rules engine exists but needs integration)
 - [ ] **Dynamic CTA generation**: Generate CTAs dynamically based on available services/products
-- [ ] **Business rules engine**: Pluggable rule system for conditional logic in conversation flow
-- [ ] **Dynamic routing decisions**: Context-aware routing based on business rules
-- [ ] **A/B testing framework**: Support for experimentation and testing different configurations
+- [x] **Business rules engine**: Pluggable rule system for conditional logic in conversation flow (framework implemented)
+- [ ] **Dynamic routing decisions**: Context-aware routing based on business rules (router exists but needs rule integration)
+- [x] **A/B testing framework**: Support for experimentation and testing different configurations (framework implemented)
 
 #### Session & Conversation Enhancements
 
-- [ ] **Session metadata support**: Custom attributes and metadata storage per session
-- [ ] **Session state machine**: Complex conversation flow management with state transitions
-- [ ] **Session analytics**: Tracking and analytics for session data
-- [ ] **Conversation state management**: State machine for multi-step conversation flows
-- [ ] **Intent detection**: Classify user intent to improve routing and responses
-- [ ] **Sentiment analysis**: Personalized responses based on user sentiment
-- [ ] **Multi-turn conversation planning**: Better handling of complex, multi-step conversations
+- [x] **Session metadata support**: Custom attributes and metadata storage per session
+- [x] **Session state machine**: Complex conversation flow management with state transitions
+- [x] **Session analytics**: Tracking and analytics for session data (with API endpoints)
+- [x] **Conversation state management**: State machine for multi-step conversation flows
+- [x] **Intent detection**: Classify user intent to improve routing and responses
+- [x] **Sentiment analysis**: Personalized responses based on user sentiment
+- [x] **Multi-turn conversation planning**: Better handling of complex, multi-step conversations
 
 #### Chat Engine Improvements
 
-- [ ] **Dynamic CTA integration**: Context-aware CTA selection and injection into responses
+- [x] **Dynamic CTA integration**: Context-aware CTA selection and injection into responses
 - [ ] **Error handling**: More graceful degradation when services fail
 - [ ] **Response validation**: Ensure responses meet format requirements before sending
-- [ ] **Token management**: Intelligent history summarization instead of hard truncation
+- [ ] **Token management**: Intelligent history summarization instead of hard truncation (currently uses MAX_HISTORY_TURNS truncation)
 - [ ] **Streaming responses**: Support for streaming responses for better UX
 - [ ] **Response caching**: Cache common responses to reduce API calls
 
@@ -259,11 +269,11 @@ Phone Call (business-specific chatbot)
 - `POST /chat` - Main chat endpoint (rate limited)
   - **Request Body**:
     - `business_id` (required) - Identifies which business's chatbot to use
-    - `session_id` (required) - Unique identifier for the conversation session
+    - `user_id` or `session_id` (required) - Unique identifier for the conversation session
     - `message` (required) - User's message/input
   - **Response**: 
-    - `response` - AI-generated response text
-    - `ctas` (optional) - Call-to-action buttons if applicable
+    - `response` - AI-generated response text (CTAs are NEVER included in response text)
+    - `cta` (optional) - Separate CTA array - CTAs are always returned as a separate field, never in the response text
 - `GET /api/business/{business_id}/config` - Widget configuration
   - Returns business-specific configuration (branding, CTAs, greeting message, etc.)
   - Used by client applications to fetch business configuration
@@ -272,14 +282,23 @@ Phone Call (business-specific chatbot)
 
 - `GET /admin` - Admin panel UI (testing only, not for production)
 - `POST /admin/business` - Create/update business
-  - **Request Body**: Business configuration (business_id, business_name, system_prompt, CTAs, etc.)
-  - **Response**: Created/updated business configuration
+  - **Request Body**: Business configuration (businessId, businessName, systemPrompt, ctaTree, etc.)
+  - **Note**: Knowledge base scraping must be triggered separately using `/admin/business/{business_id}/scrape`
+  - **Response**: Created/updated business configuration (camelCase format)
 - `GET /admin/business` - List all businesses
-  - **Response**: Dictionary of all businesses keyed by business_id
+  - **Response**: Dictionary of all businesses keyed by business_id (camelCase format)
 - `GET /admin/business/{business_id}` - Get business config
-  - **Response**: Complete business configuration object
+  - **Response**: Complete business configuration object (camelCase format)
 - `DELETE /admin/business/{business_id}` - Delete business
   - **Response**: Success confirmation
+- `POST /admin/business/{business_id}/scrape` - Manually trigger knowledge base scraping
+  - **Response**: Success confirmation with scraping status
+  - **Note**: Requires business to have `websiteUrl` configured
+- `POST /admin/business/{business_id}/refresh-kb` - Refresh/rebuild knowledge base from scratch
+  - **Response**: Success confirmation
+  - **Note**: Clears old index files and rebuilds from websiteUrl
+- `GET /admin/business/{business_id}/scraping-status` - Get current scraping status
+  - **Response**: Status object with `status`, `message`, `progress` (0-100), `updated_at`
 
 ### Voice Endpoints (Twilio Integration)
 
@@ -314,7 +333,7 @@ GEMINI_MODEL=gemini-2.5-flash
 MAX_HISTORY_TURNS=20
 PORT=8000
 ALLOWED_ORIGINS=["*"]  # JSON array, e.g., ["https://example.com", "https://app.example.com"]
-DEFAULT_APPOINTMENT_LINK=https://calendly.com/example
+SESSION_TTL_SECONDS=604800  # 7 days in seconds
 
 # Twilio (per-tenant configuration - each business configures their own)
 # Platform-level Twilio credentials (if needed for platform operations)
@@ -358,5 +377,44 @@ Copy the generated key and add it to your `.env` file as `ADMIN_API_KEY=...`. Th
 - Rotate keys periodically in production
 - Use different keys for development and production environments
 
-**Commands **
-cd /var/www/chatbot && git pull && source venv/bin/activate && python scripts/migrate_db.py && sudo systemctl restart goaccel.service
+## Deployment
+
+### VPS Deployment
+
+The platform includes an automated deployment script (`deploy.sh`) that handles:
+- Git pull and updates
+- Virtual environment activation
+- Dependency installation
+- Permission setup (first-time)
+- Service restart
+- Cleanup of deprecated files (e.g., `business_configs.json`)
+
+**Quick Deploy:**
+```bash
+cd /var/www/chatbot
+sudo ./deploy.sh
+```
+
+**Manual Deploy (if needed):**
+```bash
+cd /var/www/chatbot
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart goaccel.service
+```
+
+**First-Time Setup:**
+The `deploy.sh` script will automatically:
+- Create systemd service if it doesn't exist
+- Set up proper file permissions for `www-data` user
+- Configure data directory permissions
+- Clean up deprecated files
+
+**Database Migration:**
+Run migrations manually if needed:
+```bash
+cd /var/www/chatbot
+source venv/bin/activate
+python scripts/migrate_db.py
+```

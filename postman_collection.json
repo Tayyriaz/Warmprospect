@@ -47,7 +47,7 @@
 							"host": ["{{base_url}}"],
 							"path": ["chat"]
 						},
-						"description": "Main API endpoint to handle incoming chat messages. Rate limited to 20 requests per minute.\n\n**Required Fields:**\n- `business_id`: Identifies which business's chatbot to use\n- `user_id`: Unique identifier for the conversation session (can use `session_id` as alias)\n- `message`: User's message/input\n\n**Response:**\n- `response`: AI-generated response text (CTAs are NEVER included in response text)\n- `cta`: (optional) Separate CTA array - CTAs are always returned as a separate field, never in the response text"
+						"description": "Main API endpoint to handle incoming chat messages. Rate limited to 5 requests per minute per user.\n\n**Required Fields:**\n- `business_id`: Identifies which business's chatbot to use\n- `user_id` or `session_id`: Unique identifier for the conversation session\n- `message`: User's message/input\n\n**Response:**\n- `response`: AI-generated response text (CTAs are NEVER included in response text)\n- `cta`: (optional) Separate CTA array - CTAs are always returned as a separate field, never in the response text\n\n**Note**: The system uses `business_id:user_id` as the session key for complete isolation between businesses and users."
 					},
 					"response": []
 				},
@@ -156,7 +156,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"businessId\": \"example_business\",\n  \"businessName\": \"Example Business Name\",\n  \"systemPrompt\": \"You are a friendly AI assistant for Example Business.\",\n  \"greetingMessage\": \"Welcome! How can I help you today?\",\n  \"appointmentLink\": \"https://calendly.com/example\",\n  \"primaryGoal\": \"Lead generation and customer support\",\n  \"personality\": \"Friendly, professional, and helpful\",\n  \"privacyStatement\": \"We respect your privacy...\",\n  \"themeColor\": \"#2563eb\",\n  \"widgetPosition\": \"center\",\n  \"websiteUrl\": \"https://example.com\",\n  \"contactEmail\": \"contact@example.com\",\n  \"contactPhone\": \"+1234567890\",\n  \"chatbotButtonText\": \"Chat with us\",\n  \"businessLogo\": \"https://example.com/logo.png\",\n  \"voiceEnabled\": false,\n  \"ctaTree\": {\n    \"get_started\": {\n      \"id\": \"get_started\",\n      \"label\": \"Get Started\",\n      \"action\": \"show_children\",\n      \"children\": [\"learn_more\", \"book_call\"]\n    },\n    \"learn_more\": {\n      \"id\": \"learn_more\",\n      \"label\": \"Learn More\",\n      \"action\": \"send\",\n      \"message\": \"Tell me more about your services\"\n    },\n    \"book_call\": {\n      \"id\": \"book_call\",\n      \"label\": \"Book a Call\",\n      \"action\": \"redirect\",\n      \"url\": \"https://calendly.com/example\"\n    }\n  }\n}",
+							"raw": "{\n  \"businessId\": \"example_business\",\n  \"businessName\": \"Example Business Name\",\n  \"systemPrompt\": \"You are a friendly AI assistant for Example Business.\",\n  \"greetingMessage\": \"Welcome! How can I help you today?\",\n  \"primaryGoal\": \"Lead generation and customer support\",\n  \"personality\": \"Friendly, professional, and helpful\",\n  \"privacyStatement\": \"We respect your privacy...\",\n  \"themeColor\": \"#2563eb\",\n  \"widgetPosition\": \"center\",\n  \"websiteUrl\": \"https://example.com\",\n  \"contactEmail\": \"contact@example.com\",\n  \"contactPhone\": \"+1234567890\",\n  \"chatbotButtonText\": \"Chat with us\",\n  \"businessLogo\": \"https://example.com/logo.png\",\n  \"voiceEnabled\": false,\n  \"ctaTree\": {\n    \"get_started\": {\n      \"id\": \"get_started\",\n      \"label\": \"Get Started\",\n      \"action\": \"show_children\",\n      \"children\": [\"learn_more\", \"book_call\"]\n    },\n    \"learn_more\": {\n      \"id\": \"learn_more\",\n      \"label\": \"Learn More\",\n      \"action\": \"send\",\n      \"message\": \"Tell me more about your services\"\n    },\n    \"book_call\": {\n      \"id\": \"book_call\",\n      \"label\": \"Book a Call\",\n      \"action\": \"redirect\",\n      \"url\": \"https://calendly.com/example\"\n    }\n  }\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -168,7 +168,7 @@
 							"host": ["{{base_url}}"],
 							"path": ["admin", "business"]
 						},
-						"description": "Create or update a business configuration. If `websiteUrl` is provided, automatically triggers knowledge base scraping in the background.\n\n**Required Fields:**\n- `businessId`: Unique identifier for the business\n- `businessName`: Display name for the business\n- `systemPrompt`: Business-specific system prompt/instructions\n\n**Optional Fields:**\n- `greetingMessage`: Initial greeting message\n- `appointmentLink`: URL for appointment booking\n- `primaryGoal`: Primary business goal\n- `personality`: Personality description\n- `privacyStatement`: Privacy statement text\n- `themeColor`: Theme color (hex code)\n- `widgetPosition`: Widget position (center, bottom-right, etc.)\n- `websiteUrl`: Website URL for knowledge base scraping\n- `contactEmail`: Contact email\n- `contactPhone`: Contact phone number\n- `chatbotButtonText`: Text for the chatbot button (e.g., \"Chat with us\")\n- `businessLogo`: Base64 encoded image or URL to business logo\n- `ctaTree`: JSON object defining multi-level CTA tree structure\n- `voiceEnabled`: Boolean to enable voice bot (phone calls) for this business"
+						"description": "Create or update a business configuration. **Note**: Knowledge base scraping must be triggered separately using `/admin/business/{business_id}/scrape` endpoint.\n\n**Required Fields:**\n- `businessId`: Unique identifier for the business\n- `businessName`: Display name for the business\n- `systemPrompt`: Business-specific system prompt/instructions\n\n**Optional Fields:**\n- `greetingMessage`: Initial greeting message\n- `primaryGoal`: Primary business goal\n- `personality`: Personality description\n- `privacyStatement`: Privacy statement text\n- `themeColor`: Theme color (hex code, default: #2563eb)\n- `widgetPosition`: Widget position (center, bottom-right, etc., default: center)\n- `websiteUrl`: Website URL for knowledge base scraping (required for KB scraping)\n- `contactEmail`: Contact email\n- `contactPhone`: Contact phone number\n- `chatbotButtonText`: Text for the chatbot button (e.g., \"Chat with us\")\n- `businessLogo`: Base64 encoded image (data:image/...) or URL to business logo\n- `ctaTree`: JSON object defining hierarchical CTA tree structure (replaces deprecated primary/secondary CTAs)\n- `voiceEnabled`: Boolean to enable voice bot (phone calls) for this business\n\n**Note**: The system uses database-only storage (PostgreSQL). All configurations are stored in the database."
 					},
 					"response": []
 				},
@@ -245,6 +245,58 @@
 					"response": []
 				},
 				{
+					"name": "Trigger Knowledge Base Scraping",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business/:business_id/scrape",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business", ":business_id", "scrape"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Manually trigger knowledge base scraping for a business. Requires the business to have a `websiteUrl` configured. Scraping runs in the background - use `/scraping-status` endpoint to check progress.\n\n**Response:**\n- `success`: Boolean indicating success\n- `message`: Status message\n- `business_id`: Business identifier\n- `website_url`: Website URL being scraped"
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Knowledge Base",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Admin-API-Key",
+								"value": "{{admin_api_key}}",
+								"description": "Admin API key for authentication"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/business/:business_id/refresh-kb",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "business", ":business_id", "refresh-kb"],
+							"variable": [
+								{
+									"key": "business_id",
+									"value": "example_business"
+								}
+							]
+						},
+						"description": "Refresh/rebuild the knowledge base for a business from scratch. This clears old index files and rebuilds the knowledge base. Useful when website content has been updated.\n\n**Response:**\n- `success`: Boolean indicating success\n- `message`: Status message\n- `business_id`: Business identifier\n- `website_url`: Website URL being scraped"
+					},
+					"response": []
+				},
+				{
 					"name": "Get Scraping Status",
 					"request": {
 						"method": "GET",
@@ -266,7 +318,7 @@
 								}
 							]
 						},
-						"description": "Get current knowledge base scraping status for a business. Returns status, message, and progress (0-100)."
+						"description": "Get current knowledge base scraping status for a business.\n\n**Response:**\n- `status`: Current status (\"not_started\", \"pending\", \"scraping\", \"indexing\", \"completed\", \"failed\")\n- `message`: Status message\n- `progress`: Progress percentage (0-100)\n- `updated_at`: Timestamp of last update"
 					},
 					"response": []
 				}
