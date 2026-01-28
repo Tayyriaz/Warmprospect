@@ -25,7 +25,13 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
         status_dir = os.path.dirname(status_file)
         
         # Create directory if it doesn't exist
-        os.makedirs(status_dir, exist_ok=True)
+        try:
+            os.makedirs(status_dir, exist_ok=True)
+        except PermissionError as pe:
+            print(f"[ERROR] Cannot create directory {status_dir}: Permission denied.")
+            print(f"[ERROR] Run 'sudo chown -R www-data:www-data {base_dir}/data/' to fix permissions.")
+            print(f"[ERROR] Status updates will be skipped, but scraping may still work.")
+            return  # Don't raise - allow scraping to continue
         
         status_data = {
             "status": status,  # "pending", "scraping", "indexing", "completed", "failed"
@@ -35,14 +41,20 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
         }
         
         # Write status file
-        with open(status_file, "w", encoding="utf-8") as f:
-            json.dump(status_data, f)
-        
-        print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message}")
+        try:
+            with open(status_file, "w", encoding="utf-8") as f:
+                json.dump(status_data, f)
+            print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message}")
+        except PermissionError as pe:
+            print(f"[ERROR] Cannot write status file {status_file}: Permission denied.")
+            print(f"[ERROR] Run 'sudo chown -R www-data:www-data {base_dir}/data/' to fix permissions.")
+            print(f"[ERROR] Status updates will be skipped, but scraping may still work.")
+            return  # Don't raise - allow scraping to continue
     except Exception as e:
         print(f"[ERROR] Failed to update scraping status: {e}")
         import traceback
         traceback.print_exc()
+        # Don't raise - allow scraping to continue even if status update fails
 
 
 def trigger_kb_build(business_id: str, website_url: str):

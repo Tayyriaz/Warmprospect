@@ -219,17 +219,39 @@ def embed_chunks(client: genai.Client, chunks: List[str]) -> np.ndarray:
 
 
 def update_status_file(business_id: str, status: str, message: str = "", progress: int = 0):
-    """Update status file for frontend polling."""
-    status_file = os.path.join("data", business_id, "scraping_status.json")
-    os.makedirs(os.path.dirname(status_file), exist_ok=True)
-    status_data = {
-        "status": status,
-        "message": message,
-        "progress": progress,
-        "updated_at": time.time()
-    }
-    with open(status_file, "w", encoding="utf-8") as f:
-        json.dump(status_data, f)
+    """Update status file for frontend polling. Non-blocking - continues even if write fails."""
+    try:
+        status_file = os.path.join("data", business_id, "scraping_status.json")
+        status_dir = os.path.dirname(status_file)
+        
+        # Create directory if it doesn't exist
+        try:
+            os.makedirs(status_dir, exist_ok=True)
+        except PermissionError:
+            print(f"[WARNING] Cannot create directory {status_dir}: Permission denied. Status updates will be skipped.")
+            return
+        
+        status_data = {
+            "status": status,
+            "message": message,
+            "progress": progress,
+            "updated_at": time.time()
+        }
+        
+        # Write status file
+        try:
+            with open(status_file, "w", encoding="utf-8") as f:
+                json.dump(status_data, f)
+        except PermissionError:
+            print(f"[WARNING] Cannot write status file {status_file}: Permission denied.")
+            print(f"[WARNING] Run 'sudo chown -R www-data:www-data data/' to fix permissions.")
+            print(f"[WARNING] Scraping will continue, but status updates will be skipped.")
+            return
+    except Exception as e:
+        # Don't fail the entire scraping process if status update fails
+        print(f"[WARNING] Failed to update status file: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def build_kb_for_business(business_id: str, website_url: str):
