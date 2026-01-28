@@ -71,11 +71,11 @@ if [ "$SERVICE_EXISTS" = false ]; then
         PYTHON_PATH="/usr/bin"
     fi
     
-    # Get port from existing service or default
-    PORT=8000
+    # Get port from existing service or default to 8001 (matching goaccel.service)
+    PORT=8001
     if [ -f "$SERVICE_FILE" ]; then
-        EXISTING_PORT=$(grep -oP '--port \K\d+' "$SERVICE_FILE" || echo "8000")
-        PORT=${EXISTING_PORT:-8000}
+        EXISTING_PORT=$(grep -oP '--port \K\d+' "$SERVICE_FILE" || echo "8001")
+        PORT=${EXISTING_PORT:-8001}
     fi
     
     # Create service file
