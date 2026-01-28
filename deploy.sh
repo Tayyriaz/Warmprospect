@@ -117,6 +117,42 @@ EOF
     echo "✅ Enabling service..."
     systemctl enable $SERVICE_NAME
     
+    # Step: Set up permissions for first-time deployment
+    echo ""
+    echo "🔐 Setting up permissions (first-time setup)..."
+    
+    # Set ownership of project directory
+    echo "  Setting ownership of project directory..."
+    chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH" 2>/dev/null || {
+        echo "  ⚠️  Could not set ownership. Run manually: sudo chown -R $SERVICE_USER:$SERVICE_USER $PROJECT_PATH"
+    }
+    
+    # Ensure data directory exists and is writable
+    echo "  Creating data directory..."
+    mkdir -p "$PROJECT_PATH/data"
+    chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/data" 2>/dev/null || {
+        echo "  ⚠️  Could not set data directory ownership. Run manually: sudo chown -R $SERVICE_USER:$SERVICE_USER $PROJECT_PATH/data"
+    }
+    chmod -R 755 "$PROJECT_PATH/data" 2>/dev/null || {
+        echo "  ⚠️  Could not set data directory permissions. Run manually: sudo chmod -R 755 $PROJECT_PATH/data"
+    }
+    
+    # Ensure logs directory is writable (if it exists)
+    if [ -d "$PROJECT_PATH/logs" ]; then
+        echo "  Setting up logs directory..."
+        chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/logs" 2>/dev/null || true
+        chmod -R 755 "$PROJECT_PATH/logs" 2>/dev/null || true
+    fi
+    
+    # Ensure .env file is readable by service user
+    if [ -f "$PROJECT_PATH/.env" ]; then
+        echo "  Setting .env file permissions..."
+        chown $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/.env" 2>/dev/null || true
+        chmod 600 "$PROJECT_PATH/.env" 2>/dev/null || true
+    fi
+    
+    echo "✅ Permissions setup complete"
+    
     SERVICE_EXISTS=true
 fi
 

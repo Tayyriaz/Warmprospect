@@ -949,7 +949,8 @@ Your role is to help potential customers understand how GoAccel can help their h
     function showErrorModal(message) {
       const modal = document.getElementById('errorModal');
       const messageEl = document.getElementById('errorModalMessage');
-      messageEl.textContent = message;
+      // Replace newlines with <br> tags for proper display
+      messageEl.innerHTML = message.replace(/\n/g, '<br>');
       modal.classList.add('active');
     }
     
@@ -1032,7 +1033,7 @@ Your role is to help potential customers understand how GoAccel can help their h
           ctaTree = JSON.parse(data.ctaTree);
         }
       } catch (err) {
-        showAlert('CTA Tree must be valid JSON.', 'error');
+        showErrorModal('CTA Tree must be valid JSON. Please check the format and try again.');
         return;
       }
       data.ctaTree = ctaTree;
@@ -1040,7 +1041,7 @@ Your role is to help potential customers understand how GoAccel can help their h
       
       // Validate required fields
       if (!data.businessId || !data.businessName || !data.systemPrompt) {
-        showAlert('❌ Please fill in all required fields (Business ID, Name, and System Prompt)', 'error');
+        showErrorModal('Please fill in all required fields:\n\n• Business ID\n• Business Name\n• System Prompt');
         return;
       }
       
