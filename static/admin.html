@@ -597,6 +597,17 @@
     </div>
   </div>
 
+  <!-- Error Modal -->
+  <div id="errorModal" class="modal-overlay">
+    <div class="modal">
+      <h2 style="color: #dc2626;">❌ Error</h2>
+      <p id="errorModalMessage" style="color: #374151; line-height: 1.6;"></p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeErrorModal()">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Modal -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal">
@@ -934,6 +945,19 @@ Your role is to help potential customers understand how GoAccel can help their h
       pendingDeleteBusinessId = null;
     }
     
+    // Error Modal Functions
+    function showErrorModal(message) {
+      const modal = document.getElementById('errorModal');
+      const messageEl = document.getElementById('errorModalMessage');
+      messageEl.textContent = message;
+      modal.classList.add('active');
+    }
+    
+    function closeErrorModal() {
+      const modal = document.getElementById('errorModal');
+      modal.classList.remove('active');
+    }
+    
     async function confirmDelete() {
       if (!pendingDeleteBusinessId) return;
       
@@ -1030,15 +1054,28 @@ Your role is to help potential customers understand how GoAccel can help their h
         
         if (!res.ok) {
           const errorText = await res.text();
+          let errorMessage = '';
+          
           if (res.status === 403 || res.status === 500) {
             localStorage.removeItem('admin_api_key');
             ADMIN_API_KEY = null;
             document.getElementById('adminApiKey').value = '';
-            showAlert('Invalid or missing API key. Please enter a valid Admin API Key.', 'error');
+            errorMessage = 'Invalid or missing API key. Please enter a valid Admin API Key.';
             document.getElementById('adminApiKey').focus();
+            showErrorModal(errorMessage);
             return;
           }
-          throw new Error(`HTTP ${res.status}: ${errorText}`);
+          
+          // Try to parse error JSON
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.detail || errorJson.message || errorText;
+          } catch {
+            errorMessage = errorText || `HTTP ${res.status}: ${res.statusText}`;
+          }
+          
+          showErrorModal(errorMessage);
+          return;
         }
         
         const result = await res.json();
@@ -1052,11 +1089,12 @@ Your role is to help potential customers understand how GoAccel can help their h
           // Hide form after successful save
           toggleForm();
         } else {
-          showAlert('❌ Failed to save: ' + (result.detail || 'Unknown error'), 'error');
+          const errorMsg = result.detail || result.message || 'Unknown error occurred';
+          showErrorModal('Failed to save configuration:\n\n' + errorMsg);
         }
       } catch (err) {
         console.error('Error saving business:', err);
-        showAlert('❌ Error: ' + err.message, 'error');
+        showErrorModal('An error occurred while saving:\n\n' + err.message);
       }
     });
     
@@ -1228,6 +1266,13 @@ Your role is to help potential customers understand how GoAccel can help their h
     document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDelete);
     
     // Close delete modal when clicking overlay
+    // Close error modal when clicking outside
+    document.getElementById('errorModal').addEventListener('click', function(e) {
+      if (e.target.id === 'errorModal') {
+        closeErrorModal();
+      }
+    });
+    
     document.getElementById('deleteModal').addEventListener('click', function(e) {
       if (e.target === this) {
         closeDeleteModal();
