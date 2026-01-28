@@ -152,9 +152,21 @@ else
     echo "⚠️  No virtual environment found, using system Python"
 fi
 
-# Step 3: Install/update dependencies
+# Step 3: Ensure data directory exists and is writable
 echo ""
-echo "📦 Step 3: Installing dependencies..."
+echo "📁 Step 3: Ensuring data directory is writable..."
+if [ "$NEED_ROOT" = false ]; then
+    mkdir -p data
+    chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
+    chmod -R 755 data/ 2>/dev/null || true
+    echo "✅ Data directory permissions set"
+else
+    echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
+fi
+
+# Step 4: Install/update dependencies
+echo ""
+echo "📦 Step 4: Installing dependencies..."
 if [ -f "requirements.txt" ]; then
     pip install -q -r requirements.txt
     echo "✅ requirements.txt installed"
@@ -167,9 +179,9 @@ if [ -f "requirements_voice.txt" ]; then
     echo "✅ requirements_voice.txt installed"
 fi
 
-# Step 4: Restart service
+# Step 5: Restart service
 echo ""
-echo "🔄 Step 4: Restarting service..."
+echo "🔄 Step 5: Restarting service..."
 
 if [ "$NEED_ROOT" = true ]; then
     echo "⚠️  Root access required to restart service."
@@ -183,7 +195,7 @@ else
     
     # Check status
     echo ""
-    echo "📊 Step 5: Checking service status..."
+    echo "📊 Step 6: Checking service status..."
     systemctl status $SERVICE_NAME --no-pager -l | head -20
 fi
 
