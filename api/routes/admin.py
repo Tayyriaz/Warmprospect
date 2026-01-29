@@ -283,6 +283,19 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             "website_url": website_url
         }
         
+        # If forcing re-scrape, clear old status file to prevent auto-completion
+        if force_rescrape:
+            try:
+                if os.path.exists(status_file):
+                    # Backup old status by renaming it
+                    backup_file = status_file + ".backup"
+                    if os.path.exists(backup_file):
+                        os.remove(backup_file)
+                    os.rename(status_file, backup_file)
+                    print(f"[INFO] Cleared old status file for force re-scrape: {business_id}")
+            except Exception as e:
+                print(f"[WARN] Failed to clear old status file: {e}")
+        
         # If scraping was already completed and NOT forcing re-scrape, return existing categories
         if not force_rescrape and os.path.exists(status_file) and os.path.exists(categories_file):
             try:
@@ -416,7 +429,12 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
                 response.update(status_data)
                 
                 # Auto-fix: If categories exist but status is stuck, update to completed
-                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"]:
+                # BUT: Don't auto-fix if status was recently set to "pending" (within last 5 seconds)
+                # This prevents auto-completing a fresh re-scrape
+                status_age = time.time() - status_data.get("updated_at", 0)
+                is_recent_pending = status_data.get("status") == "pending" and status_age < 5
+                
+                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending:
                     print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
                     try:
                         with open(categories_file, "r", encoding="utf-8") as cf:
