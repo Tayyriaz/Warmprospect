@@ -610,8 +610,8 @@
   <div id="scrapingModal" class="modal-overlay">
     <div class="modal" style="max-width: 800px;">
       <h2>🌐 Building Knowledge Base</h2>
-      <div class="modal-status" id="modalStatus">Initializing...</div>
-      <div class="modal-message" id="modalMessage">Preparing to scrape your website...</div>
+      <div class="modal-status" id="modalStatus">Loading...</div>
+      <div class="modal-message" id="modalMessage">Checking scraping status...</div>
       <div style="margin: 12px 0; font-size: 12px; color: #9ca3af;" id="progressDetails">
         <!-- Progress details will be shown here -->
       </div>
@@ -1296,6 +1296,18 @@ Your role is to help potential customers understand how GoAccel can help their h
             messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${timeAgoText})</span>`;
           }
           
+          // Auto-detect completed status: If categories exist but status is still pending/scraping, treat as completed
+          if (status.categories && status.categories.length > 0 && 
+              (status.status === 'pending' || status.status === 'scraping' || 
+               status.status === 'categorizing' || status.status === 'indexing')) {
+            // Categories exist, so scraping must be completed - update status
+            status.status = 'completed';
+            status.progress = 100;
+            if (!status.message || status.message.includes('Preparing') || status.message.includes('Initializing')) {
+              status.message = 'Knowledge base built successfully!';
+            }
+          }
+          
           switch(status.status) {
             case 'pending':
               statusText = '⏳ Preparing...';
@@ -1315,7 +1327,7 @@ Your role is to help potential customers understand how GoAccel can help their h
             case 'completed':
               statusText = '✅ Complete!';
               progress = 100;
-              messageText = 'Your chatbot is now ready to use with the scraped knowledge base!';
+              messageText = status.message || 'Your chatbot is now ready to use with the scraped knowledge base!';
               
               // Show categories if available
               if (status.categories && status.categories.length > 0) {
@@ -1328,18 +1340,30 @@ Your role is to help potential customers understand how GoAccel can help their h
                 if (defaultActions) defaultActions.style.display = 'none';
               }
               
-              // Don't auto-close, let user review categories
-              return; // Continue polling to check for category updates
+              // Stop polling when completed
+              if (scrapingPollInterval) {
+                clearInterval(scrapingPollInterval);
+                scrapingPollInterval = null;
+              }
+              break;
             case 'failed':
               statusText = '❌ Failed';
               messageText = status.message || 'Scraping failed. Please try again.';
               progress = 0;
-              return; // Stop polling
+              // Stop polling on failure
+              if (scrapingPollInterval) {
+                clearInterval(scrapingPollInterval);
+                scrapingPollInterval = null;
+              }
+              break;
+            case 'not_started':
+              statusText = '⏳ Not Started';
+              break;
             default:
-              statusText = '⏳ Waiting...';
+              statusText = '⏳ ' + (status.status || 'Unknown');
           }
           
-          // Show categories if available (even during indexing)
+          // Show categories if available (even during indexing or if auto-detected as completed)
           if (status.categories && status.categories.length > 0) {
             currentCategories = status.categories;
             window.totalPages = status.total_pages || 0;
