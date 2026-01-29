@@ -25,21 +25,38 @@ import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from google import genai
 from dotenv import load_dotenv
+import yaml
+from pathlib import Path
 
 # Suppress XML parsing warnings for HTML (Windows compatibility)
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 load_dotenv()
 
-MAX_DEPTH = int(os.getenv("SCRAPING_MAX_DEPTH", "5"))
-MAX_PAGES = int(os.getenv("SCRAPING_MAX_PAGES", "500"))
-MAX_SECONDS = int(os.getenv("SCRAPING_MAX_SECONDS", "600"))  # 10 minutes default
-MAX_LINKS_PER_PAGE = int(os.getenv("SCRAPING_MAX_LINKS_PER_PAGE", "30"))  # Limit links queued per page
-MAX_QUEUE_SIZE = int(os.getenv("SCRAPING_MAX_QUEUE_SIZE", "1000"))  # Maximum queue size
-CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
-CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "100"))
-EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004")
-CATEGORIZATION_MODEL = os.getenv("GEMINI_CATEGORIZATION_MODEL", "gemini-2.5-flash")
+# Load config from YAML
+root_dir = Path(__file__).parent.parent
+config_file = root_dir / "config.yaml"
+
+if config_file.exists():
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+else:
+    config = {}
+
+scraping_config = config.get("scraping", {})
+rag_config = config.get("rag", {})
+models_config = config.get("models", {})
+
+# Use config values with env var overrides
+MAX_DEPTH = int(os.getenv("SCRAPING_MAX_DEPTH", scraping_config.get("max_depth", 5)))
+MAX_PAGES = int(os.getenv("SCRAPING_MAX_PAGES", scraping_config.get("max_pages", 500)))
+MAX_SECONDS = int(os.getenv("SCRAPING_MAX_SECONDS", scraping_config.get("max_seconds", 600)))
+MAX_LINKS_PER_PAGE = int(os.getenv("SCRAPING_MAX_LINKS_PER_PAGE", scraping_config.get("max_links_per_page", 30)))
+MAX_QUEUE_SIZE = int(os.getenv("SCRAPING_MAX_QUEUE_SIZE", scraping_config.get("max_queue_size", 1000)))
+CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", rag_config.get("chunk_size", 800)))
+CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", rag_config.get("chunk_overlap", 100)))
+EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", models_config.get("embed_model", "text-embedding-004"))
+CATEGORIZATION_MODEL = os.getenv("GEMINI_CATEGORIZATION_MODEL", models_config.get("categorization_model", "gemini-2.5-flash"))
 
 
 @dataclass

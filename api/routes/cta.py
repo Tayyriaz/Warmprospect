@@ -6,11 +6,9 @@ from fastapi import APIRouter, Request, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from core.config.business_config import config_manager
-from core.cta_tree import get_cta_children, get_cta_by_id
-from core.session_management import get_session
-from core.session_store import save_session
-from core.session_analytics import analytics
-from core_tools.crm_manager import crm_manager
+from core.cta.cta_tree import get_cta_children, get_cta_by_id
+from core.session import get_session, save_session, analytics
+from core.integrations.crm import crm_manager
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)

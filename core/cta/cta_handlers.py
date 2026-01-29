@@ -4,7 +4,7 @@ CTA (Call-to-Action) handling functions.
 
 from typing import Dict, Any, List, Optional
 from core.config.business_config import config_manager
-from core.cta_tree import get_entry_point_cta
+from core.cta.cta_tree import get_entry_point_cta
 
 
 def get_entry_point_ctas(

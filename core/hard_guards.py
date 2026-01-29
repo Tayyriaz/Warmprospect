@@ -4,8 +4,8 @@ Hard guard logic for handling special user inputs before processing.
 
 import os
 from typing import Dict, Any, Optional
-from core.session_management import initialize_session_state, clear_chat_session_cache
-from core.session_store import save_session
+from core.session.session_management import initialize_session_state, clear_chat_session_cache
+from core.session.session_store import save_session
 
 def check_hard_guards(
     user_input: str,

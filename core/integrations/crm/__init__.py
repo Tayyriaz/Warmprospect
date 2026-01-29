@@ -1,5 +1,6 @@
 """
-CRM tools package - provides CRM function implementations.
+CRM Tools Package
+Provides CRM function implementations and per-tenant CRM management.
 """
 
 from .crm_functions import CRMTools

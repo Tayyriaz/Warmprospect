@@ -5,10 +5,8 @@ Analytics API routes.
 from fastapi import APIRouter, Request, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from core.session_management import get_session
-from core.session_analytics import analytics
+from core.session import get_session, analytics, state_machine
 from core.conversation_planner import conversation_planner
-from core.session_state_machine import state_machine
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)

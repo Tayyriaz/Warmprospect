@@ -283,18 +283,23 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             "website_url": website_url
         }
         
-        # If forcing re-scrape, clear old status file to prevent auto-completion
+        # If forcing re-scrape, clear old status and mark files to prevent auto-completion
         if force_rescrape:
             try:
+                # Delete old status file completely
                 if os.path.exists(status_file):
-                    # Backup old status by renaming it
-                    backup_file = status_file + ".backup"
-                    if os.path.exists(backup_file):
-                        os.remove(backup_file)
-                    os.rename(status_file, backup_file)
-                    print(f"[INFO] Cleared old status file for force re-scrape: {business_id}")
+                    os.remove(status_file)
+                    print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
+                
+                # Also delete old categories file to prevent auto-detection
+                if os.path.exists(categories_file):
+                    backup_categories = categories_file + ".backup"
+                    if os.path.exists(backup_categories):
+                        os.remove(backup_categories)
+                    os.rename(categories_file, backup_categories)
+                    print(f"[INFO] Backed up old categories file for force re-scrape: {business_id}")
             except Exception as e:
-                print(f"[WARN] Failed to clear old status file: {e}")
+                print(f"[WARN] Failed to clear old files for re-scrape: {e}")
         
         # If scraping was already completed and NOT forcing re-scrape, return existing categories
         if not force_rescrape and os.path.exists(status_file) and os.path.exists(categories_file):
@@ -429,12 +434,25 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
                 response.update(status_data)
                 
                 # Auto-fix: If categories exist but status is stuck, update to completed
-                # BUT: Don't auto-fix if status was recently set to "pending" (within last 5 seconds)
+                # BUT: Don't auto-fix if status was recently set to "pending" (within last 60 seconds)
                 # This prevents auto-completing a fresh re-scrape
                 status_age = time.time() - status_data.get("updated_at", 0)
-                is_recent_pending = status_data.get("status") == "pending" and status_age < 5
+                is_recent_pending = status_data.get("status") == "pending" and status_age < 60
                 
-                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending:
+                # Also check if there's a backup categories file (indicating a re-scrape in progress)
+                backup_categories = categories_file + ".backup"
+                has_backup = os.path.exists(backup_categories)
+                
+                # Check if message indicates a fresh start
+                status_message = status_data.get("message", "").lower()
+                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                
+                # Only auto-fix if:
+                # - Categories and index exist
+                # - Status is not recently set to pending (>= 60 seconds old)
+                # - No backup file exists (not a re-scrape)
+                # - Message doesn't indicate a fresh start
+                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not has_backup and not is_fresh_start:
                     print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
                     try:
                         with open(categories_file, "r", encoding="utf-8") as cf:

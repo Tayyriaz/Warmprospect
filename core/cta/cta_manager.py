@@ -6,8 +6,8 @@ Uses only cta_tree structure - no primary/secondary/nested CTAs.
 
 from typing import Dict, Any, List, Optional
 from enum import Enum
-from core.rules_engine import BusinessRulesEngine, RuleType
-from core.cta_tree import get_cta_children, get_entry_point_cta
+from core.rules.rules_engine import BusinessRulesEngine, RuleType
+from core.cta.cta_tree import get_cta_children, get_entry_point_cta
 
 
 class CTAAction(Enum):

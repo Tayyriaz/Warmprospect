@@ -1747,10 +1747,6 @@ Your role is to help potential customers understand how GoAccel can help their h
       if (!currentBusinessId) return;
       if (!requireApiKey()) return;
       
-      if (!confirm('Are you sure you want to re-scrape the website? This will rebuild the knowledge base from scratch.')) {
-        return;
-      }
-      
       // Reset modal immediately for visual feedback
       resetScrapingModal();
       

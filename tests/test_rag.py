@@ -3,7 +3,7 @@
 
 import os
 from dotenv import load_dotenv
-from rag.retriever import GoAccelRetriever, format_context
+from core.rag.retriever import GoAccelRetriever, format_context
 
 load_dotenv()
 

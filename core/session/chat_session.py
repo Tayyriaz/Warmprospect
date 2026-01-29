@@ -4,8 +4,8 @@ Chat session management with Gemini SDK.
 
 from typing import Dict, Any, List, Optional
 from google.genai import types
-from core.session_management import get_chat_sessions_cache
-from core_tools.crm_functions import CRMTools
+from core.session.session_management import get_chat_sessions_cache
+from core.integrations.crm import CRMTools
 
 # Initialize CRM Tool Handler
 crm_tools = CRMTools()

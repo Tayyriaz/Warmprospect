@@ -5,7 +5,7 @@ Supports context-aware routing decisions based on business rules.
 
 from typing import Dict, Any, List, Optional
 from enum import Enum
-from core.rules_engine import BusinessRulesEngine, RuleType
+from core.rules.rules_engine import BusinessRulesEngine, RuleType
 
 
 class RouteType(Enum):

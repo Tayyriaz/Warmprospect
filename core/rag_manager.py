@@ -4,7 +4,7 @@ RAG (Retrieval Augmented Generation) retriever management.
 
 import os
 from typing import Dict, Any, Optional, List
-from rag.retriever import GoAccelRetriever
+from core.rag.retriever import GoAccelRetriever
 from core.config.business_config import config_manager
 
 # Optional RAG retriever(s)

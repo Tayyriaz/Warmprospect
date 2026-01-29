@@ -37,7 +37,7 @@ class CRMManager:
         """
         if not business_id:
             # Return default CRM tools
-            from core_tools.crm_functions import CRMTools
+            from core.integrations.crm.crm_functions import CRMTools
             return CRMTools()
         
         # Check cache first
@@ -70,7 +70,7 @@ class CRMManager:
                 traceback.print_exc()
         
         # Fallback to default CRM tools
-        from core_tools.crm_functions import CRMTools
+        from core.integrations.crm.crm_functions import CRMTools
         default_tools = CRMTools()
         self._crm_cache[business_id] = default_tools
         return default_tools

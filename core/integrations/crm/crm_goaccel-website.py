@@ -3,12 +3,12 @@ Example: Business-Specific CRM Functions for GoAccel Website
 This file demonstrates how to create tenant-specific CRM implementations.
 
 To use:
-1. Create a file named crm_{business_id}.py in core_tools/
+1. Create a file named crm_{business_id}.py in core/integrations/crm/
 2. Define a CRMTools class with your CRM functions
 3. The CRM manager will automatically load it when that business_id is used
 """
 
-from core_tools.crm_functions import CRMTools as BaseCRMTools
+from core.integrations.crm.crm_functions import CRMTools as BaseCRMTools
 
 
 class CRMTools(BaseCRMTools):

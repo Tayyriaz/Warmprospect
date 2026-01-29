@@ -3,8 +3,8 @@ Session management functions for chat sessions and state.
 """
 
 from typing import Dict, Any, List, Optional
-from core.session_state_machine import ConversationState
-from core.session_store import load_session, save_session
+from core.session.session_state_machine import ConversationState
+from core.session.session_store import load_session, save_session
 
 # In-memory cache for chat sessions (fallback when Redis fails)
 # Key: user_id, Value: chat session object

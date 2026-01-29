@@ -8,20 +8,15 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from typing import Dict, Any, Optional, List
 from google.genai import types
-from rag.retriever import format_context
-from core.session_management import get_session
-from core.session_store import save_session
+from core.rag.retriever import format_context
+from core.session import get_session, save_session, get_or_create_chat_session, save_chat_history_to_session, analytics
 from core.hard_guards import check_hard_guards
-from core.cta_handlers import get_entry_point_ctas, should_attach_ctas
-from core.chat_session import get_or_create_chat_session, save_chat_history_to_session
+from core.cta import get_entry_point_ctas, should_attach_ctas, detect_intent_from_message
 from core.system_instruction import build_system_instruction
 from core.config.business_config import config_manager
 from core.rag_manager import get_retriever_for_business
-from core.session_analytics import analytics
 from core.sentiment_analysis import sentiment_analyzer
-from core.cta_tree import detect_intent_from_message
-from core_tools.crm_functions import CRMTools
-from core_tools.crm_manager import crm_manager
+from core.integrations.crm import CRMTools, crm_manager
 
 router = APIRouter()
 

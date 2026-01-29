@@ -5,7 +5,7 @@ Public API routes (no authentication required).
 import os
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
-from rag.retriever import format_context
+from core.rag.retriever import format_context
 from core.rag_manager import get_default_retriever, get_retriever_for_business
 
 router = APIRouter()

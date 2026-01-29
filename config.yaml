@@ -1,0 +1,33 @@
+# Scraping Configuration
+# This file contains default settings for website scraping and knowledge base building.
+# You can override these values using environment variables in your .env file.
+
+scraping:
+  # Maximum crawling depth
+  max_depth: 5
+  
+  # Maximum number of pages to scrape
+  max_pages: 500
+  
+  # Maximum time to spend scraping (in seconds)
+  max_seconds: 600  # 10 minutes
+  
+  # Maximum number of links to queue per page
+  max_links_per_page: 30
+  
+  # Maximum queue size to prevent memory issues
+  max_queue_size: 1000
+
+rag:
+  # Size of text chunks for RAG indexing
+  chunk_size: 800
+  
+  # Overlap between chunks
+  chunk_overlap: 100
+
+models:
+  # Embedding model for vector search
+  embed_model: "text-embedding-004"
+  
+  # Model for page categorization
+  categorization_model: "gemini-2.5-flash"

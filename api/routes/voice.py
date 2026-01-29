@@ -9,8 +9,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect
 from twilio.rest import Client as TwilioClient
-from services.voice_service import get_voice_service
-from services.twilio_voice_manager import get_voice_manager
+from core.integrations.voice import get_voice_service, get_voice_manager
 
 router = APIRouter()
 
