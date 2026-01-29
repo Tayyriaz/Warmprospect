@@ -608,46 +608,69 @@
 
   <!-- Scraping Progress Modal -->
   <div id="scrapingModal" class="modal-overlay">
-    <div class="modal" style="max-width: 800px;">
-      <h2>🌐 Building Knowledge Base</h2>
-      <div class="modal-status" id="modalStatus">Loading...</div>
-      <div class="modal-message" id="modalMessage">Checking scraping status...</div>
-      <div style="margin: 12px 0; font-size: 12px; color: #9ca3af;" id="progressDetails">
-        <!-- Progress details will be shown here -->
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
+    <div class="modal" style="max-width: 900px; padding: 0; overflow: hidden;">
+      <!-- Header -->
+      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px 32px; color: white;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2 style="margin: 0 0 4px 0; font-size: 24px; font-weight: 700;">🌐 Building Knowledge Base</h2>
+            <div style="font-size: 14px; opacity: 0.9;" id="modalStatus">Loading...</div>
+          </div>
+          <button onclick="closeScrapingModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">×</button>
+        </div>
       </div>
       
-      <!-- Categories Section -->
-      <div id="categoriesSection" style="display: none; margin-top: 32px; padding-top: 24px; border-top: 2px solid #e5e7eb;">
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 8px 0; color: #374151; font-size: 18px;">📁 Page Categories</h3>
-          <div id="categoriesSummary" style="font-size: 14px; color: #6b7280; margin-bottom: 16px;"></div>
-        </div>
-        
-        <div id="categoriesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
-          <!-- Categories will be dynamically inserted here -->
-        </div>
-        
-        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <button class="btn btn-secondary btn-small" onclick="rescraperWebsite()" id="rescraperBtn" style="display: none; font-size: 13px; padding: 8px 16px;">
-            🔄 Re-scrape Website
-          </button>
-          <div style="display: flex; gap: 8px; margin-left: auto;">
-            <button class="btn btn-secondary btn-small" onclick="closeScrapingModal()" style="font-size: 13px; padding: 8px 16px;">
-              Cancel
-            </button>
-            <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; font-size: 14px; padding: 10px 20px;">
-              💾 Save Category Selection
-            </button>
+      <!-- Content -->
+      <div style="padding: 32px;">
+        <!-- Progress Section -->
+        <div id="progressSection">
+          <div id="modalMessage" style="font-size: 15px; color: #374151; margin-bottom: 20px; line-height: 1.6;">Checking scraping status...</div>
+          
+          <div style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 13px; font-weight: 600; color: #6b7280;">Progress</span>
+              <span style="font-size: 13px; font-weight: 600; color: #667eea;" id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar" style="height: 12px; border-radius: 6px; overflow: hidden; background: #f3f4f6;">
+              <div class="progress-fill" id="progressFill" style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: 0%; transition: width 0.3s ease; border-radius: 6px;"></div>
+            </div>
+          </div>
+          
+          <div style="font-size: 12px; color: #9ca3af; margin-top: 12px;" id="progressDetails">
+            <!-- Progress details will be shown here -->
           </div>
         </div>
-      </div>
-      
-      <!-- Modal Actions (only shown when categories section is hidden) -->
-      <div class="modal-actions" id="modalActionsDefault" style="margin-top: 24px;">
-        <button class="btn btn-close" onclick="closeScrapingModal()">Close</button>
+        
+        <!-- Categories Section -->
+        <div id="categoriesSection" style="display: none; margin-top: 32px; padding-top: 32px; border-top: 2px solid #e5e7eb;">
+          <div style="margin-bottom: 24px;">
+            <h3 style="margin: 0 0 8px 0; color: #374151; font-size: 20px; font-weight: 700;">📁 Page Categories</h3>
+            <div id="categoriesSummary" style="font-size: 14px; color: #6b7280; line-height: 1.6;"></div>
+          </div>
+          
+          <div id="categoriesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <!-- Categories will be dynamically inserted here -->
+          </div>
+          
+          <div style="padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <button class="btn btn-secondary" onclick="rescraperWebsite()" id="rescraperBtn" style="display: none; padding: 10px 20px; font-size: 14px;">
+              🔄 Re-scrape Website
+            </button>
+            <div style="display: flex; gap: 12px; margin-left: auto;">
+              <button class="btn btn-secondary" onclick="closeScrapingModal()" style="padding: 10px 20px; font-size: 14px;">
+                Close
+              </button>
+              <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; padding: 10px 24px; font-size: 14px; font-weight: 600;">
+                💾 Save Selection
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Default Actions (when no categories) -->
+        <div id="modalActionsDefault" style="margin-top: 24px; display: flex; justify-content: flex-end;">
+          <button class="btn btn-secondary" onclick="closeScrapingModal()" style="padding: 10px 20px;">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1185,8 +1208,43 @@ Your role is to help potential customers understand how GoAccel can help their h
     // Scraping Modal Functions
     function showScrapingModal(businessId) {
       const modal = document.getElementById('scrapingModal');
+      
+      // Reset all modal elements
+      resetScrapingModal();
+      
       modal.classList.add('active');
       updateScrapingStatus(businessId);
+    }
+    
+    function resetScrapingModal() {
+      // Reset progress bar
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('progressPercent').textContent = '0%';
+      
+      // Reset status and message
+      document.getElementById('modalStatus').textContent = 'Loading...';
+      document.getElementById('modalMessage').textContent = 'Checking scraping status...';
+      document.getElementById('modalStatus').style.color = '';
+      
+      // Reset progress details
+      const progressDetails = document.getElementById('progressDetails');
+      if (progressDetails) progressDetails.innerHTML = '';
+      
+      // Hide categories section
+      document.getElementById('categoriesSection').style.display = 'none';
+      document.getElementById('rescraperBtn').style.display = 'none';
+      document.getElementById('saveCategoriesBtn').style.display = 'none';
+      
+      // Show default actions
+      document.getElementById('modalActionsDefault').style.display = 'flex';
+      
+      // Reset tracking variables
+      lastProgress = -1;
+      lastProgressTime = null;
+      lastStatus = null;
+      stuckWarningShown = false;
+      currentCategories = [];
+      scrapingStartTime = Date.now();
     }
     
     function closeScrapingModal() {
@@ -1401,23 +1459,31 @@ Your role is to help potential customers understand how GoAccel can help their h
           messageEl.innerHTML = messageText;
           progressEl.style.width = progress + '%';
           
+          // Update progress percent
+          const progressPercentEl = document.getElementById('progressPercent');
+          if (progressPercentEl) {
+            progressPercentEl.textContent = progress + '%';
+            progressPercentEl.style.color = progress === 100 ? '#10b981' : '#667eea';
+          }
+          
           // Update progress details
           const progressDetailsEl = document.getElementById('progressDetails');
           if (progressDetailsEl) {
-            let detailsText = `Progress: ${progress}%`;
+            let detailsText = '';
             if (scrapingStartTime) {
               const elapsed = Math.floor((Date.now() - scrapingStartTime) / 1000);
               const minutes = Math.floor(elapsed / 60);
               const seconds = elapsed % 60;
-              detailsText += ` • Elapsed: ${minutes}m ${seconds}s`;
+              detailsText = `Elapsed: ${minutes}m ${seconds}s`;
             }
             if (lastProgressTime && lastProgress !== -1) {
               const timeSinceUpdate = Math.floor((Date.now() - lastProgressTime) / 1000);
               if (timeSinceUpdate > 30) {
-                detailsText += ` • <span style="color: #dc2626;">No update for ${Math.floor(timeSinceUpdate / 60)}m</span>`;
+                detailsText += detailsText ? ' • ' : '';
+                detailsText += `<span style="color: #dc2626;">No update for ${Math.floor(timeSinceUpdate / 60)}m</span>`;
               }
             }
-            progressDetailsEl.innerHTML = detailsText; // Use innerHTML instead of textContent
+            progressDetailsEl.innerHTML = detailsText;
           }
         })
         .catch(err => {
@@ -1589,6 +1655,7 @@ Your role is to help potential customers understand how GoAccel can help their h
       // Clear any existing interval
       if (scrapingPollInterval) {
         clearInterval(scrapingPollInterval);
+        scrapingPollInterval = null;
       }
       
       // Reset tracking variables
@@ -1597,6 +1664,12 @@ Your role is to help potential customers understand how GoAccel can help their h
       lastStatus = null;
       stuckWarningShown = false;
       scrapingStartTime = Date.now();
+      
+      // Reset progress display
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('progressPercent').textContent = '0%';
+      document.getElementById('modalStatus').textContent = 'Loading...';
+      document.getElementById('modalMessage').textContent = 'Starting scraping process...';
       
       // Poll every 2 seconds
       scrapingPollInterval = setInterval(() => {
@@ -1656,11 +1729,10 @@ Your role is to help potential customers understand how GoAccel can help their h
         
         const result = await res.json();
         if (result.success) {
-          // Reset modal state
-          document.getElementById('rescraperBtn').style.display = 'none';
-          document.getElementById('categoriesSection').style.display = 'none';
-          document.getElementById('saveCategoriesBtn').style.display = 'none';
+          // Reset modal completely before starting new scrape
+          resetScrapingModal();
           
+          // Start new scraping process
           showScrapingModal(businessId);
           startScrapingPoll(businessId);
           showAlert('🌐 Knowledge base scraping started!', 'success');
@@ -1679,6 +1751,10 @@ Your role is to help potential customers understand how GoAccel can help their h
         return;
       }
       
+      // Reset modal immediately for visual feedback
+      resetScrapingModal();
+      
+      // Trigger new scraping
       await triggerScraping(currentBusinessId, true);
     }
     
