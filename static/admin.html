@@ -209,6 +209,30 @@
       justify-content: space-between;
       align-items: center;
     }
+    .business-logo-container {
+      width: 48px;
+      height: 48px;
+      min-width: 48px;
+      min-height: 48px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #e5e7eb;
+    }
+    .business-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 4px;
+    }
+    .business-logo-placeholder {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+    }
     .business-card h3 {
       font-size: 16px;
       color: #111827;
@@ -576,6 +600,9 @@
       <h2>🌐 Building Knowledge Base</h2>
       <div class="modal-status" id="modalStatus">Initializing...</div>
       <div class="modal-message" id="modalMessage">Preparing to scrape your website...</div>
+      <div style="margin: 12px 0; font-size: 12px; color: #9ca3af;" id="progressDetails">
+        <!-- Progress details will be shown here -->
+      </div>
       <div class="progress-bar">
         <div class="progress-fill" id="progressFill"></div>
       </div>
@@ -840,9 +867,20 @@ Your role is to help potential customers understand how GoAccel can help their h
         
         listEl.innerHTML = Object.values(data.businesses).map(business => `
           <div class="business-card">
-            <div>
-              <h3>${business.businessName || business.businessId}</h3>
-              <p>ID: ${business.businessId} • Updated: ${new Date(business.updatedAt || business.updated_at).toLocaleString()}</p>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <div class="business-logo-container">
+                ${business.businessLogo ? 
+                  `<img src="${business.businessLogo}" alt="${business.businessName || business.businessId} logo" class="business-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />` : 
+                  ''
+                }
+                <div class="business-logo-placeholder" style="display: ${business.businessLogo ? 'none' : 'block'};">
+                  <!-- Blank placeholder - no content -->
+                </div>
+              </div>
+              <div>
+                <h3>${business.businessName || business.businessId}</h3>
+                <p>ID: ${business.businessId} • Updated: ${new Date(business.updatedAt || business.updated_at).toLocaleString()}</p>
+              </div>
             </div>
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.businessId}')">Edit</button>
@@ -1132,6 +1170,10 @@ Your role is to help potential customers understand how GoAccel can help their h
     
     let currentBusinessId = null;
     let currentCategories = [];
+    let lastProgress = -1;
+    let lastProgressTime = null;
+    let lastStatus = null;
+    let stuckWarningShown = false;
     
     function updateScrapingStatus(businessId) {
       currentBusinessId = businessId;
@@ -1147,9 +1189,68 @@ Your role is to help potential customers understand how GoAccel can help their h
           const categoriesGrid = document.getElementById('categoriesGrid');
           const categoriesSummary = document.getElementById('categoriesSummary');
           
+          // Detect if scraping is stuck
+          const currentProgress = status.progress || 0;
+          const currentStatus = status.status;
+          const now = Date.now();
+          
+          // Check if progress hasn't changed in 5 minutes (300000ms)
+          if (lastProgress === currentProgress && lastStatus === currentStatus && 
+              lastProgressTime && (now - lastProgressTime) > 300000 && 
+              currentStatus !== 'completed' && currentStatus !== 'failed') {
+            if (!stuckWarningShown) {
+              stuckWarningShown = true;
+              const stuckMinutes = Math.floor((now - lastProgressTime) / 60000);
+              messageEl.innerHTML = `
+                <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
+                  ⚠️ Scraping appears to be stuck (no progress for ${stuckMinutes} minutes)
+                </div>
+                <div style="color: #6b7280; font-size: 13px;">
+                  ${status.message || 'The scraping process may have encountered an issue.'}
+                </div>
+                <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
+                  <strong>💡 Troubleshooting:</strong><br>
+                  • Check server logs: <code>sudo journalctl -u goaccel.service -f</code><br>
+                  • The process may be waiting for a slow website response<br>
+                  • Try refreshing the knowledge base if it continues to be stuck
+                </div>
+              `;
+              statusEl.style.color = '#dc2626';
+            }
+          } else {
+            // Progress is updating, reset warning
+            if (currentProgress !== lastProgress || currentStatus !== lastStatus) {
+              stuckWarningShown = false;
+              lastProgress = currentProgress;
+              lastStatus = currentStatus;
+              lastProgressTime = now;
+              statusEl.style.color = '';
+            }
+          }
+          
+          // Update last progress time if this is first check
+          if (!lastProgressTime) {
+            lastProgressTime = now;
+          }
+          
           let statusText = '';
           let messageText = status.message || '';
-          let progress = status.progress || 0;
+          let progress = currentProgress;
+          
+          // Add last updated timestamp if available
+          if (status.updated_at) {
+            const updatedTime = new Date(status.updated_at * 1000);
+            const timeAgo = Math.floor((now - updatedTime.getTime()) / 1000);
+            let timeAgoText = '';
+            if (timeAgo < 60) {
+              timeAgoText = `${timeAgo} seconds ago`;
+            } else if (timeAgo < 3600) {
+              timeAgoText = `${Math.floor(timeAgo / 60)} minutes ago`;
+            } else {
+              timeAgoText = `${Math.floor(timeAgo / 3600)} hours ago`;
+            }
+            messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${timeAgoText})</span>`;
+          }
           
           switch(status.status) {
             case 'pending':
@@ -1198,11 +1299,50 @@ Your role is to help potential customers understand how GoAccel can help their h
           }
           
           statusEl.textContent = statusText;
-          messageEl.textContent = messageText;
+          messageEl.innerHTML = messageText;
           progressEl.style.width = progress + '%';
+          
+          // Update progress details
+          const progressDetailsEl = document.getElementById('progressDetails');
+          if (progressDetailsEl) {
+            let detailsText = `Progress: ${progress}%`;
+            if (scrapingStartTime) {
+              const elapsed = Math.floor((Date.now() - scrapingStartTime) / 1000);
+              const minutes = Math.floor(elapsed / 60);
+              const seconds = elapsed % 60;
+              detailsText += ` • Elapsed: ${minutes}m ${seconds}s`;
+            }
+            if (lastProgressTime && lastProgress !== -1) {
+              const timeSinceUpdate = Math.floor((Date.now() - lastProgressTime) / 1000);
+              if (timeSinceUpdate > 30) {
+                detailsText += ` • <span style="color: #dc2626;">No update for ${Math.floor(timeSinceUpdate / 60)}m</span>`;
+              }
+            }
+            progressDetailsEl.textContent = detailsText;
+          }
         })
         .catch(err => {
           console.error('Error checking scraping status:', err);
+          const statusEl = document.getElementById('modalStatus');
+          const messageEl = document.getElementById('modalMessage');
+          
+          // Show network error warning
+          statusEl.textContent = '⚠️ Connection Error';
+          statusEl.style.color = '#dc2626';
+          messageEl.innerHTML = `
+            <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
+              Failed to check scraping status
+            </div>
+            <div style="color: #6b7280; font-size: 13px;">
+              ${err.message || 'Network error occurred. The scraping may still be running on the server.'}
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
+              <strong>💡 Check server status:</strong><br>
+              • Check if the server is running<br>
+              • Verify API key is correct<br>
+              • Check server logs: <code>sudo journalctl -u goaccel.service -f</code>
+            </div>
+          `;
         });
     }
     
@@ -1286,6 +1426,7 @@ Your role is to help potential customers understand how GoAccel can help their h
     }
     
     let scrapingPollInterval = null;
+    let scrapingStartTime = null;
     
     function startScrapingPoll(businessId) {
       // Clear any existing interval
@@ -1293,18 +1434,44 @@ Your role is to help potential customers understand how GoAccel can help their h
         clearInterval(scrapingPollInterval);
       }
       
+      // Reset tracking variables
+      lastProgress = -1;
+      lastProgressTime = null;
+      lastStatus = null;
+      stuckWarningShown = false;
+      scrapingStartTime = Date.now();
+      
       // Poll every 2 seconds
       scrapingPollInterval = setInterval(() => {
         updateScrapingStatus(businessId);
-      }, 2000);
-      
-      // Stop polling after 15 minutes (timeout)
-      setTimeout(() => {
-        if (scrapingPollInterval) {
-          clearInterval(scrapingPollInterval);
-          scrapingPollInterval = null;
+        
+        // Check for overall timeout (30 minutes)
+        if (scrapingStartTime && (Date.now() - scrapingStartTime) > 30 * 60 * 1000) {
+          const statusEl = document.getElementById('modalStatus');
+          const messageEl = document.getElementById('modalMessage');
+          statusEl.textContent = '⏱️ Timeout';
+          statusEl.style.color = '#dc2626';
+          messageEl.innerHTML = `
+            <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
+              ⚠️ Scraping has been running for over 30 minutes
+            </div>
+            <div style="color: #6b7280; font-size: 13px;">
+              The scraping process may have encountered an issue or the website is very large.
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: #fee2e2; border-radius: 6px; font-size: 13px; color: #991b1b;">
+              <strong>💡 Recommended Actions:</strong><br>
+              • Check server logs for errors<br>
+              • The website might be too large - consider limiting pages<br>
+              • Try refreshing the knowledge base
+            </div>
+          `;
+          
+          if (scrapingPollInterval) {
+            clearInterval(scrapingPollInterval);
+            scrapingPollInterval = null;
+          }
         }
-      }, 15 * 60 * 1000);
+      }, 2000);
     }
     
     async function triggerScraping(businessId) {
