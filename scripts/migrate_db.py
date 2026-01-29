@@ -77,6 +77,19 @@ def migrate():
         else:
             print("✓ business_logo already exists.")
 
+        # Check for enabled_categories
+        result = conn.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='business_configs' AND column_name='enabled_categories';
+        """))
+        if not result.fetchone():
+            print("Adding enabled_categories column...")
+            conn.execute(text("ALTER TABLE business_configs ADD COLUMN enabled_categories TEXT"))
+            print("✅ enabled_categories added.")
+        else:
+            print("✓ enabled_categories already exists.")
+
         print("✅ Migration complete.")
 
 if __name__ == "__main__":

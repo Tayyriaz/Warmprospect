@@ -100,7 +100,7 @@ class BusinessConfig(Base):
             "voice_enabled": self.voice_enabled if hasattr(self, 'voice_enabled') else False,
             "chatbot_button_text": self.chatbot_button_text if hasattr(self, 'chatbot_button_text') else None,
             "business_logo": self.business_logo if hasattr(self, 'business_logo') else None,
-            "enabled_categories": json.loads(self.enabled_categories) if self.enabled_categories else [],
+            "enabled_categories": json.loads(self.enabled_categories) if hasattr(self, 'enabled_categories') and self.enabled_categories else [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -210,7 +210,7 @@ class BusinessConfigDB:
                 existing.voice_enabled = voice_enabled
                 existing.chatbot_button_text = chatbot_button_text
                 existing.business_logo = business_logo
-                if enabled_categories is not None:
+                if enabled_categories is not None and hasattr(existing, 'enabled_categories'):
                     existing.enabled_categories = _serialize_json(enabled_categories)
                 existing.updated_at = datetime.now(timezone.utc)
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
@@ -238,7 +238,7 @@ class BusinessConfigDB:
                     voice_enabled=voice_enabled,
                     chatbot_button_text=chatbot_button_text,
                     business_logo=business_logo,
-                    enabled_categories=_serialize_json(enabled_categories) if enabled_categories else None,
+                    enabled_categories=_serialize_json(enabled_categories) if enabled_categories else None if hasattr(BusinessConfig, 'enabled_categories') else None,
                 )
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed
