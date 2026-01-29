@@ -427,211 +427,211 @@ def build_kb_for_business(business_id: str, website_url: str):
         update_status_file(business_id, "pending", "Preparing to scrape website...", 5)
         
         # Parse URL to get domain
-    parsed = urlparse(website_url)
-    base_domain = parsed.hostname or ""
-    root_url = f"{parsed.scheme}://{parsed.hostname}"
-    if parsed.path:
-        root_url = website_url.rstrip("/")
-    
-    # Create business-specific output directory
-    output_dir = os.path.join("data", business_id)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    meta_path = os.path.join(output_dir, "meta.jsonl")
-    index_path = os.path.join(output_dir, "index.faiss")
-    meta_path_tmp = os.path.join(output_dir, "meta.jsonl.tmp")
-    index_path_tmp = os.path.join(output_dir, "index.faiss.tmp")
-    
-    # Try to find sitemap
-    update_status_file(business_id, "scraping", "Finding website pages...", 10)
-    sitemap_url = f"{root_url}/sitemap.xml"
-    seeds = fetch_sitemap_urls(sitemap_url, base_domain)
-    if not seeds:
-        seeds = [root_url]
-        print(f"No sitemap found, crawling from root: {root_url}")
-    else:
-        print(f"Using sitemap URLs ({len(seeds)}) as seeds.")
-    
-    print(f"Building KB for business: {business_id}")
-    print(f"Website: {website_url}")
-    print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
-    
-    update_status_file(business_id, "scraping", "Scraping website content... This may take a few minutes.", 20)
-    pages = crawl(seeds, base_domain, root_url, business_id)
-    print(f"\n[SUCCESS] Fetched {len(pages)} pages")
-    
-    # Show summary
-    total_text = sum(len(p.text) for p in pages)
-    print(f"   Total text: {total_text:,} characters")
-    print(f"   Average per page: {total_text // len(pages) if pages else 0:,} characters")
-    
-    if not pages:
-        update_status_file(business_id, "failed", "No pages fetched. Check URL and site access.", 0)
-        raise RuntimeError("No pages fetched. Check URL and site access.")
-    
-    # Step: Categorize pages
-    update_status_file(business_id, "categorizing", "Categorizing pages...", 40)
-    client = genai.Client(api_key=api_key)
-    
-    print(f"\n[Categorizing] Categorizing {len(pages)} pages...")
-    categorized_count = 0
-    total_pages_to_categorize = len(pages)
-    for page in pages:
-        page.category = categorize_page(client, page)
-        categorized_count += 1
-        if categorized_count % 10 == 0:
-            print(f"  Categorized {categorized_count}/{total_pages_to_categorize} pages...")
-            # Update progress during categorization (40-50%)
-            progress = 40 + int((categorized_count / total_pages_to_categorize) * 10)
-            update_status_file(business_id, "categorizing", f"Categorizing pages... {categorized_count}/{total_pages_to_categorize} completed", progress)
-    
-    # Calculate category statistics
-    category_counts: Dict[str, int] = {}
-    for page in pages:
-        category = page.category or "General"
-        category_counts[category] = category_counts.get(category, 0) + 1
-    
-    print(f"\n[Categories] Found {len(category_counts)} categories:")
-    for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"  - {cat}: {count} pages")
-    
-    # Save categories to status file for frontend
-    categories_file = os.path.join(output_dir, "categories.json")
-    categories_data = {
-        "categories": [
-            {"name": cat, "page_count": count, "enabled": True}  # Default all enabled
-            for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
-        ],
-        "total_pages": len(pages),
-        "updated_at": time.time()
-    }
-    try:
-        with open(categories_file, "w", encoding="utf-8") as f:
-            json.dump(categories_data, f, indent=2)
-        print(f"[SUCCESS] Categories saved to {categories_file}")
-    except Exception as e:
-        print(f"[WARN] Failed to save categories file: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Update status: indexing (include categories in status)
-    update_status_file(business_id, "indexing", f"Categorization complete. Found {len(category_counts)} categories. Building knowledge base...", 50)
-    
-    # Also update status with categories data so frontend can show them immediately
-    try:
-        # Load the status file and add categories
-        status_file = os.path.join(output_dir, "scraping_status.json")
-        if os.path.exists(status_file):
-            with open(status_file, "r", encoding="utf-8") as f:
-                status_data = json.load(f)
-            status_data["categories"] = categories_data["categories"]
-            status_data["total_pages"] = categories_data["total_pages"]
-            with open(status_file, "w", encoding="utf-8") as f:
-                json.dump(status_data, f, indent=2)
-    except Exception as e:
-        print(f"[WARN] Failed to add categories to status file: {e}")
-    
-    meta_records = []
-    all_vectors = []
-    
-    # Load previous checksums
-    previous_checksums: Dict[str, str] = {}
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    rec = json.loads(line)
-                    previous_checksums[rec.get("url", "")] = rec.get("checksum", "")
-        except Exception:
-            pass
-    
-    total_pages = len(pages)
-    processed = 0
-    
-    for page in pages:
-        if previous_checksums.get(page.url) == page.checksum:
-            continue
+        parsed = urlparse(website_url)
+        base_domain = parsed.hostname or ""
+        root_url = f"{parsed.scheme}://{parsed.hostname}"
+        if parsed.path:
+            root_url = website_url.rstrip("/")
         
-        chunks = chunk_text(page.text)
-        if not chunks:
-            continue
-        vectors = embed_chunks(client, chunks)
-        for i, ch in enumerate(chunks):
-            meta_records.append({
-                "url": page.url,
-                "title": page.title,
-                "text": ch,
-                "checksum": page.checksum,
-                "fetched_at": page.fetched_at,
-                "chunk_id": f"{page.url}#chunk-{i}",
-                "category": page.category or "General",  # Store category with each chunk
-            })
-        all_vectors.append(vectors)
+        # Create business-specific output directory
+        output_dir = os.path.join("data", business_id)
+        os.makedirs(output_dir, exist_ok=True)
         
-        processed += 1
-        # Update progress (50-90% for indexing)
-        progress = 50 + int((processed / total_pages) * 40)
-        update_status_file(business_id, "indexing", f"Processing page {processed}/{total_pages}...", progress)
-    
-    if not meta_records and os.path.exists(index_path) and os.path.exists(meta_path):
-        print("No new/changed pages. Keeping existing index.")
-        update_status_file(business_id, "completed", "Knowledge base is up to date!", 100)
-        return
-    
-    if not meta_records:
-        update_status_file(business_id, "failed", "No content chunks to index.", 0)
-        raise RuntimeError("No chunks to index.")
-    
-    update_status_file(business_id, "indexing", "Creating search index...", 90)
-    embeddings = np.vstack(all_vectors)
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
-    
-    faiss.write_index(index, index_path_tmp)
-    with open(meta_path_tmp, "w", encoding="utf-8") as f:
-        for rec in meta_records:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    
-    # atomic swap
-    os.replace(index_path_tmp, index_path)
-    os.replace(meta_path_tmp, meta_path)
-    
-    print(f"[SUCCESS] Index written to {index_path}")
-    print(f"[SUCCESS] Metadata written to {meta_path}")
-    print(f"[SUCCESS] Knowledge base ready for business: {business_id}")
-    
-    # Update status: completed (include categories)
-    try:
-        # Load categories if available
+        meta_path = os.path.join(output_dir, "meta.jsonl")
+        index_path = os.path.join(output_dir, "index.faiss")
+        meta_path_tmp = os.path.join(output_dir, "meta.jsonl.tmp")
+        index_path_tmp = os.path.join(output_dir, "index.faiss.tmp")
+        
+        # Try to find sitemap
+        update_status_file(business_id, "scraping", "Finding website pages...", 10)
+        sitemap_url = f"{root_url}/sitemap.xml"
+        seeds = fetch_sitemap_urls(sitemap_url, base_domain)
+        if not seeds:
+            seeds = [root_url]
+            print(f"No sitemap found, crawling from root: {root_url}")
+        else:
+            print(f"Using sitemap URLs ({len(seeds)}) as seeds.")
+        
+        print(f"Building KB for business: {business_id}")
+        print(f"Website: {website_url}")
+        print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
+        
+        update_status_file(business_id, "scraping", "Scraping website content... This may take a few minutes.", 20)
+        pages = crawl(seeds, base_domain, root_url, business_id)
+        print(f"\n[SUCCESS] Fetched {len(pages)} pages")
+        
+        # Show summary
+        total_text = sum(len(p.text) for p in pages)
+        print(f"   Total text: {total_text:,} characters")
+        print(f"   Average per page: {total_text // len(pages) if pages else 0:,} characters")
+        
+        if not pages:
+            update_status_file(business_id, "failed", "No pages fetched. Check URL and site access.", 0)
+            raise RuntimeError("No pages fetched. Check URL and site access.")
+        
+        # Step: Categorize pages
+        update_status_file(business_id, "categorizing", "Categorizing pages...", 40)
+        client = genai.Client(api_key=api_key)
+        
+        print(f"\n[Categorizing] Categorizing {len(pages)} pages...")
+        categorized_count = 0
+        total_pages_to_categorize = len(pages)
+        for page in pages:
+            page.category = categorize_page(client, page)
+            categorized_count += 1
+            if categorized_count % 10 == 0:
+                print(f"  Categorized {categorized_count}/{total_pages_to_categorize} pages...")
+                # Update progress during categorization (40-50%)
+                progress = 40 + int((categorized_count / total_pages_to_categorize) * 10)
+                update_status_file(business_id, "categorizing", f"Categorizing pages... {categorized_count}/{total_pages_to_categorize} completed", progress)
+        
+        # Calculate category statistics
+        category_counts: Dict[str, int] = {}
+        for page in pages:
+            category = page.category or "General"
+            category_counts[category] = category_counts.get(category, 0) + 1
+        
+        print(f"\n[Categories] Found {len(category_counts)} categories:")
+        for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
+            print(f"  - {cat}: {count} pages")
+        
+        # Save categories to status file for frontend
         categories_file = os.path.join(output_dir, "categories.json")
-        categories_data = None
-        if os.path.exists(categories_file):
-            with open(categories_file, "r", encoding="utf-8") as f:
-                categories_data = json.load(f)
-        
-        # Update status with completion and categories
-        status_file = os.path.join(output_dir, "scraping_status.json")
-        status_data = {
-            "status": "completed",
-            "message": f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.",
-            "progress": 100,
+        categories_data = {
+            "categories": [
+                {"name": cat, "page_count": count, "enabled": True}  # Default all enabled
+                for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "total_pages": len(pages),
             "updated_at": time.time()
         }
+        try:
+            with open(categories_file, "w", encoding="utf-8") as f:
+                json.dump(categories_data, f, indent=2)
+            print(f"[SUCCESS] Categories saved to {categories_file}")
+        except Exception as e:
+            print(f"[WARN] Failed to save categories file: {e}")
+            import traceback
+            traceback.print_exc()
         
-        if categories_data:
-            status_data["categories"] = categories_data.get("categories", [])
-            status_data["total_pages"] = categories_data.get("total_pages", len(pages))
+        # Update status: indexing (include categories in status)
+        update_status_file(business_id, "indexing", f"Categorization complete. Found {len(category_counts)} categories. Building knowledge base...", 50)
         
-        with open(status_file, "w", encoding="utf-8") as f:
-            json.dump(status_data, f, indent=2)
+        # Also update status with categories data so frontend can show them immediately
+        try:
+            # Load the status file and add categories
+            status_file = os.path.join(output_dir, "scraping_status.json")
+            if os.path.exists(status_file):
+                with open(status_file, "r", encoding="utf-8") as f:
+                    status_data = json.load(f)
+                status_data["categories"] = categories_data["categories"]
+                status_data["total_pages"] = categories_data["total_pages"]
+                with open(status_file, "w", encoding="utf-8") as f:
+                    json.dump(status_data, f, indent=2)
+        except Exception as e:
+            print(f"[WARN] Failed to add categories to status file: {e}")
         
-        print(f"[SUCCESS] Status updated to completed with categories")
-    except Exception as e:
-        print(f"[WARN] Failed to update final status with categories: {e}")
-        import traceback
-        traceback.print_exc()
-        # Fallback to simple status update
-        update_status_file(business_id, "completed", f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.", 100)
+        meta_records = []
+        all_vectors = []
+        
+        # Load previous checksums
+        previous_checksums: Dict[str, str] = {}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        rec = json.loads(line)
+                        previous_checksums[rec.get("url", "")] = rec.get("checksum", "")
+            except Exception:
+                pass
+        
+        total_pages = len(pages)
+        processed = 0
+        
+        for page in pages:
+            if previous_checksums.get(page.url) == page.checksum:
+                continue
+            
+            chunks = chunk_text(page.text)
+            if not chunks:
+                continue
+            vectors = embed_chunks(client, chunks)
+            for i, ch in enumerate(chunks):
+                meta_records.append({
+                    "url": page.url,
+                    "title": page.title,
+                    "text": ch,
+                    "checksum": page.checksum,
+                    "fetched_at": page.fetched_at,
+                    "chunk_id": f"{page.url}#chunk-{i}",
+                    "category": page.category or "General",  # Store category with each chunk
+                })
+            all_vectors.append(vectors)
+            
+            processed += 1
+            # Update progress (50-90% for indexing)
+            progress = 50 + int((processed / total_pages) * 40)
+            update_status_file(business_id, "indexing", f"Processing page {processed}/{total_pages}...", progress)
+        
+        if not meta_records and os.path.exists(index_path) and os.path.exists(meta_path):
+            print("No new/changed pages. Keeping existing index.")
+            update_status_file(business_id, "completed", "Knowledge base is up to date!", 100)
+            return
+        
+        if not meta_records:
+            update_status_file(business_id, "failed", "No content chunks to index.", 0)
+            raise RuntimeError("No chunks to index.")
+        
+        update_status_file(business_id, "indexing", "Creating search index...", 90)
+        embeddings = np.vstack(all_vectors)
+        index = faiss.IndexFlatL2(embeddings.shape[1])
+        index.add(embeddings)
+        
+        faiss.write_index(index, index_path_tmp)
+        with open(meta_path_tmp, "w", encoding="utf-8") as f:
+            for rec in meta_records:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        
+        # atomic swap
+        os.replace(index_path_tmp, index_path)
+        os.replace(meta_path_tmp, meta_path)
+        
+        print(f"[SUCCESS] Index written to {index_path}")
+        print(f"[SUCCESS] Metadata written to {meta_path}")
+        print(f"[SUCCESS] Knowledge base ready for business: {business_id}")
+        
+        # Update status: completed (include categories)
+        try:
+            # Load categories if available
+            categories_file = os.path.join(output_dir, "categories.json")
+            categories_data = None
+            if os.path.exists(categories_file):
+                with open(categories_file, "r", encoding="utf-8") as f:
+                    categories_data = json.load(f)
+            
+            # Update status with completion and categories
+            status_file = os.path.join(output_dir, "scraping_status.json")
+            status_data = {
+                "status": "completed",
+                "message": f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.",
+                "progress": 100,
+                "updated_at": time.time()
+            }
+            
+            if categories_data:
+                status_data["categories"] = categories_data.get("categories", [])
+                status_data["total_pages"] = categories_data.get("total_pages", len(pages))
+            
+            with open(status_file, "w", encoding="utf-8") as f:
+                json.dump(status_data, f, indent=2)
+            
+            print(f"[SUCCESS] Status updated to completed with categories")
+        except Exception as e:
+            print(f"[WARN] Failed to update final status with categories: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to simple status update
+            update_status_file(business_id, "completed", f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.", 100)
     except Exception as e:
         # Catch any unhandled errors and update status
         error_msg = f"Scraping failed: {str(e)}"
