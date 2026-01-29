@@ -31,15 +31,15 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 load_dotenv()
 
-MAX_DEPTH = 5
-MAX_PAGES = 500  # Increased from 200
-MAX_SECONDS = 600  # Increased from 120 (10 minutes)
-MAX_LINKS_PER_PAGE = 30  # Limit links queued per page to prevent queue explosion
-MAX_QUEUE_SIZE = 1000  # Maximum queue size to prevent memory issues
-CHUNK_SIZE = 800
-CHUNK_OVERLAP = 100
-EMBED_MODEL = "text-embedding-004"
-CATEGORIZATION_MODEL = "gemini-2.5-flash"
+MAX_DEPTH = int(os.getenv("SCRAPING_MAX_DEPTH", "5"))
+MAX_PAGES = int(os.getenv("SCRAPING_MAX_PAGES", "500"))
+MAX_SECONDS = int(os.getenv("SCRAPING_MAX_SECONDS", "600"))  # 10 minutes default
+MAX_LINKS_PER_PAGE = int(os.getenv("SCRAPING_MAX_LINKS_PER_PAGE", "30"))  # Limit links queued per page
+MAX_QUEUE_SIZE = int(os.getenv("SCRAPING_MAX_QUEUE_SIZE", "1000"))  # Maximum queue size
+CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
+CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "100"))
+EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004")
+CATEGORIZATION_MODEL = os.getenv("GEMINI_CATEGORIZATION_MODEL", "gemini-2.5-flash")
 
 
 @dataclass
@@ -251,37 +251,94 @@ def categorize_page(client: genai.Client, page: Page) -> str:
     """
     Categorize a page using Gemini API.
     Returns a category name like "Products", "Services", "Contact", "General", etc.
+    
+    Categorization is based on:
+    1. URL patterns (e.g., /products/, /contact/, /blog/)
+    2. Page title
+    3. Page content (first 1000 chars for better context)
     """
     try:
-        # Create prompt for categorization
-        prompt = f"""Analyze this webpage and categorize it into ONE of these common website page categories:
-- Products (product pages, product listings, product details)
-- Services (service offerings, service descriptions)
-- About (about us, company information, team)
-- Contact (contact us, contact information, support)
-- Support (help, FAQ, documentation, troubleshooting)
-- Pricing (pricing plans, pricing information)
-- Blog (blog posts, articles, news)
-- Legal (terms, privacy policy, legal information)
-- General (homepage, landing pages, general content)
-- Other (anything that doesn't fit the above)
+        # First, try URL-based categorization (faster and more reliable)
+        url_lower = page.url.lower()
+        url_path = urlparse(page.url).path.lower()
+        
+        # URL pattern matching (quick heuristic)
+        if any(term in url_path for term in ['/product', '/item', '/shop', '/catalog', '/store']):
+            return "Products"
+        elif any(term in url_path for term in ['/service', '/solution', '/offer']):
+            return "Services"
+        elif any(term in url_path for term in ['/about', '/team', '/company', '/who-we-are']):
+            return "About"
+        elif any(term in url_path for term in ['/contact', '/reach', '/get-in-touch']):
+            return "Contact"
+        elif any(term in url_path for term in ['/support', '/help', '/faq', '/documentation']):
+            return "Support"
+        elif any(term in url_path for term in ['/pricing', '/price', '/plan', '/cost']):
+            return "Pricing"
+        elif any(term in url_path for term in ['/blog', '/article', '/post', '/news']):
+            return "Blog"
+        elif any(term in url_path for term in ['/privacy', '/terms', '/legal', '/policy']):
+            return "Legal"
+        
+        # If URL doesn't match, use AI categorization with better context
+        # Use more content for better accuracy (1000 chars instead of 500)
+        content_preview = page.text[:1000] if len(page.text) > 1000 else page.text
+        
+        prompt = f"""You are a website content analyzer. Categorize this webpage into EXACTLY ONE of these categories:
 
-Webpage Title: {page.title}
-Webpage URL: {page.url}
-Webpage Content (first 500 chars): {page.text[:500]}
+Categories:
+- Products: Product pages, product listings, product details, e-commerce pages
+- Services: Service offerings, service descriptions, what we offer pages
+- About: About us, company information, team, our story, company history
+- Contact: Contact us, contact information, get in touch, reach us pages
+- Support: Help pages, FAQ, documentation, troubleshooting guides, customer support
+- Pricing: Pricing plans, pricing information, cost, plans and pricing
+- Blog: Blog posts, articles, news, updates, editorial content
+- Legal: Terms of service, privacy policy, legal information, disclaimers
+- General: Homepage, landing pages, general content that doesn't fit other categories
+- Other: Anything that doesn't clearly fit the above categories
 
-Respond with ONLY the category name (e.g., "Products", "Services", "Contact"). No explanation, just the category name."""
+Webpage Information:
+Title: {page.title}
+URL: {page.url}
+Content Preview: {content_preview}
 
-        # Call Gemini API
+Analyze the URL, title, and content to determine the most appropriate category.
+
+IMPORTANT: Respond with ONLY the category name from the list above. No explanation, no quotes, just the single word category name."""
+
+        # Call Gemini API with explicit config
         model = client.models.get(CATEGORIZATION_MODEL)
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            config={"temperature": 0.1, "max_output_tokens": 10}  # Low temperature for consistency, short response
+        )
         
         # Extract category from response
         category = response.text.strip()
         
-        # Clean up category name (remove quotes, extra whitespace)
-        category = category.strip('"\'')
+        # Clean up category name (remove quotes, extra whitespace, punctuation)
+        category = category.strip('"\'.,;:!?')
         category = category.split('\n')[0].strip()  # Take first line only
+        category = category.split('.')[0].strip()  # Remove trailing period if any
+        category = category.split()[0] if category.split() else "General"  # Take first word only
+        
+        # Normalize common variations
+        category_mapping = {
+            "product": "Products",
+            "service": "Services",
+            "contact-us": "Contact",
+            "contact us": "Contact",
+            "about-us": "About",
+            "about us": "About",
+            "pricing": "Pricing",
+            "blog": "Blog",
+            "legal": "Legal",
+            "support": "Support",
+            "general": "General",
+            "other": "Other"
+        }
+        category = category_mapping.get(category.lower(), category)
         
         # Validate category (fallback to "General" if invalid)
         valid_categories = [
@@ -289,12 +346,19 @@ Respond with ONLY the category name (e.g., "Products", "Services", "Contact"). N
             "Pricing", "Blog", "Legal", "General", "Other"
         ]
         if category not in valid_categories:
+            print(f"  [WARN] Invalid category '{category}' for {page.url}, defaulting to General")
+            print(f"        Title: {page.title[:50]}")
+            print(f"        Response was: {response.text[:100]}")
             category = "General"
+        else:
+            print(f"  [CATEGORY] {page.url[:60]}... → {category}")
         
         time.sleep(0.2)  # Throttle API calls
         return category
     except Exception as e:
         print(f"  [WARN] Failed to categorize {page.url}: {e}")
+        import traceback
+        traceback.print_exc()
         return "General"  # Default fallback
 
 
