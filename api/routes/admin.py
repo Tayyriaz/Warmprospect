@@ -389,6 +389,7 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
     categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
+    index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
     
     response = {
         "status": "not_started",
@@ -396,16 +397,44 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
         "progress": 0
     }
     
+    # Check if categories.json exists - this indicates scraping completed
+    categories_exist = os.path.exists(categories_file)
+    index_exists = os.path.exists(index_file)
+    
     if os.path.exists(status_file):
         try:
             with open(status_file, "r", encoding="utf-8") as f:
                 status_data = json.load(f)
                 response.update(status_data)
+                
+                # Auto-fix: If categories exist but status is stuck, update to completed
+                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"]:
+                    print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
+                    try:
+                        with open(categories_file, "r", encoding="utf-8") as cf:
+                            categories_data = json.load(cf)
+                        
+                        # Update status to completed
+                        status_data["status"] = "completed"
+                        status_data["message"] = "Knowledge base built successfully!"
+                        status_data["progress"] = 100
+                        status_data["updated_at"] = time.time()
+                        status_data["categories"] = categories_data.get("categories", [])
+                        status_data["total_pages"] = categories_data.get("total_pages", 0)
+                        
+                        # Write updated status
+                        with open(status_file, "w", encoding="utf-8") as f:
+                            json.dump(status_data, f, indent=2)
+                        
+                        response.update(status_data)
+                        print(f"[SUCCESS] Auto-fixed status for {business_id}")
+                    except Exception as e:
+                        print(f"[WARN] Failed to auto-fix status: {e}")
         except Exception as e:
             print(f"[ERROR] Failed to read status file: {e}")
     
     # Add categories if available
-    if os.path.exists(categories_file):
+    if categories_exist:
         try:
             with open(categories_file, "r", encoding="utf-8") as f:
                 categories_data = json.load(f)
@@ -423,11 +452,6 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
             print(f"[ERROR] Failed to read categories file: {e}")
     
     return response
-    
-    try:
-        with open(status_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
         return {
             "status": "error",
             "message": f"Error reading status: {str(e)}",

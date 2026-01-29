@@ -415,14 +415,18 @@ def build_kb_for_business(business_id: str, website_url: str):
     Build knowledge base for a specific business.
     Saves index and metadata to data/{business_id}/
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is required.")
-    
-    # Update status: starting
-    update_status_file(business_id, "pending", "Preparing to scrape website...", 5)
-    
-    # Parse URL to get domain
+    try:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            error_msg = "GEMINI_API_KEY is required."
+            print(f"[ERROR] {error_msg}")
+            update_status_file(business_id, "failed", error_msg, 0)
+            raise RuntimeError(error_msg)
+        
+        # Update status: starting
+        update_status_file(business_id, "pending", "Preparing to scrape website...", 5)
+        
+        # Parse URL to get domain
     parsed = urlparse(website_url)
     base_domain = parsed.hostname or ""
     root_url = f"{parsed.scheme}://{parsed.hostname}"
@@ -504,11 +508,28 @@ def build_kb_for_business(business_id: str, website_url: str):
     try:
         with open(categories_file, "w", encoding="utf-8") as f:
             json.dump(categories_data, f, indent=2)
+        print(f"[SUCCESS] Categories saved to {categories_file}")
     except Exception as e:
         print(f"[WARN] Failed to save categories file: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Update status: indexing
-    update_status_file(business_id, "indexing", "Building knowledge base from scraped content...", 50)
+    # Update status: indexing (include categories in status)
+    update_status_file(business_id, "indexing", f"Categorization complete. Found {len(category_counts)} categories. Building knowledge base...", 50)
+    
+    # Also update status with categories data so frontend can show them immediately
+    try:
+        # Load the status file and add categories
+        status_file = os.path.join(output_dir, "scraping_status.json")
+        if os.path.exists(status_file):
+            with open(status_file, "r", encoding="utf-8") as f:
+                status_data = json.load(f)
+            status_data["categories"] = categories_data["categories"]
+            status_data["total_pages"] = categories_data["total_pages"]
+            with open(status_file, "w", encoding="utf-8") as f:
+                json.dump(status_data, f, indent=2)
+    except Exception as e:
+        print(f"[WARN] Failed to add categories to status file: {e}")
     
     meta_records = []
     all_vectors = []
@@ -579,8 +600,46 @@ def build_kb_for_business(business_id: str, website_url: str):
     print(f"[SUCCESS] Metadata written to {meta_path}")
     print(f"[SUCCESS] Knowledge base ready for business: {business_id}")
     
-    # Update status: completed
-    update_status_file(business_id, "completed", f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.", 100)
+    # Update status: completed (include categories)
+    try:
+        # Load categories if available
+        categories_file = os.path.join(output_dir, "categories.json")
+        categories_data = None
+        if os.path.exists(categories_file):
+            with open(categories_file, "r", encoding="utf-8") as f:
+                categories_data = json.load(f)
+        
+        # Update status with completion and categories
+        status_file = os.path.join(output_dir, "scraping_status.json")
+        status_data = {
+            "status": "completed",
+            "message": f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.",
+            "progress": 100,
+            "updated_at": time.time()
+        }
+        
+        if categories_data:
+            status_data["categories"] = categories_data.get("categories", [])
+            status_data["total_pages"] = categories_data.get("total_pages", len(pages))
+        
+        with open(status_file, "w", encoding="utf-8") as f:
+            json.dump(status_data, f, indent=2)
+        
+        print(f"[SUCCESS] Status updated to completed with categories")
+    except Exception as e:
+        print(f"[WARN] Failed to update final status with categories: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to simple status update
+        update_status_file(business_id, "completed", f"Knowledge base built successfully! {len(pages)} pages scraped, {len(meta_records)} chunks indexed.", 100)
+    except Exception as e:
+        # Catch any unhandled errors and update status
+        error_msg = f"Scraping failed: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        import traceback
+        traceback.print_exc()
+        update_status_file(business_id, "failed", error_msg, 0)
+        raise
 
 
 if __name__ == "__main__":
@@ -589,4 +648,15 @@ if __name__ == "__main__":
     parser.add_argument("--url", required=True, help="Website URL to scrape")
     
     args = parser.parse_args()
-    build_kb_for_business(args.business_id, args.url)
+    try:
+        build_kb_for_business(args.business_id, args.url)
+    except Exception as e:
+        print(f"[FATAL ERROR] Scraping failed: {e}")
+        import traceback
+        traceback.print_exc()
+        # Try to update status one more time
+        try:
+            update_status_file(args.business_id, "failed", f"Scraping failed: {str(e)}", 0)
+        except:
+            pass
+        sys.exit(1)
