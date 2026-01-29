@@ -66,16 +66,23 @@ def migrate():
 
         # Check for business_logo
         result = conn.execute(text("""
-            SELECT column_name 
+            SELECT column_name, data_type, character_maximum_length
             FROM information_schema.columns 
             WHERE table_name='business_configs' AND column_name='business_logo';
         """))
-        if not result.fetchone():
+        logo_col = result.fetchone()
+        if not logo_col:
             print("Adding business_logo column...")
-            conn.execute(text("ALTER TABLE business_configs ADD COLUMN business_logo VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE business_configs ADD COLUMN business_logo TEXT"))
             print("✅ business_logo added.")
         else:
-            print("✓ business_logo already exists.")
+            # Check if it's VARCHAR(500) and needs to be changed to TEXT
+            if logo_col[1] == 'character varying' and logo_col[2] == 500:
+                print("Updating business_logo column from VARCHAR(500) to TEXT...")
+                conn.execute(text("ALTER TABLE business_configs ALTER COLUMN business_logo TYPE TEXT"))
+                print("✅ business_logo updated to TEXT.")
+            else:
+                print("✓ business_logo already exists with correct type.")
 
         # Check for enabled_categories
         result = conn.execute(text("""

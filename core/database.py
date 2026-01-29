@@ -63,7 +63,7 @@ class BusinessConfig(Base):
     contact_phone = Column(String(50))
     cta_tree = Column(Text)  # Stores complete CTA tree structure as JSON
     chatbot_button_text = Column(String(255))  # Text for the chatbot button (e.g., "Chat with us")
-    business_logo = Column(String(500))  # URL or path to business logo image
+    business_logo = Column(Text)  # URL, path, or base64-encoded image data for business logo
     voice_enabled = Column(Boolean, default=False)  # Enable voice bot for this business
     enabled_categories = Column(Text)  # JSON array of enabled category names for knowledge base
     categories = Column(Text)  # JSON object with categories list and total_pages: {"categories": [...], "total_pages": N}
