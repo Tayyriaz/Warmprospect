@@ -452,11 +452,6 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
             print(f"[ERROR] Failed to read categories file: {e}")
     
     return response
-        return {
-            "status": "error",
-            "message": f"Error reading status: {str(e)}",
-            "progress": 0
-        }
 
 
 @router.get("/admin/business/{business_id}")
