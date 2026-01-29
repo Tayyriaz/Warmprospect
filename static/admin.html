@@ -381,11 +381,6 @@
       border-color: #2563eb;
       background: #eff6ff;
     }
-    #categorySearch:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
   </style>
 </head>
 <body>
@@ -629,39 +624,19 @@
         <div style="margin-bottom: 20px;">
           <h3 style="margin: 0 0 8px 0; color: #374151; font-size: 18px;">📁 Page Categories</h3>
           <div id="categoriesSummary" style="font-size: 14px; color: #6b7280; margin-bottom: 16px;"></div>
-          
-          <!-- Bulk Actions -->
-          <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
-            <button class="btn btn-secondary btn-small" onclick="selectAllCategories()" style="font-size: 12px; padding: 6px 12px;">
-              ✓ Select All
-            </button>
-            <button class="btn btn-secondary btn-small" onclick="deselectAllCategories()" style="font-size: 12px; padding: 6px 12px;">
-              ✗ Deselect All
-            </button>
-            <div style="flex: 1; min-width: 200px;">
-              <input type="text" id="categorySearch" placeholder="🔍 Search categories..." 
-                     style="width: 100%; padding: 8px 12px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 13px;"
-                     oninput="filterCategories(this.value)">
-            </div>
-          </div>
         </div>
         
         <div id="categoriesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
           <!-- Categories will be dynamically inserted here -->
         </div>
         
-        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <div style="font-size: 13px; color: #6b7280;">
-            <span id="categoryStats">0 selected</span> of <span id="totalCategories">0</span> categories
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn btn-secondary btn-small" onclick="closeScrapingModal()" style="font-size: 13px; padding: 8px 16px;">
-              Cancel
-            </button>
-            <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; font-size: 14px; padding: 10px 20px;">
-              💾 Save Category Selection
-            </button>
-          </div>
+        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn btn-secondary btn-small" onclick="closeScrapingModal()" style="font-size: 13px; padding: 8px 16px;">
+            Cancel
+          </button>
+          <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; font-size: 14px; padding: 10px 20px;">
+            💾 Save Category Selection
+          </button>
         </div>
       </div>
       
@@ -1219,13 +1194,6 @@ Your role is to help potential customers understand how GoAccel can help their h
         categoriesSection.style.display = 'none';
       }
       
-      // Reset search
-      const searchInput = document.getElementById('categorySearch');
-      if (searchInput) {
-        searchInput.value = '';
-        filterCategories('');
-      }
-      
       // Show default modal actions
       const defaultActions = document.getElementById('modalActionsDefault');
       if (defaultActions) defaultActions.style.display = 'flex';
@@ -1437,52 +1405,24 @@ Your role is to help potential customers understand how GoAccel can help their h
     function displayCategories(categories, totalPages) {
       const categoriesGrid = document.getElementById('categoriesGrid');
       const categoriesSummary = document.getElementById('categoriesSummary');
-      const totalCategoriesEl = document.getElementById('totalCategories');
-      
-      // Store original categories for filtering
-      window.allCategories = categories;
       
       categoriesSummary.innerHTML = `
         <strong>${totalPages}</strong> pages were classified into <strong>${categories.length}</strong> categories. 
         Select which categories to include in your chatbot's knowledge base.
       `;
       
-      totalCategoriesEl.textContent = categories.length;
-      
-      renderCategories(categories);
-      updateCategoryStats();
-      
-      // Show save button
-      document.getElementById('saveCategoriesBtn').style.display = 'inline-block';
-    }
-    
-    function renderCategories(categories) {
-      const categoriesGrid = document.getElementById('categoriesGrid');
-      
-      // Sort by page count (descending) then alphabetically
-      const sortedCategories = [...categories].sort((a, b) => {
-        if (b.page_count !== a.page_count) {
-          return b.page_count - a.page_count;
-        }
-        return a.name.localeCompare(b.name);
-      });
-      
-      categoriesGrid.innerHTML = sortedCategories.map(cat => {
+      categoriesGrid.innerHTML = categories.map(cat => {
         const enabledClass = cat.enabled ? 'category-enabled' : '';
-        const percentage = Math.round((cat.page_count / (window.totalPages || 1)) * 100);
         
         return `
-          <div class="category-card ${enabledClass}" data-category-name="${cat.name.toLowerCase()}">
+          <div class="category-card ${enabledClass}">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
               <div style="flex: 1;">
                 <div style="font-weight: 600; color: #111827; margin-bottom: 6px; font-size: 15px;">
                   ${cat.name}
                 </div>
-                <div style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">
-                  ${cat.page_count} ${cat.page_count === 1 ? 'page' : 'pages'} (${percentage}%)
-                </div>
-                <div style="width: 100%; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;">
-                  <div style="height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); width: ${percentage}%; transition: width 0.3s;"></div>
+                <div style="font-size: 12px; color: #6b7280;">
+                  ${cat.page_count} ${cat.page_count === 1 ? 'page' : 'pages'}
                 </div>
               </div>
             </div>
@@ -1491,7 +1431,7 @@ Your role is to help potential customers understand how GoAccel can help their h
                      class="category-checkbox"
                      data-category="${cat.name}"
                      ${cat.enabled ? 'checked' : ''} 
-                     onchange="toggleCategory('${cat.name}', this.checked); updateCategoryStats();"
+                     onchange="toggleCategory('${cat.name}', this.checked)"
                      style="opacity: 0; position: absolute; width: 0; height: 0;">
               <span style="position: relative; display: inline-block; width: 48px; height: 26px; background-color: ${cat.enabled ? '#2563eb' : '#d1d5db'}; border-radius: 26px; transition: all 0.3s ease; box-shadow: ${cat.enabled ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'};">
                 <span style="position: absolute; top: 2px; left: ${cat.enabled ? '24px' : '2px'}; width: 22px; height: 22px; background-color: white; border-radius: 50%; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
@@ -1503,88 +1443,9 @@ Your role is to help potential customers understand how GoAccel can help their h
           </div>
         `;
       }).join('');
-    }
-    
-    function updateCategoryStats() {
-      const enabledCount = currentCategories.filter(c => c.enabled).length;
-      const statsEl = document.getElementById('categoryStats');
-      if (statsEl) {
-        statsEl.textContent = `${enabledCount} selected`;
-        statsEl.style.color = enabledCount > 0 ? '#2563eb' : '#6b7280';
-        statsEl.style.fontWeight = enabledCount > 0 ? '600' : '400';
-      }
-    }
-    
-    function selectAllCategories() {
-      currentCategories.forEach(cat => {
-        cat.enabled = true;
-      });
-      document.querySelectorAll('.category-checkbox').forEach(cb => {
-        cb.checked = true;
-        const card = cb.closest('.category-card');
-        if (card) {
-          card.classList.add('category-enabled');
-          const label = cb.nextElementSibling;
-          if (label) {
-            label.querySelector('span:first-child').style.backgroundColor = '#2563eb';
-            label.querySelector('span:first-child').style.boxShadow = '0 0 0 2px rgba(37, 99, 235, 0.2)';
-            const toggle = label.querySelector('span:last-child');
-            if (toggle) {
-              toggle.textContent = 'Enabled';
-              toggle.style.color = '#2563eb';
-              toggle.style.fontWeight = '600';
-            }
-            const thumb = label.querySelector('span:first-child > span');
-            if (thumb) {
-              thumb.style.left = '24px';
-            }
-          }
-        }
-      });
-      updateCategoryStats();
-    }
-    
-    function deselectAllCategories() {
-      currentCategories.forEach(cat => {
-        cat.enabled = false;
-      });
-      document.querySelectorAll('.category-checkbox').forEach(cb => {
-        cb.checked = false;
-        const card = cb.closest('.category-card');
-        if (card) {
-          card.classList.remove('category-enabled');
-          const label = cb.nextElementSibling;
-          if (label) {
-            label.querySelector('span:first-child').style.backgroundColor = '#d1d5db';
-            label.querySelector('span:first-child').style.boxShadow = 'none';
-            const toggle = label.querySelector('span:last-child');
-            if (toggle) {
-              toggle.textContent = 'Disabled';
-              toggle.style.color = '#6b7280';
-              toggle.style.fontWeight = '400';
-            }
-            const thumb = label.querySelector('span:first-child > span');
-            if (thumb) {
-              thumb.style.left = '2px';
-            }
-          }
-        }
-      });
-      updateCategoryStats();
-    }
-    
-    function filterCategories(searchTerm) {
-      const term = searchTerm.toLowerCase().trim();
-      const cards = document.querySelectorAll('.category-card');
       
-      cards.forEach(card => {
-        const categoryName = card.getAttribute('data-category-name');
-        if (term === '' || categoryName.includes(term)) {
-          card.style.display = '';
-        } else {
-          card.style.display = 'none';
-        }
-      });
+      // Show save button
+      document.getElementById('saveCategoriesBtn').style.display = 'inline-block';
     }
     
     function toggleCategory(categoryName, enabled) {
