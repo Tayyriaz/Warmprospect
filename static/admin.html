@@ -630,13 +630,18 @@
           <!-- Categories will be dynamically inserted here -->
         </div>
         
-        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 8px;">
-          <button class="btn btn-secondary btn-small" onclick="closeScrapingModal()" style="font-size: 13px; padding: 8px 16px;">
-            Cancel
+        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-secondary btn-small" onclick="rescraperWebsite()" id="rescraperBtn" style="display: none; font-size: 13px; padding: 8px 16px;">
+            🔄 Re-scrape Website
           </button>
-          <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; font-size: 14px; padding: 10px 20px;">
-            💾 Save Category Selection
-          </button>
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            <button class="btn btn-secondary btn-small" onclick="closeScrapingModal()" style="font-size: 13px; padding: 8px 16px;">
+              Cancel
+            </button>
+            <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none; font-size: 14px; padding: 10px 20px;">
+              💾 Save Category Selection
+            </button>
+          </div>
         </div>
       </div>
       
@@ -1194,6 +1199,10 @@ Your role is to help potential customers understand how GoAccel can help their h
         categoriesSection.style.display = 'none';
       }
       
+      // Hide re-scrape button
+      const rescraperBtn = document.getElementById('rescraperBtn');
+      if (rescraperBtn) rescraperBtn.style.display = 'none';
+      
       // Show default modal actions
       const defaultActions = document.getElementById('modalActionsDefault');
       if (defaultActions) defaultActions.style.display = 'flex';
@@ -1210,6 +1219,7 @@ Your role is to help potential customers understand how GoAccel can help their h
       lastStatus = null;
       stuckWarningShown = false;
       currentCategories = [];
+      currentBusinessId = null;
     }
     
     let currentBusinessId = null;
@@ -1338,6 +1348,9 @@ Your role is to help potential customers understand how GoAccel can help their h
                 // Hide default modal actions when categories are shown
                 const defaultActions = document.getElementById('modalActionsDefault');
                 if (defaultActions) defaultActions.style.display = 'none';
+                // Show re-scrape button when completed
+                const rescraperBtn = document.getElementById('rescraperBtn');
+                if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
               }
               
               // Stop polling when completed
@@ -1372,10 +1385,16 @@ Your role is to help potential customers understand how GoAccel can help their h
             // Hide default modal actions when categories are shown
             const defaultActions = document.getElementById('modalActionsDefault');
             if (defaultActions) defaultActions.style.display = 'none';
+            // Show re-scrape button when categories are shown (scraping completed)
+            const rescraperBtn = document.getElementById('rescraperBtn');
+            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
           } else {
             // Show default modal actions when categories are not shown
             const defaultActions = document.getElementById('modalActionsDefault');
             if (defaultActions) defaultActions.style.display = 'flex';
+            // Hide re-scrape button when no categories
+            const rescraperBtn = document.getElementById('rescraperBtn');
+            if (rescraperBtn) rescraperBtn.style.display = 'none';
           }
           
           statusEl.textContent = statusText;
@@ -1612,14 +1631,23 @@ Your role is to help potential customers understand how GoAccel can help their h
       }, 2000);
     }
     
-    async function triggerScraping(businessId) {
+    async function triggerScraping(businessId, forceRescrape = false) {
       if (!requireApiKey()) return;
       
       try {
-        const res = await fetch(`${API_BASE}/admin/business/${businessId}/scrape`, {
+        const url = `${API_BASE}/admin/business/${businessId}/scrape`;
+        const options = {
           method: 'POST',
           headers: getAdminHeaders()
-        });
+        };
+        
+        // Add force parameter if re-scraping
+        if (forceRescrape) {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify({ force: true });
+        }
+        
+        const res = await fetch(url, options);
         
         if (!res.ok) {
           const errorData = await res.json();
@@ -1628,6 +1656,11 @@ Your role is to help potential customers understand how GoAccel can help their h
         
         const result = await res.json();
         if (result.success) {
+          // Reset modal state
+          document.getElementById('rescraperBtn').style.display = 'none';
+          document.getElementById('categoriesSection').style.display = 'none';
+          document.getElementById('saveCategoriesBtn').style.display = 'none';
+          
           showScrapingModal(businessId);
           startScrapingPoll(businessId);
           showAlert('🌐 Knowledge base scraping started!', 'success');
@@ -1636,6 +1669,17 @@ Your role is to help potential customers understand how GoAccel can help their h
         console.error('Error triggering scraping:', err);
         showAlert('❌ Failed to start scraping: ' + err.message, 'error');
       }
+    }
+    
+    async function rescraperWebsite() {
+      if (!currentBusinessId) return;
+      if (!requireApiKey()) return;
+      
+      if (!confirm('Are you sure you want to re-scrape the website? This will rebuild the knowledge base from scratch.')) {
+        return;
+      }
+      
+      await triggerScraping(currentBusinessId, true);
     }
     
     // Toggle form modal visibility

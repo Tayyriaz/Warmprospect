@@ -244,11 +244,12 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
 
 
 @router.post("/admin/business/{business_id}/scrape")
-async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
+async def trigger_scraping(business_id: str, request: Request, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
     """
     Manually trigger knowledge base scraping for a business.
     Requires the business to have a websiteUrl configured.
     Returns categories when scraping completes (check status endpoint for progress).
+    If force=true in request body, will re-scrape even if already completed.
     """
     try:
         # Get business config to check if website_url exists
@@ -263,7 +264,14 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
                 detail="Business must have a websiteUrl configured to build knowledge base. Please set websiteUrl in the configuration first."
             )
         
-        # Check if scraping is already completed and return categories if available
+        # Check for force parameter
+        force_rescrape = False
+        try:
+            body = await request.json()
+            force_rescrape = body.get("force", False)
+        except:
+            pass  # No body or invalid JSON, continue normally
+        
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
         categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
@@ -275,8 +283,8 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
             "website_url": website_url
         }
         
-        # If scraping was already completed, include categories in response
-        if os.path.exists(status_file) and os.path.exists(categories_file):
+        # If scraping was already completed and NOT forcing re-scrape, return existing categories
+        if not force_rescrape and os.path.exists(status_file) and os.path.exists(categories_file):
             try:
                 with open(status_file, "r", encoding="utf-8") as f:
                     status_data = json.load(f)
@@ -299,7 +307,7 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
         
         # Set initial status immediately (before background task starts)
         update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
-        print(f"[INFO] Setting initial status for business: {business_id}")
+        print(f"[INFO] Setting initial status for business: {business_id} (force={force_rescrape})")
         
         # Trigger knowledge base build in background
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
