@@ -34,6 +34,8 @@ load_dotenv()
 MAX_DEPTH = 5
 MAX_PAGES = 500  # Increased from 200
 MAX_SECONDS = 600  # Increased from 120 (10 minutes)
+MAX_LINKS_PER_PAGE = 30  # Limit links queued per page to prevent queue explosion
+MAX_QUEUE_SIZE = 1000  # Maximum queue size to prevent memory issues
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 EMBED_MODEL = "text-embedding-004"
@@ -78,7 +80,8 @@ def fetch(url: str) -> str:
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
     }
-    resp = requests.get(url, timeout=(5, 30), headers=headers, allow_redirects=True)  # Increased timeout
+    # Reduced timeout: 3s connect, 10s read (faster failure for slow pages)
+    resp = requests.get(url, timeout=(3, 10), headers=headers, allow_redirects=True, stream=False)
     resp.raise_for_status()
     return resp.text
 
@@ -168,10 +171,17 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             print(f"Stopping crawl due to time limit ({MAX_SECONDS}s). Fetched {len(pages)} pages so far.")
             break
         
+        # Stop if queue is too large (likely stuck in a loop or too many links)
+        if q.qsize() > MAX_QUEUE_SIZE:
+            print(f"Queue size ({q.qsize()}) exceeded maximum ({MAX_QUEUE_SIZE}). Stopping to prevent memory issues.")
+            print(f"Fetched {len(pages)} pages before stopping.")
+            break
+        
         # Update status every 10 seconds during crawling
         if business_id and (time.time() - last_status_update) > 10:
             progress = min(20 + int((len(pages) / MAX_PAGES) * 20), 40)  # 20-40% during scraping
-            update_status_file(business_id, "scraping", f"Scraping website... Fetched {len(pages)} pages so far. Queue size: {q.qsize()}", progress)
+            queue_size = q.qsize()
+            update_status_file(business_id, "scraping", f"Scraping website... Fetched {len(pages)} pages so far. Queue size: {queue_size}", progress)
             last_status_update = time.time()
         
         url, depth = q.get()
@@ -187,23 +197,34 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
                 print(f"  [OK] Fetched: {url} (depth={depth}, text_len={len(page.text)}, total={len(pages)})")
             else:
                 print(f"  [SKIP] Skipped (no text): {url}")
-            time.sleep(0.2)  # Reduced delay slightly
+            time.sleep(0.1)  # Reduced delay from 0.2s to 0.1s for faster processing
         except Exception as e:
             print(f"  [ERROR] Skip {url}: {e}")
             continue
 
         # enqueue links (only if we successfully fetched HTML)
-        if html:
+        # Limit links per page to prevent queue explosion
+        if html and q.qsize() < MAX_QUEUE_SIZE:
             try:
                 soup = BeautifulSoup(html, "html.parser")
                 links_found = 0
+                links_queued = 0
                 for a in soup.find_all("a", href=True):
+                    # Stop if queue is getting too large or we've queued enough from this page
+                    if q.qsize() >= MAX_QUEUE_SIZE or links_queued >= MAX_LINKS_PER_PAGE:
+                        break
+                    
                     nxt = normalize_url(a["href"], root_url)
                     if is_allowed(nxt, base_domain) and nxt not in seen:
                         q.put((nxt, depth + 1))
                         links_found += 1
+                        links_queued += 1
+                
                 if links_found > 0:
-                    print(f"    → Queued {links_found} new links (queue size: {q.qsize()})")
+                    if links_queued < links_found:
+                        print(f"    → Queued {links_queued}/{links_found} links (limited, queue size: {q.qsize()})")
+                    else:
+                        print(f"    → Queued {links_found} new links (queue size: {q.qsize()})")
             except Exception as e:
                 print(f"  [WARN] Failed to parse links from {url}: {e}")
     
