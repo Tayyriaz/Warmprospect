@@ -66,6 +66,7 @@ class BusinessConfig(Base):
     business_logo = Column(String(500))  # URL or path to business logo image
     voice_enabled = Column(Boolean, default=False)  # Enable voice bot for this business
     enabled_categories = Column(Text)  # JSON array of enabled category names for knowledge base
+    categories = Column(Text)  # JSON object with categories list and total_pages: {"categories": [...], "total_pages": N}
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -101,6 +102,7 @@ class BusinessConfig(Base):
             "chatbot_button_text": self.chatbot_button_text if hasattr(self, 'chatbot_button_text') else None,
             "business_logo": self.business_logo if hasattr(self, 'business_logo') else None,
             "enabled_categories": json.loads(self.enabled_categories) if hasattr(self, 'enabled_categories') and self.enabled_categories else [],
+            "categories": json.loads(self.categories) if hasattr(self, 'categories') and self.categories else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -162,6 +164,7 @@ class BusinessConfigDB:
         chatbot_button_text: str = None,
         business_logo: str = None,
         enabled_categories: List[str] = None,
+        categories: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
         def _serialize_ctas(value):
@@ -212,6 +215,8 @@ class BusinessConfigDB:
                 existing.business_logo = business_logo
                 if enabled_categories is not None and hasattr(existing, 'enabled_categories'):
                     existing.enabled_categories = _serialize_json(enabled_categories)
+                if categories is not None and hasattr(existing, 'categories'):
+                    existing.categories = _serialize_json(categories)
                 existing.updated_at = datetime.now(timezone.utc)
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed
@@ -239,6 +244,7 @@ class BusinessConfigDB:
                     chatbot_button_text=chatbot_button_text,
                     business_logo=business_logo,
                     enabled_categories=_serialize_json(enabled_categories) if enabled_categories else None if hasattr(BusinessConfig, 'enabled_categories') else None,
+                    categories=_serialize_json(categories) if categories else None if hasattr(BusinessConfig, 'categories') else None,
                 )
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed

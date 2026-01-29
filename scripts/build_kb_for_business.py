@@ -28,6 +28,10 @@ from dotenv import load_dotenv
 import yaml
 from pathlib import Path
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.database import BusinessConfigDB
+
 # Suppress XML parsing warnings for HTML (Windows compatibility)
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
@@ -512,8 +516,7 @@ def build_kb_for_business(business_id: str, website_url: str):
         for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
             print(f"  - {cat}: {count} pages")
         
-        # Save categories to status file for frontend
-        categories_file = os.path.join(output_dir, "categories.json")
+        # Save categories to database
         categories_data = {
             "categories": [
                 {"name": cat, "page_count": count, "enabled": True}  # Default all enabled
@@ -523,11 +526,36 @@ def build_kb_for_business(business_id: str, website_url: str):
             "updated_at": time.time()
         }
         try:
-            with open(categories_file, "w", encoding="utf-8") as f:
-                json.dump(categories_data, f, indent=2)
-            print(f"[SUCCESS] Categories saved to {categories_file}")
+            db_manager = BusinessConfigDB()
+            # Get current config to preserve other fields
+            current_config = db_manager.get_business(business_id)
+            if current_config:
+                # Update only categories, preserve everything else
+                db_manager.create_or_update_business(
+                    business_id=current_config["business_id"],
+                    business_name=current_config["business_name"],
+                    system_prompt=current_config["system_prompt"],
+                    greeting_message=current_config.get("greeting_message"),
+                    primary_goal=current_config.get("primary_goal"),
+                    personality=current_config.get("personality"),
+                    privacy_statement=current_config.get("privacy_statement"),
+                    theme_color=current_config.get("theme_color"),
+                    widget_position=current_config.get("widget_position"),
+                    website_url=current_config.get("website_url"),
+                    contact_email=current_config.get("contact_email"),
+                    contact_phone=current_config.get("contact_phone"),
+                    cta_tree=current_config.get("cta_tree"),
+                    voice_enabled=current_config.get("voice_enabled", False),
+                    chatbot_button_text=current_config.get("chatbot_button_text"),
+                    business_logo=current_config.get("business_logo"),
+                    enabled_categories=current_config.get("enabled_categories", []),
+                    categories=categories_data
+                )
+                print(f"[SUCCESS] Categories saved to database for {business_id}")
+            else:
+                print(f"[WARN] Business {business_id} not found in database, skipping category save")
         except Exception as e:
-            print(f"[WARN] Failed to save categories file: {e}")
+            print(f"[WARN] Failed to save categories to database: {e}")
             import traceback
             traceback.print_exc()
         
@@ -617,14 +645,17 @@ def build_kb_for_business(business_id: str, website_url: str):
         print(f"[SUCCESS] Metadata written to {meta_path}")
         print(f"[SUCCESS] Knowledge base ready for business: {business_id}")
         
-        # Update status: completed (include categories)
+        # Update status: completed (include categories from DB)
         try:
-            # Load categories if available
-            categories_file = os.path.join(output_dir, "categories.json")
+            # Load categories from database
             categories_data = None
-            if os.path.exists(categories_file):
-                with open(categories_file, "r", encoding="utf-8") as f:
-                    categories_data = json.load(f)
+            try:
+                db_manager = BusinessConfigDB()
+                config = db_manager.get_business(business_id)
+                if config and config.get("categories"):
+                    categories_data = config["categories"]
+            except Exception as e:
+                print(f"[WARN] Failed to load categories from DB: {e}")
             
             # Update status with completion and categories
             status_file = os.path.join(output_dir, "scraping_status.json")

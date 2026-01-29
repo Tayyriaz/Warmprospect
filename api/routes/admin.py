@@ -7,8 +7,10 @@ import json
 import subprocess
 import sys
 import time
+import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
+from fastapi.responses import StreamingResponse
 from core.security import get_api_key
 from core.config.business_config import config_manager
 from core.utils.helpers import convert_config_to_camel
@@ -155,16 +157,15 @@ def trigger_kb_build(business_id: str, website_url: str):
             print(f"[SUCCESS] KB build completed for business: {business_id}")
             print(f"[SUCCESS] Output: {result.stdout[:500]}")
             
-            # Load categories if available
-            categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
+            # Load categories from database
             categories_data = None
-            if os.path.exists(categories_file):
-                try:
-                    with open(categories_file, "r", encoding="utf-8") as f:
-                        categories_data = json.load(f)
-                        print(f"[SUCCESS] Loaded categories: {len(categories_data.get('categories', []))} categories")
-                except Exception as e:
-                    print(f"[WARN] Failed to load categories file: {e}")
+            try:
+                config = config_manager.get_business(business_id)
+                if config and config.get("categories"):
+                    categories_data = config["categories"]
+                    print(f"[SUCCESS] Loaded categories from DB: {len(categories_data.get('categories', []))} categories")
+            except Exception as e:
+                print(f"[WARN] Failed to load categories from DB: {e}")
             
             # Update status with categories included
             update_scraping_status(business_id, "completed", success_msg, 100, categories_data)
@@ -274,7 +275,6 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
         
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-        categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
         
         response = {
             "success": True,
@@ -283,43 +283,38 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             "website_url": website_url
         }
         
-        # If forcing re-scrape, clear old status and mark files to prevent auto-completion
+        # If forcing re-scrape, clear old status file
         if force_rescrape:
             try:
                 # Delete old status file completely
                 if os.path.exists(status_file):
                     os.remove(status_file)
                     print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
-                
-                # Also delete old categories file to prevent auto-detection
-                if os.path.exists(categories_file):
-                    backup_categories = categories_file + ".backup"
-                    if os.path.exists(backup_categories):
-                        os.remove(backup_categories)
-                    os.rename(categories_file, backup_categories)
-                    print(f"[INFO] Backed up old categories file for force re-scrape: {business_id}")
             except Exception as e:
-                print(f"[WARN] Failed to clear old files for re-scrape: {e}")
+                print(f"[WARN] Failed to clear old status file for re-scrape: {e}")
         
-        # If scraping was already completed and NOT forcing re-scrape, return existing categories
-        if not force_rescrape and os.path.exists(status_file) and os.path.exists(categories_file):
+        # If scraping was already completed and NOT forcing re-scrape, return existing categories from DB
+        if not force_rescrape:
             try:
-                with open(status_file, "r", encoding="utf-8") as f:
-                    status_data = json.load(f)
-                    if status_data.get("status") == "completed":
-                        with open(categories_file, "r", encoding="utf-8") as cf:
-                            categories_data = json.load(cf)
-                            enabled_categories = config.get("enabled_categories", [])
-                            
-                            # Update category enabled status
-                            categories = categories_data.get("categories", [])
-                            for cat in categories:
-                                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
-                            
-                            response["categories"] = categories
-                            response["total_pages"] = categories_data.get("total_pages", 0)
-                            response["message"] = "Scraping already completed. Categories included."
-                            return response
+                if os.path.exists(status_file):
+                    with open(status_file, "r", encoding="utf-8") as f:
+                        status_data = json.load(f)
+                        if status_data.get("status") == "completed":
+                            # Load categories from database
+                            db_config = config_manager.get_business(business_id)
+                            if db_config and db_config.get("categories"):
+                                categories_data = db_config["categories"]
+                                enabled_categories = db_config.get("enabled_categories", [])
+                                
+                                # Update category enabled status
+                                categories = categories_data.get("categories", [])
+                                for cat in categories:
+                                    cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                                
+                                response["categories"] = categories
+                                response["total_pages"] = categories_data.get("total_pages", 0)
+                                response["message"] = "Scraping already completed. Categories included."
+                                return response
             except Exception as e:
                 print(f"[WARN] Failed to load existing categories: {e}")
         
@@ -408,13 +403,110 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
 
 
 @router.get("/admin/business/{business_id}/scraping-status")
-async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_key)):
-    """Get current scraping status for a business, including categories if available."""
+async def get_scraping_status(
+    business_id: str, 
+    request: Request,
+    stream: bool = False,
+    api_key: str = Depends(get_api_key)
+):
+    """
+    Get current scraping status for a business, including categories if available.
+    
+    Supports both JSON response and Server-Sent Events (SSE) streaming:
+    - Default: Returns JSON response
+    - Set ?stream=true or Accept: text/event-stream header for SSE streaming
+    """
+    # Check if SSE is requested (via query param or Accept header)
+    accept_header = request.headers.get("accept", "")
+    use_sse = stream or "text/event-stream" in accept_header
+    
+    if use_sse:
+        # Return SSE stream
+        async def event_generator():
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
+            index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
+            last_status = None
+            
+            # Send initial connection message
+            yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to status stream'})}\n\n"
+            
+            while True:
+                try:
+                    # Read status (reuse logic from regular endpoint)
+                    status_data = {
+                        "status": "not_started",
+                        "message": "No scraping in progress",
+                        "progress": 0
+                    }
+                    
+                    db_config = config_manager.get_business(business_id)
+                    categories_exist = db_config and db_config.get("categories") is not None
+                    index_exists = os.path.exists(index_file)
+                    
+                    if os.path.exists(status_file):
+                        try:
+                            with open(status_file, "r", encoding="utf-8") as f:
+                                file_status = json.load(f)
+                                status_data.update(file_status)
+                                
+                                # Auto-fix logic
+                                status_age = time.time() - file_status.get("updated_at", 0)
+                                is_recent_pending = file_status.get("status") == "pending" and status_age < 60
+                                status_message = file_status.get("message", "").lower()
+                                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                                
+                                if categories_exist and index_exists and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                                    categories_data = db_config.get("categories")
+                                    status_data["status"] = "completed"
+                                    status_data["message"] = "Knowledge base built successfully!"
+                                    status_data["progress"] = 100
+                                    status_data["categories"] = categories_data.get("categories", [])
+                                    status_data["total_pages"] = categories_data.get("total_pages", 0)
+                        except Exception as e:
+                            print(f"[ERROR] Failed to read status file in SSE: {e}")
+                    
+                    # Add categories from database if available
+                    if categories_exist:
+                        try:
+                            categories_data = db_config.get("categories")
+                            enabled_categories = db_config.get("enabled_categories", [])
+                            
+                            categories = categories_data.get("categories", [])
+                            for cat in categories:
+                                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                            
+                            status_data["categories"] = categories
+                            status_data["total_pages"] = categories_data.get("total_pages", 0)
+                        except Exception as e:
+                            print(f"[ERROR] Failed to read categories from DB in SSE: {e}")
+                    
+                    # Only send update if status or progress changed
+                    current_status_key = (status_data.get("status"), status_data.get("progress"))
+                    if current_status_key != last_status:
+                        last_status = current_status_key
+                        yield f"data: {json.dumps(status_data)}\n\n"
+                        
+                        # Stop streaming if completed or failed
+                        if status_data.get("status") in ["completed", "failed"]:
+                            break
+                    
+                    await asyncio.sleep(1)
+                    
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"[ERROR] SSE error: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                    await asyncio.sleep(1)
+        
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+    
+    # Regular JSON response (existing logic)
     # Use absolute paths to avoid issues with working directory
     # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-    categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
     index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
     
     response = {
@@ -423,8 +515,9 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
         "progress": 0
     }
     
-    # Check if categories.json exists - this indicates scraping completed
-    categories_exist = os.path.exists(categories_file)
+    # Check if categories exist in database and index file exists
+    db_config = config_manager.get_business(business_id)
+    categories_exist = db_config and db_config.get("categories") is not None
     index_exists = os.path.exists(index_file)
     
     if os.path.exists(status_file):
@@ -439,10 +532,6 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
                 status_age = time.time() - status_data.get("updated_at", 0)
                 is_recent_pending = status_data.get("status") == "pending" and status_age < 60
                 
-                # Also check if there's a backup categories file (indicating a re-scrape in progress)
-                backup_categories = categories_file + ".backup"
-                has_backup = os.path.exists(backup_categories)
-                
                 # Check if message indicates a fresh start
                 status_message = status_data.get("message", "").lower()
                 is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
@@ -450,13 +539,12 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
                 # Only auto-fix if:
                 # - Categories and index exist
                 # - Status is not recently set to pending (>= 60 seconds old)
-                # - No backup file exists (not a re-scrape)
                 # - Message doesn't indicate a fresh start
-                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not has_backup and not is_fresh_start:
+                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
                     print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
                     try:
-                        with open(categories_file, "r", encoding="utf-8") as cf:
-                            categories_data = json.load(cf)
+                        # Load categories from database
+                        categories_data = db_config.get("categories")
                         
                         # Update status to completed
                         status_data["status"] = "completed"
@@ -477,23 +565,21 @@ async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_k
         except Exception as e:
             print(f"[ERROR] Failed to read status file: {e}")
     
-    # Add categories if available
+    # Add categories if available from database
     if categories_exist:
         try:
-            with open(categories_file, "r", encoding="utf-8") as f:
-                categories_data = json.load(f)
-                # Get enabled categories from database
-                config = config_manager.get_business(business_id)
-                enabled_categories = config.get("enabled_categories", []) if config else []
-                
-                # Update category enabled status based on database
-                for cat in categories_data.get("categories", []):
-                    cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
-                
-                response["categories"] = categories_data.get("categories", [])
-                response["total_pages"] = categories_data.get("total_pages", 0)
+            categories_data = db_config.get("categories")
+            enabled_categories = db_config.get("enabled_categories", [])
+            
+            # Update category enabled status based on database
+            categories = categories_data.get("categories", [])
+            for cat in categories:
+                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+            
+            response["categories"] = categories
+            response["total_pages"] = categories_data.get("total_pages", 0)
         except Exception as e:
-            print(f"[ERROR] Failed to read categories file: {e}")
+            print(f"[ERROR] Failed to read categories from database: {e}")
     
     return response
 

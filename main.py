@@ -54,7 +54,56 @@ PORT = int(os.getenv("PORT", "8000"))
 MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "20"))
 
 # Initialize FastAPI App
-app = FastAPI(title="GoAccel Concierge Bot")
+app = FastAPI(
+    title="GoAccel Concierge Bot API",
+    description="API for managing chatbot businesses, scraping websites, and handling conversations",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Configure API key authentication for Swagger UI
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    
+    # Add security scheme for API key
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    if "securitySchemes" not in openapi_schema["components"]:
+        openapi_schema["components"]["securitySchemes"] = {}
+    
+    openapi_schema["components"]["securitySchemes"]["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Admin-API-Key",
+        "description": "Enter your Admin API Key from .env file (ADMIN_API_KEY)"
+    }
+    
+    # Apply security to all admin endpoints
+    for path, methods in openapi_schema.get("paths", {}).items():
+        if "/admin" in path:
+            for method_name, method_info in methods.items():
+                if isinstance(method_info, dict) and method_name.lower() in ["get", "post", "put", "delete", "patch"]:
+                    if "security" not in method_info:
+                        method_info["security"] = []
+                    # Add API key security if not already present
+                    if {"ApiKeyAuth": []} not in method_info["security"]:
+                        method_info["security"].append({"ApiKeyAuth": []})
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Rate Limiter Setup
 limiter = Limiter(key_func=get_remote_address)
