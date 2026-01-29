@@ -65,6 +65,7 @@ class BusinessConfig(Base):
     chatbot_button_text = Column(String(255))  # Text for the chatbot button (e.g., "Chat with us")
     business_logo = Column(String(500))  # URL or path to business logo image
     voice_enabled = Column(Boolean, default=False)  # Enable voice bot for this business
+    enabled_categories = Column(Text)  # JSON array of enabled category names for knowledge base
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -99,6 +100,7 @@ class BusinessConfig(Base):
             "voice_enabled": self.voice_enabled if hasattr(self, 'voice_enabled') else False,
             "chatbot_button_text": self.chatbot_button_text if hasattr(self, 'chatbot_button_text') else None,
             "business_logo": self.business_logo if hasattr(self, 'business_logo') else None,
+            "enabled_categories": json.loads(self.enabled_categories) if self.enabled_categories else [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -159,6 +161,7 @@ class BusinessConfigDB:
         voice_enabled = False,
         chatbot_button_text: str = None,
         business_logo: str = None,
+        enabled_categories: List[str] = None,
     ) -> Dict[str, Any]:
         """Create or update a business configuration."""
         def _serialize_ctas(value):
@@ -207,6 +210,8 @@ class BusinessConfigDB:
                 existing.voice_enabled = voice_enabled
                 existing.chatbot_button_text = chatbot_button_text
                 existing.business_logo = business_logo
+                if enabled_categories is not None:
+                    existing.enabled_categories = _serialize_json(enabled_categories)
                 existing.updated_at = datetime.now(timezone.utc)
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed
@@ -233,6 +238,7 @@ class BusinessConfigDB:
                     voice_enabled=voice_enabled,
                     chatbot_button_text=chatbot_button_text,
                     business_logo=business_logo,
+                    enabled_categories=_serialize_json(enabled_categories) if enabled_categories else None,
                 )
                 # Note: rules, custom_routes, available_services, topic_ctas, experiments 
                 # are not stored as separate columns - they can be included in cta_tree if needed

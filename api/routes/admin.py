@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import time
+from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
 from core.security import get_api_key
 from core.config.business_config import config_manager
@@ -15,7 +16,7 @@ from core.utils.helpers import convert_config_to_camel
 router = APIRouter()
 
 
-def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0):
+def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0, categories_data: Dict[str, Any] = None):
     """Update scraping status in a JSON file for frontend polling."""
     try:
         # Use absolute paths to avoid issues with working directory
@@ -39,6 +40,20 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
             "progress": progress,  # 0-100
             "updated_at": time.time()
         }
+        
+        # Include categories if provided
+        if categories_data:
+            # Get enabled categories from database
+            config = config_manager.get_business(business_id)
+            enabled_categories = config.get("enabled_categories", []) if config else []
+            
+            # Update category enabled status based on database
+            categories = categories_data.get("categories", [])
+            for cat in categories:
+                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+            
+            status_data["categories"] = categories
+            status_data["total_pages"] = categories_data.get("total_pages", 0)
         
         # Write status file
         try:
@@ -139,7 +154,20 @@ def trigger_kb_build(business_id: str, website_url: str):
             success_msg = "Knowledge base built successfully! Your chatbot is now ready to use."
             print(f"[SUCCESS] KB build completed for business: {business_id}")
             print(f"[SUCCESS] Output: {result.stdout[:500]}")
-            update_scraping_status(business_id, "completed", success_msg, 100)
+            
+            # Load categories if available
+            categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
+            categories_data = None
+            if os.path.exists(categories_file):
+                try:
+                    with open(categories_file, "r", encoding="utf-8") as f:
+                        categories_data = json.load(f)
+                        print(f"[SUCCESS] Loaded categories: {len(categories_data.get('categories', []))} categories")
+                except Exception as e:
+                    print(f"[WARN] Failed to load categories file: {e}")
+            
+            # Update status with categories included
+            update_scraping_status(business_id, "completed", success_msg, 100, categories_data)
         else:
             error_msg = f"Scraping failed: {result.stderr[:500] if result.stderr else result.stdout[:500]}"
             print(f"[ERROR] KB build failed for business: {business_id}")
@@ -204,6 +232,7 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             voice_enabled=data.get("voiceEnabled") if "voiceEnabled" in data else (data.get("voice_enabled") if "voice_enabled" in data else False),
             chatbot_button_text=data.get("chatbotButtonText") or data.get("chatbot_button_text"),
             business_logo=data.get("businessLogo") or data.get("business_logo"),
+            enabled_categories=data.get("enabledCategories") or data.get("enabled_categories"),
         )
         
         return {
@@ -219,6 +248,7 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
     """
     Manually trigger knowledge base scraping for a business.
     Requires the business to have a websiteUrl configured.
+    Returns categories when scraping completes (check status endpoint for progress).
     """
     try:
         # Get business config to check if website_url exists
@@ -233,6 +263,40 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
                 detail="Business must have a websiteUrl configured to build knowledge base. Please set websiteUrl in the configuration first."
             )
         
+        # Check if scraping is already completed and return categories if available
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
+        categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
+        
+        response = {
+            "success": True,
+            "message": "Knowledge base scraping started",
+            "business_id": business_id,
+            "website_url": website_url
+        }
+        
+        # If scraping was already completed, include categories in response
+        if os.path.exists(status_file) and os.path.exists(categories_file):
+            try:
+                with open(status_file, "r", encoding="utf-8") as f:
+                    status_data = json.load(f)
+                    if status_data.get("status") == "completed":
+                        with open(categories_file, "r", encoding="utf-8") as cf:
+                            categories_data = json.load(cf)
+                            enabled_categories = config.get("enabled_categories", [])
+                            
+                            # Update category enabled status
+                            categories = categories_data.get("categories", [])
+                            for cat in categories:
+                                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                            
+                            response["categories"] = categories
+                            response["total_pages"] = categories_data.get("total_pages", 0)
+                            response["message"] = "Scraping already completed. Categories included."
+                            return response
+            except Exception as e:
+                print(f"[WARN] Failed to load existing categories: {e}")
+        
         # Set initial status immediately (before background task starts)
         update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
         print(f"[INFO] Setting initial status for business: {business_id}")
@@ -241,12 +305,7 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
         print(f"[INFO] Manually triggered KB build for business: {business_id}, URL: {website_url}")
         
-        return {
-            "success": True,
-            "message": "Knowledge base scraping started",
-            "business_id": business_id,
-            "website_url": website_url
-        }
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -324,18 +383,46 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
 
 @router.get("/admin/business/{business_id}/scraping-status")
 async def get_scraping_status(business_id: str, api_key: str = Depends(get_api_key)):
-    """Get current scraping status for a business."""
+    """Get current scraping status for a business, including categories if available."""
     # Use absolute paths to avoid issues with working directory
     # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
+    categories_file = os.path.join(base_dir, "data", business_id, "categories.json")
     
-    if not os.path.exists(status_file):
-        return {
-            "status": "not_started",
-            "message": "No scraping in progress",
-            "progress": 0
-        }
+    response = {
+        "status": "not_started",
+        "message": "No scraping in progress",
+        "progress": 0
+    }
+    
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, "r", encoding="utf-8") as f:
+                status_data = json.load(f)
+                response.update(status_data)
+        except Exception as e:
+            print(f"[ERROR] Failed to read status file: {e}")
+    
+    # Add categories if available
+    if os.path.exists(categories_file):
+        try:
+            with open(categories_file, "r", encoding="utf-8") as f:
+                categories_data = json.load(f)
+                # Get enabled categories from database
+                config = config_manager.get_business(business_id)
+                enabled_categories = config.get("enabled_categories", []) if config else []
+                
+                # Update category enabled status based on database
+                for cat in categories_data.get("categories", []):
+                    cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                
+                response["categories"] = categories_data.get("categories", [])
+                response["total_pages"] = categories_data.get("total_pages", 0)
+        except Exception as e:
+            print(f"[ERROR] Failed to read categories file: {e}")
+    
+    return response
     
     try:
         with open(status_file, "r", encoding="utf-8") as f:
@@ -389,6 +476,69 @@ async def delete_business_config(business_id: str, api_key: str = Depends(get_ap
         return {"success": True, "message": f"Business {business_id} deleted"}
     else:
         raise HTTPException(status_code=404, detail="Business not found")
+
+
+@router.post("/admin/business/{business_id}/categories")
+async def update_enabled_categories(
+    business_id: str, 
+    request: Request,
+    api_key: str = Depends(get_api_key)
+):
+    """Update enabled categories for a business's knowledge base."""
+    try:
+        data = await request.json()
+        enabled_categories = data.get("enabled_categories", [])
+        
+        if not isinstance(enabled_categories, list):
+            raise HTTPException(status_code=400, detail="enabled_categories must be a list")
+        
+        # Get current config
+        config = config_manager.get_business(business_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Business not found")
+        
+        # Update enabled categories in database
+        from core.database import BusinessConfigDB
+        from core.rag_manager import clear_retriever_cache
+        db_manager = BusinessConfigDB()
+        
+        # Get all current config values
+        updated_config = db_manager.create_or_update_business(
+            business_id=config["business_id"],
+            business_name=config["business_name"],
+            system_prompt=config["system_prompt"],
+            greeting_message=config.get("greeting_message"),
+            primary_goal=config.get("primary_goal"),
+            personality=config.get("personality"),
+            privacy_statement=config.get("privacy_statement"),
+            theme_color=config.get("theme_color"),
+            widget_position=config.get("widget_position"),
+            website_url=config.get("website_url"),
+            contact_email=config.get("contact_email"),
+            contact_phone=config.get("contact_phone"),
+            cta_tree=config.get("cta_tree"),
+            voice_enabled=config.get("voice_enabled", False),
+            chatbot_button_text=config.get("chatbot_button_text"),
+            business_logo=config.get("business_logo"),
+            enabled_categories=enabled_categories,
+        )
+        
+        # Clear retriever cache so it reloads with new categories
+        clear_retriever_cache(business_id)
+        
+        return {
+            "success": True,
+            "message": "Enabled categories updated",
+            "business_id": business_id,
+            "enabled_categories": enabled_categories
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Failed to update enabled categories: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to update enabled categories: {str(e)}")
 
 
 @router.get("/admin")

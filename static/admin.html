@@ -572,13 +572,27 @@
 
   <!-- Scraping Progress Modal -->
   <div id="scrapingModal" class="modal-overlay">
-    <div class="modal">
+    <div class="modal" style="max-width: 800px;">
       <h2>🌐 Building Knowledge Base</h2>
       <div class="modal-status" id="modalStatus">Initializing...</div>
       <div class="modal-message" id="modalMessage">Preparing to scrape your website...</div>
       <div class="progress-bar">
         <div class="progress-fill" id="progressFill"></div>
       </div>
+      
+      <!-- Categories Section -->
+      <div id="categoriesSection" style="display: none; margin-top: 24px;">
+        <div style="margin-bottom: 12px; font-size: 14px; color: #666;">
+          <span id="categoriesSummary"></span>
+        </div>
+        <div id="categoriesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px;">
+          <!-- Categories will be dynamically inserted here -->
+        </div>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-primary" onclick="saveEnabledCategories()" id="saveCategoriesBtn" style="display: none;">Save Category Selection</button>
+        </div>
+      </div>
+      
       <div class="modal-actions">
         <button class="btn btn-close" onclick="closeScrapingModal()">Close</button>
       </div>
@@ -1116,7 +1130,11 @@ Your role is to help potential customers understand how GoAccel can help their h
       modal.classList.remove('active');
     }
     
+    let currentBusinessId = null;
+    let currentCategories = [];
+    
     function updateScrapingStatus(businessId) {
+      currentBusinessId = businessId;
       fetch(`${API_BASE}/admin/business/${businessId}/scraping-status`, {
         headers: getAdminHeaders()
       })
@@ -1125,6 +1143,9 @@ Your role is to help potential customers understand how GoAccel can help their h
           const statusEl = document.getElementById('modalStatus');
           const messageEl = document.getElementById('modalMessage');
           const progressEl = document.getElementById('progressFill');
+          const categoriesSection = document.getElementById('categoriesSection');
+          const categoriesGrid = document.getElementById('categoriesGrid');
+          const categoriesSummary = document.getElementById('categoriesSummary');
           
           let statusText = '';
           let messageText = status.message || '';
@@ -1138,19 +1159,28 @@ Your role is to help potential customers understand how GoAccel can help their h
               statusText = '🌐 Scraping Website...';
               progress = Math.max(progress, 20);
               break;
+            case 'categorizing':
+              statusText = '🏷️ Categorizing Pages...';
+              progress = Math.max(progress, 40);
+              break;
             case 'indexing':
               statusText = '📚 Building Knowledge Base...';
-              progress = Math.max(progress, 80);
+              progress = Math.max(progress, 50);
               break;
             case 'completed':
               statusText = '✅ Complete!';
               progress = 100;
               messageText = 'Your chatbot is now ready to use with the scraped knowledge base!';
-              setTimeout(() => {
-                closeScrapingModal();
-                showAlert('✅ Knowledge base built successfully! Your chatbot is ready. <a href="' + API_BASE + '/bot?business_id=' + businessId + '" target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 600;">Test Chatbot →</a>', 'success');
-              }, 2000);
-              return; // Stop polling
+              
+              // Show categories if available
+              if (status.categories && status.categories.length > 0) {
+                currentCategories = status.categories;
+                displayCategories(status.categories, status.total_pages || 0);
+                categoriesSection.style.display = 'block';
+              }
+              
+              // Don't auto-close, let user review categories
+              return; // Continue polling to check for category updates
             case 'failed':
               statusText = '❌ Failed';
               messageText = status.message || 'Scraping failed. Please try again.';
@@ -1160,6 +1190,13 @@ Your role is to help potential customers understand how GoAccel can help their h
               statusText = '⏳ Waiting...';
           }
           
+          // Show categories if available (even during indexing)
+          if (status.categories && status.categories.length > 0) {
+            currentCategories = status.categories;
+            displayCategories(status.categories, status.total_pages || 0);
+            categoriesSection.style.display = 'block';
+          }
+          
           statusEl.textContent = statusText;
           messageEl.textContent = messageText;
           progressEl.style.width = progress + '%';
@@ -1167,6 +1204,85 @@ Your role is to help potential customers understand how GoAccel can help their h
         .catch(err => {
           console.error('Error checking scraping status:', err);
         });
+    }
+    
+    function displayCategories(categories, totalPages) {
+      const categoriesGrid = document.getElementById('categoriesGrid');
+      const categoriesSummary = document.getElementById('categoriesSummary');
+      
+      categoriesSummary.textContent = `ChatBot classified ${totalPages} pages on your website into the following categories. Toggle which ones to use in training.`;
+      
+      categoriesGrid.innerHTML = categories.map(cat => `
+        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-weight: 600; color: #111827; margin-bottom: 4px;">${cat.name}</div>
+            <div style="font-size: 12px; color: #6b7280;">${cat.page_count} pages</div>
+          </div>
+          <label style="position: relative; display: inline-block; width: 44px; height: 24px;">
+            <input type="checkbox" 
+                   ${cat.enabled ? 'checked' : ''} 
+                   onchange="toggleCategory('${cat.name}', this.checked)"
+                   style="opacity: 0; width: 0; height: 0;">
+            <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: ${cat.enabled ? '#2563eb' : '#ccc'}; border-radius: 24px; transition: .4s;">
+              <span style="position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; transform: ${cat.enabled ? 'translateX(20px)' : 'translateX(0)'};"></span>
+            </span>
+          </label>
+        </div>
+      `).join('');
+      
+      // Show save button
+      document.getElementById('saveCategoriesBtn').style.display = 'inline-block';
+    }
+    
+    function toggleCategory(categoryName, enabled) {
+      // Update local state
+      const category = currentCategories.find(c => c.name === categoryName);
+      if (category) {
+        category.enabled = enabled;
+      }
+    }
+    
+    async function saveEnabledCategories() {
+      if (!currentBusinessId || !requireApiKey()) return;
+      
+      const enabledCategories = currentCategories.filter(c => c.enabled).map(c => c.name);
+      
+      try {
+        const res = await fetch(`${API_BASE}/admin/business/${currentBusinessId}/categories`, {
+          method: 'POST',
+          headers: {
+            ...getAdminHeaders(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            enabled_categories: enabledCategories
+          })
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to save categories');
+        }
+        
+        showAlert('✅ Category selection saved! Your chatbot will only use content from enabled categories.', 'success');
+        
+        // Update current categories to reflect saved state
+        currentCategories.forEach(cat => {
+          cat.enabled = enabledCategories.includes(cat.name);
+        });
+        
+        // Stop polling and close modal after a moment
+        if (scrapingPollInterval) {
+          clearInterval(scrapingPollInterval);
+          scrapingPollInterval = null;
+        }
+        
+        setTimeout(() => {
+          closeScrapingModal();
+        }, 2000);
+      } catch (err) {
+        console.error('Error saving categories:', err);
+        showAlert('❌ Failed to save category selection: ' + err.message, 'error');
+      }
     }
     
     let scrapingPollInterval = null;

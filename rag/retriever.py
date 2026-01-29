@@ -19,12 +19,14 @@ class GoAccelRetriever:
         meta_path: str = "data/meta.jsonl",
         model: str = "text-embedding-004",
         top_k: int = 8,
+        enabled_categories: Optional[List[str]] = None,
     ) -> None:
         self.index_path = index_path
         self.meta_path = meta_path
         self.top_k = top_k
         self.client = genai.Client(api_key=api_key)
         self.model = model
+        self.enabled_categories = enabled_categories  # List of enabled category names
 
         if not os.path.exists(self.index_path) or not os.path.exists(self.meta_path):
             raise FileNotFoundError("RAG index not found. Please run the index build script.")
@@ -59,14 +61,26 @@ class GoAccelRetriever:
         if not query.strip():
             return []
         vector = self.embed(query)
-        scores, idxs = self.index.search(np.expand_dims(vector, axis=0), self.top_k)
+        scores, idxs = self.index.search(np.expand_dims(vector, axis=0), self.top_k * 2)  # Get more results to filter
         hits = []
         for score, idx in zip(scores[0], idxs[0]):
             if idx < 0 or idx >= len(self.metadata):
                 continue
             hit = dict(self.metadata[idx])
+            
+            # Filter by enabled categories if specified
+            if self.enabled_categories is not None and len(self.enabled_categories) > 0:
+                hit_category = hit.get("category", "General")
+                if hit_category not in self.enabled_categories:
+                    continue  # Skip this hit if category is not enabled
+            
             hit["score"] = float(score)
             hits.append(hit)
+            
+            # Stop when we have enough hits
+            if len(hits) >= self.top_k:
+                break
+        
         return hits
 
 

@@ -37,6 +37,7 @@ MAX_SECONDS = 600  # Increased from 120 (10 minutes)
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 EMBED_MODEL = "text-embedding-004"
+CATEGORIZATION_MODEL = "gemini-2.5-flash"
 
 
 @dataclass
@@ -46,6 +47,7 @@ class Page:
     text: str
     checksum: str
     fetched_at: float
+    category: str = None  # Category assigned to this page
 
 
 def normalize_url(url: str, root_url: str) -> str:
@@ -133,7 +135,7 @@ def extract(url: str, html: str) -> Page:
             text = " ".join(body.get_text(separator=" ", strip=True).split())
     
     checksum = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time())
+    return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time(), category=None)
 
 
 def fetch_sitemap_urls(sitemap_url: str, base_domain: str) -> List[str]:
@@ -204,6 +206,57 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) 
             chunks.append(" ".join(chunk_words))
         i += size - overlap
     return chunks
+
+
+def categorize_page(client: genai.Client, page: Page) -> str:
+    """
+    Categorize a page using Gemini API.
+    Returns a category name like "Products", "Services", "Contact", "General", etc.
+    """
+    try:
+        # Create prompt for categorization
+        prompt = f"""Analyze this webpage and categorize it into ONE of these common website page categories:
+- Products (product pages, product listings, product details)
+- Services (service offerings, service descriptions)
+- About (about us, company information, team)
+- Contact (contact us, contact information, support)
+- Support (help, FAQ, documentation, troubleshooting)
+- Pricing (pricing plans, pricing information)
+- Blog (blog posts, articles, news)
+- Legal (terms, privacy policy, legal information)
+- General (homepage, landing pages, general content)
+- Other (anything that doesn't fit the above)
+
+Webpage Title: {page.title}
+Webpage URL: {page.url}
+Webpage Content (first 500 chars): {page.text[:500]}
+
+Respond with ONLY the category name (e.g., "Products", "Services", "Contact"). No explanation, just the category name."""
+
+        # Call Gemini API
+        model = client.models.get(CATEGORIZATION_MODEL)
+        response = model.generate_content(prompt)
+        
+        # Extract category from response
+        category = response.text.strip()
+        
+        # Clean up category name (remove quotes, extra whitespace)
+        category = category.strip('"\'')
+        category = category.split('\n')[0].strip()  # Take first line only
+        
+        # Validate category (fallback to "General" if invalid)
+        valid_categories = [
+            "Products", "Services", "About", "Contact", "Support", 
+            "Pricing", "Blog", "Legal", "General", "Other"
+        ]
+        if category not in valid_categories:
+            category = "General"
+        
+        time.sleep(0.2)  # Throttle API calls
+        return category
+    except Exception as e:
+        print(f"  [WARN] Failed to categorize {page.url}: {e}")
+        return "General"  # Default fallback
 
 
 def embed_chunks(client: genai.Client, chunks: List[str]) -> np.ndarray:
@@ -309,10 +362,47 @@ def build_kb_for_business(business_id: str, website_url: str):
         update_status_file(business_id, "failed", "No pages fetched. Check URL and site access.", 0)
         raise RuntimeError("No pages fetched. Check URL and site access.")
     
-    # Update status: indexing
-    update_status_file(business_id, "indexing", "Building knowledge base from scraped content...", 60)
-    
+    # Step: Categorize pages
+    update_status_file(business_id, "categorizing", "Categorizing pages...", 40)
     client = genai.Client(api_key=api_key)
+    
+    print(f"\n[Categorizing] Categorizing {len(pages)} pages...")
+    categorized_count = 0
+    for page in pages:
+        page.category = categorize_page(client, page)
+        categorized_count += 1
+        if categorized_count % 10 == 0:
+            print(f"  Categorized {categorized_count}/{len(pages)} pages...")
+    
+    # Calculate category statistics
+    category_counts: Dict[str, int] = {}
+    for page in pages:
+        category = page.category or "General"
+        category_counts[category] = category_counts.get(category, 0) + 1
+    
+    print(f"\n[Categories] Found {len(category_counts)} categories:")
+    for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
+        print(f"  - {cat}: {count} pages")
+    
+    # Save categories to status file for frontend
+    categories_file = os.path.join(output_dir, "categories.json")
+    categories_data = {
+        "categories": [
+            {"name": cat, "page_count": count, "enabled": True}  # Default all enabled
+            for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
+        ],
+        "total_pages": len(pages),
+        "updated_at": time.time()
+    }
+    try:
+        with open(categories_file, "w", encoding="utf-8") as f:
+            json.dump(categories_data, f, indent=2)
+    except Exception as e:
+        print(f"[WARN] Failed to save categories file: {e}")
+    
+    # Update status: indexing
+    update_status_file(business_id, "indexing", "Building knowledge base from scraped content...", 50)
+    
     meta_records = []
     all_vectors = []
     
@@ -346,12 +436,13 @@ def build_kb_for_business(business_id: str, website_url: str):
                 "checksum": page.checksum,
                 "fetched_at": page.fetched_at,
                 "chunk_id": f"{page.url}#chunk-{i}",
+                "category": page.category or "General",  # Store category with each chunk
             })
         all_vectors.append(vectors)
         
         processed += 1
-        # Update progress (60-90% for indexing)
-        progress = 60 + int((processed / total_pages) * 30)
+        # Update progress (50-90% for indexing)
+        progress = 50 + int((processed / total_pages) * 40)
         update_status_file(business_id, "indexing", f"Processing page {processed}/{total_pages}...", progress)
     
     if not meta_records and os.path.exists(index_path) and os.path.exists(meta_path):
