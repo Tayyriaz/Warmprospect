@@ -21,8 +21,12 @@ from core.session_analytics import analytics
 from core.sentiment_analysis import sentiment_analyzer
 from core.cta_tree import detect_intent_from_message
 from core_tools.crm_functions import CRMTools
+from core.utils.logger import get_logger, IS_PRODUCTION, log_error
 
 router = APIRouter()
+
+# Initialize logger
+logger = get_logger("chat")
 
 # Limiter - will use app.state.limiter from main.py via request object
 # The @limiter.limit decorator accesses app.state.limiter automatically
@@ -91,35 +95,36 @@ async def chat_endpoint(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        error_msg = str(e)
-        full_traceback = traceback.format_exc()
-        print(f"[CRITICAL ERROR] Unhandled exception in chat endpoint: {error_msg}")
-        print(f"[CRITICAL ERROR] Full traceback:\n{full_traceback}")
-        # Return error details for debugging (remove in production)
-        return {
-            "error": error_msg,
-            "traceback": full_traceback.split('\n')[-10:] if len(full_traceback) > 500 else full_traceback.split('\n')
-        }
+        log_error(logger, e, {"endpoint": "/chat"})
+        
+        if IS_PRODUCTION:
+            # In production, return generic error
+            return {
+                "response": "I apologize, but I encountered an error. Please try again."
+            }
+        else:
+            # In development, return detailed error
+            import traceback
+            return {
+                "error": str(e),
+                "traceback": traceback.format_exc().split('\n')
+            }
 
 
 async def _handle_chat_request(request: Request):
     """Internal handler for chat requests."""
-    print(f"[DEBUG] ===== CHAT REQUEST RECEIVED =====")
+    logger.debug("Chat request received")
     try:
         data = await request.json()
-        print(f"[DEBUG] Request data received: {data}")
         user_input = data.get("message", "")
         user_id = data.get("user_id", "default_user")
         business_id = data.get("business_id")
         # appointment_link removed - use CTA tree with redirect action instead
 
-        print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...'")
+        logger.debug(f"Processing: user_id={user_id}, business_id={business_id}, message_length={len(user_input)}")
 
     except Exception as e:
-        print(f"[ERROR] Failed to parse request: {e}")
-        import traceback
-        traceback.print_exc()
+        log_error(logger, e, {"action": "parse_request"})
         raise HTTPException(status_code=400, detail="Invalid request format.")
 
     # Basic validation
@@ -299,20 +304,16 @@ async def _handle_chat_request(request: Request):
         
     except Exception as e:
         error_text = str(e)
-        print(f"!!! Error in chat endpoint: {error_text}")
-        import traceback
-        full_traceback = traceback.format_exc()
-        print(f"!!! Full traceback:\n{full_traceback}")
+        log_error(logger, e, {"business_id": business_id, "user_id": user_id})
         
-        # Return error details for debugging
+        # Return user-friendly error messages
         if "quota" in error_text.lower() or "rate limit" in error_text.lower():
-            user_friendly = "I'm experiencing high demand right now. Please try again in a moment."
-            return {"response": user_friendly}
+            return {"response": "I'm experiencing high demand right now. Please try again in a moment."}
         
-        # For debugging, return more details
-        error_msg = f"Sorry, I encountered an error. Please try again. ({error_text[:100]})"
-        print(f"[ERROR] Returning error message to user: {error_msg}")
-        return {"response": error_msg}
+        if IS_PRODUCTION:
+            return {"response": "I apologize, but I encountered an error. Please try again."}
+        else:
+            return {"response": f"Error: {error_text[:100]}"}
     
     # 8. Track assistant message and update analytics
     session = analytics.track_message(session, "assistant")
@@ -323,8 +324,8 @@ async def _handle_chat_request(request: Request):
     # 10. Save session state
     save_session(session_key, session)
     
-    print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
-    print(f"[ANALYTICS] Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
+    logger.debug(f"Sending response: length={len(final_response_text) if final_response_text else 0}")
+    logger.info(f"Analytics - Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
 
     # Response payload - NEVER include CTAs in response
     response_payload = {"response": final_response_text}

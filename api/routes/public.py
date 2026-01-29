@@ -7,8 +7,11 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from rag.retriever import format_context
 from core.rag_manager import get_default_retriever, get_retriever_for_business
+from core.utils.logger import get_logger, IS_PRODUCTION
+from core.session_store import REDIS_AVAILABLE
 
 router = APIRouter()
+logger = get_logger("public")
 
 
 @router.get("/")
@@ -27,11 +30,25 @@ async def bot():
 async def health():
     """Detailed health endpoint to verify the system status."""
     retriever = get_default_retriever()
+    
+    # Check database connection
+    db_status = "healthy"
+    try:
+        from core.database import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = "unhealthy"
+        logger.error(f"Database health check failed: {e}")
+    
     health_status = {
-        "status": "ok",
-        "message": "GoAccel Concierge Bot is running",
+        "status": "ok" if db_status == "healthy" else "degraded",
+        "message": "WarmProspect Chatbot Platform is running",
         "components": {
             "api": "healthy",
+            "database": db_status,
+            "redis": "available" if REDIS_AVAILABLE else "unavailable",
             "rag": "loaded" if retriever is not None else "not_loaded",
             "gemini_api": "configured"
         }
@@ -86,9 +103,12 @@ async def test_rag_for_business(business_id: str):
             "context_preview": ctx[:300] if ctx else None,
         }
     except Exception as e:
-        import traceback
-        return {
+        logger.error(f"RAG test failed for business_id={business_id}: {e}")
+        response = {
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc(),
         }
+        if not IS_PRODUCTION:
+            import traceback
+            response["traceback"] = traceback.format_exc().split('\n')
+        return response

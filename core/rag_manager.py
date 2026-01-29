@@ -5,6 +5,10 @@ RAG (Retrieval Augmented Generation) retriever management.
 import os
 from typing import Dict, Any, Optional
 from rag.retriever import GoAccelRetriever
+from core.utils.logger import get_logger
+
+# Initialize logger
+logger = get_logger("rag_manager")
 
 # Optional RAG retriever(s)
 # NOTE: In multi-tenant mode, each business should have its own index under:
@@ -25,10 +29,10 @@ def initialize_default_retriever() -> Optional[GoAccelRetriever]:
             model="text-embedding-004",
             top_k=5,
         )
-        print("Default RAG retriever loaded (data/index.faiss).")
+        logger.info("Default RAG retriever loaded (data/index.faiss)")
         return retriever
     except Exception as e:
-        print(f"Default RAG retriever not loaded: {e}")
+        logger.warning(f"Default RAG retriever not loaded: {e}")
         return None
 
 
@@ -44,23 +48,21 @@ def get_retriever_for_business(business_id: Optional[str]) -> Optional[GoAccelRe
         return retriever
 
     if business_id in _retriever_cache:
-        print(f"[RAG] Using cached retriever for business_id={business_id}")
+        logger.debug(f"Using cached retriever for business_id={business_id}")
         return _retriever_cache[business_id]
 
     index_path = os.path.join("data", business_id, "index.faiss")
     meta_path = os.path.join("data", business_id, "meta.jsonl")
     
-    print(f"[RAG] Checking for business KB: business_id={business_id}")
-    print(f"[RAG] Index path: {index_path} (exists: {os.path.exists(index_path)})")
-    print(f"[RAG] Meta path: {meta_path} (exists: {os.path.exists(meta_path)})")
+    logger.debug(f"Checking for business KB: business_id={business_id}, index_exists={os.path.exists(index_path)}, meta_exists={os.path.exists(meta_path)}")
     
     if not (os.path.exists(index_path) and os.path.exists(meta_path)):
         # No business KB yet -> disable RAG for this business to avoid cross-tenant contamination
-        print(f"[RAG] No KB found for business_id={business_id}, RAG disabled")
+        logger.debug(f"No KB found for business_id={business_id}, RAG disabled")
         return None
 
     try:
-        print(f"[RAG] Loading retriever for business_id={business_id}...")
+        logger.info(f"Loading retriever for business_id={business_id}")
         biz_ret = GoAccelRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
@@ -69,12 +71,10 @@ def get_retriever_for_business(business_id: Optional[str]) -> Optional[GoAccelRe
             top_k=5,
         )
         _retriever_cache[business_id] = biz_ret
-        print(f"✅ Business RAG retriever loaded for business_id={business_id}.")
+        logger.info(f"Business RAG retriever loaded for business_id={business_id}")
         return biz_ret
     except Exception as e:
-        print(f"[ERROR] Could not load business RAG for {business_id}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Could not load business RAG for {business_id}: {e}")
         return None
 
 

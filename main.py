@@ -5,13 +5,19 @@ Main FastAPI application entry point.
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google import genai
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from core.utils.logger import get_logger, IS_PRODUCTION, log_error
+from core.middleware import RequestIDMiddleware
+
+# Initialize logger
+logger = get_logger("main")
 
 # Database initialization (optional - will use file storage if database not available)
 try:
@@ -19,12 +25,11 @@ try:
     # Initialize database tables on startup
     try:
         init_db()
-        print("✅ Database initialized successfully!")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"[WARNING] Database initialization failed: {e}")
-        print("[INFO] Using file-based storage as fallback.")
+        logger.warning(f"Database initialization failed: {e}. Using file-based storage as fallback.")
 except ImportError:
-    print("[INFO] Database module not available. Using file-based storage.")
+    logger.info("Database module not available. Using file-based storage.")
 
 # Initialize RAG retriever
 from core.rag_manager import initialize_default_retriever
@@ -39,8 +44,7 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    print("!!! [CRITICAL ERROR] GEMINI_API_KEY is missing from environment variables.")
-    print("!!! Please ensure .env file exists and contains GEMINI_API_KEY.")
+    logger.critical("GEMINI_API_KEY is missing from environment variables.")
     raise ValueError("GEMINI_API_KEY not found in .env file.")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -54,7 +58,14 @@ PORT = int(os.getenv("PORT", "8000"))
 MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "20"))
 
 # Initialize FastAPI App
-app = FastAPI(title="GoAccel Concierge Bot")
+app = FastAPI(
+    title="WarmProspect Chatbot Platform",
+    description="Multi-tenant AI chatbot platform with RAG and CRM integration",
+    version="1.0.0"
+)
+
+# Add request ID middleware
+app.add_middleware(RequestIDMiddleware)
 
 # Rate Limiter Setup
 limiter = Limiter(key_func=get_remote_address)
@@ -68,10 +79,13 @@ if allowed_origins_env:
     try:
         ALLOWED_ORIGINS = json.loads(allowed_origins_env)
     except json.JSONDecodeError:
-        print(f"[WARNING] Invalid JSON in ALLOWED_ORIGINS. Defaulting to ['*']")
-        ALLOWED_ORIGINS = ["*"]
+        logger.warning("Invalid JSON in ALLOWED_ORIGINS. Defaulting based on environment.")
+        ALLOWED_ORIGINS = ["*"] if not IS_PRODUCTION else []
 else:
-    ALLOWED_ORIGINS = ["*"]
+    # In production, default to empty (no CORS) unless explicitly set
+    ALLOWED_ORIGINS = ["*"] if not IS_PRODUCTION else []
+    if IS_PRODUCTION:
+        logger.warning("ALLOWED_ORIGINS not set in production. CORS disabled. Set ALLOWED_ORIGINS env var.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,6 +106,29 @@ chat.init_chat_router(client, MODEL_NAME, MAX_HISTORY_TURNS)
 
 # Serve static frontend
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Global exception handler for unhandled errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle unhandled exceptions globally."""
+    log_error(logger, exc, {"path": request.url.path, "method": request.method})
+    
+    if IS_PRODUCTION:
+        # In production, return generic error message
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error. Please try again later."}
+        )
+    else:
+        # In development, return detailed error
+        import traceback
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(exc),
+                "traceback": traceback.format_exc().split('\n')
+            }
+        )
 
 # Register route modules
 app.include_router(public.router)
