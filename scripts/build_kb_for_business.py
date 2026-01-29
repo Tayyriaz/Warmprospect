@@ -152,10 +152,11 @@ def fetch_sitemap_urls(sitemap_url: str, base_domain: str) -> List[str]:
     return urls
 
 
-def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str) -> List[Page]:
+def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id: str = None) -> List[Page]:
     seen: Set[str] = set()
     q: queue.Queue = queue.Queue()
     started = time.time()
+    last_status_update = started
     
     for s in seed_urls:
         q.put((s, 0))
@@ -166,10 +167,18 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str) -> List[Pag
         if elapsed > MAX_SECONDS:
             print(f"Stopping crawl due to time limit ({MAX_SECONDS}s). Fetched {len(pages)} pages so far.")
             break
+        
+        # Update status every 10 seconds during crawling
+        if business_id and (time.time() - last_status_update) > 10:
+            progress = min(20 + int((len(pages) / MAX_PAGES) * 20), 40)  # 20-40% during scraping
+            update_status_file(business_id, "scraping", f"Scraping website... Fetched {len(pages)} pages so far. Queue size: {q.qsize()}", progress)
+            last_status_update = time.time()
+        
         url, depth = q.get()
         if url in seen or depth > MAX_DEPTH:
             continue
         seen.add(url)
+        html = None
         try:
             html = fetch(url)
             page = extract(url, html)
@@ -183,16 +192,25 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str) -> List[Pag
             print(f"  [ERROR] Skip {url}: {e}")
             continue
 
-        # enqueue links
-        soup = BeautifulSoup(html, "html.parser")
-        links_found = 0
-        for a in soup.find_all("a", href=True):
-            nxt = normalize_url(a["href"], root_url)
-            if is_allowed(nxt, base_domain) and nxt not in seen:
-                q.put((nxt, depth + 1))
-                links_found += 1
-        if links_found > 0:
-            print(f"    → Queued {links_found} new links (queue size: {q.qsize()})")
+        # enqueue links (only if we successfully fetched HTML)
+        if html:
+            try:
+                soup = BeautifulSoup(html, "html.parser")
+                links_found = 0
+                for a in soup.find_all("a", href=True):
+                    nxt = normalize_url(a["href"], root_url)
+                    if is_allowed(nxt, base_domain) and nxt not in seen:
+                        q.put((nxt, depth + 1))
+                        links_found += 1
+                if links_found > 0:
+                    print(f"    → Queued {links_found} new links (queue size: {q.qsize()})")
+            except Exception as e:
+                print(f"  [WARN] Failed to parse links from {url}: {e}")
+    
+    # Final status update after crawling
+    if business_id:
+        update_status_file(business_id, "scraping", f"Finished scraping. Fetched {len(pages)} pages.", 40)
+    
     return pages
 
 
@@ -350,7 +368,7 @@ def build_kb_for_business(business_id: str, website_url: str):
     print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
     
     update_status_file(business_id, "scraping", "Scraping website content... This may take a few minutes.", 20)
-    pages = crawl(seeds, base_domain, root_url)
+    pages = crawl(seeds, base_domain, root_url, business_id)
     print(f"\n[SUCCESS] Fetched {len(pages)} pages")
     
     # Show summary
@@ -368,11 +386,15 @@ def build_kb_for_business(business_id: str, website_url: str):
     
     print(f"\n[Categorizing] Categorizing {len(pages)} pages...")
     categorized_count = 0
+    total_pages_to_categorize = len(pages)
     for page in pages:
         page.category = categorize_page(client, page)
         categorized_count += 1
         if categorized_count % 10 == 0:
-            print(f"  Categorized {categorized_count}/{len(pages)} pages...")
+            print(f"  Categorized {categorized_count}/{total_pages_to_categorize} pages...")
+            # Update progress during categorization (40-50%)
+            progress = 40 + int((categorized_count / total_pages_to_categorize) * 10)
+            update_status_file(business_id, "categorizing", f"Categorizing pages... {categorized_count}/{total_pages_to_categorize} completed", progress)
     
     # Calculate category statistics
     category_counts: Dict[str, int] = {}

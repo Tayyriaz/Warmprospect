@@ -1318,7 +1318,7 @@ Your role is to help potential customers understand how GoAccel can help their h
                 detailsText += ` • <span style="color: #dc2626;">No update for ${Math.floor(timeSinceUpdate / 60)}m</span>`;
               }
             }
-            progressDetailsEl.textContent = detailsText;
+            progressDetailsEl.innerHTML = detailsText; // Use innerHTML instead of textContent
           }
         })
         .catch(err => {
