@@ -48,53 +48,107 @@ TONE & STYLE:
             "id": "main_menu",
             "label": "What can I help you with?",
             "action": "show_children",
-            "children": ["learn_services", "pricing_info", "schedule_demo", "contact_sales"]
+            "children": ["book_appointment", "learn_services", "pricing_info", "contact_sales"]
+        },
+        "book_appointment": {
+            "id": "book_appointment",
+            "label": "📅 Book a Free Consultation",
+            "action": "link",
+            "url": "https://calendly.com/goaccel/growth-call"
         },
         "learn_services": {
             "id": "learn_services",
-            "label": "Learn About Services",
+            "label": "Learn About Our Services",
             "action": "show_children",
-            "children": ["digital_agency", "crm_software", "marketing_automation", "listing_management"]
+            "children": ["agency_services", "software_solutions", "marketing_services"]
         },
-        "digital_agency": {
-            "id": "digital_agency",
-            "label": "Digital Agency Solutions",
+        "agency_services": {
+            "id": "agency_services",
+            "label": "Digital Agency Services",
+            "action": "show_children",
+            "children": ["wordpress_design", "appointment_booking", "gbp_optimization", "lead_generation"]
+        },
+        "wordpress_design": {
+            "id": "wordpress_design",
+            "label": "WordPress Website Design",
             "action": "send",
-            "message": "Tell me about your digital agency and website services"
+            "message": "Tell me about your WordPress website design services"
+        },
+        "appointment_booking": {
+            "id": "appointment_booking",
+            "label": "Managed Appointment Booking",
+            "action": "send",
+            "message": "How does your managed appointment booking service work?"
+        },
+        "gbp_optimization": {
+            "id": "gbp_optimization",
+            "label": "Google Business Profile Optimization",
+            "action": "send",
+            "message": "I want to learn about Google Business Profile optimization"
+        },
+        "lead_generation": {
+            "id": "lead_generation",
+            "label": "Custom Lead Generation",
+            "action": "send",
+            "message": "Tell me about your lead generation services"
+        },
+        "software_solutions": {
+            "id": "software_solutions",
+            "label": "Software Solutions",
+            "action": "show_children",
+            "children": ["crm_software", "marketing_automation", "business_management"]
         },
         "crm_software": {
             "id": "crm_software",
-            "label": "CRM Software",
+            "label": "CRM & Pipeline Management",
             "action": "send",
-            "message": "I want to learn about your CRM software"
+            "message": "I want to learn about your CRM software and deal pipeline management"
         },
         "marketing_automation": {
             "id": "marketing_automation",
             "label": "Marketing Automation",
             "action": "send",
-            "message": "How does your marketing automation work?"
+            "message": "How does your marketing automation platform work?"
+        },
+        "business_management": {
+            "id": "business_management",
+            "label": "Business Management Software",
+            "action": "send",
+            "message": "Tell me about your business management software features"
+        },
+        "marketing_services": {
+            "id": "marketing_services",
+            "label": "Marketing & Growth Services",
+            "action": "show_children",
+            "children": ["review_management", "data_enhancement", "listing_management"]
+        },
+        "review_management": {
+            "id": "review_management",
+            "label": "Customer Review Management",
+            "action": "send",
+            "message": "How do you help manage customer reviews?"
+        },
+        "data_enhancement": {
+            "id": "data_enhancement",
+            "label": "Data Enhancement & Reactivation",
+            "action": "send",
+            "message": "Tell me about your data enhancement and database reactivation services"
         },
         "listing_management": {
             "id": "listing_management",
             "label": "Business Listing Management",
             "action": "send",
-            "message": "Tell me about review and listing management"
+            "message": "I want to learn about business listing management"
         },
         "pricing_info": {
             "id": "pricing_info",
             "label": "Pricing & Plans",
             "action": "send",
-            "message": "What are your pricing options?"
-        },
-        "schedule_demo": {
-            "id": "schedule_demo",
-            "label": "Schedule a Demo",
-            "action": "link",
-            "url": "https://warmprospect.com/goaccel-website/"
+            "message": "What are your pricing options and plans?"
         },
         "contact_sales": {
             "id": "contact_sales",
-            "label": "Contact Sales Team",
+            "label": "📞 Contact Sales Team",
             "action": "send",
             "message": "I'd like to speak with your sales team"
         }
