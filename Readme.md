@@ -189,3 +189,10 @@ The deploy script automatically generates nginx configuration from `nginx.conf` 
 - `NGINX_SSL_CERT_PATH`
 - `NGINX_SSL_KEY_PATH`
 - `NGINX_PROXY_PASS` (uses `${PORT}` automatically)
+
+**Troubleshooting (service running but page not responding):**
+- **Nginx not running:** Test config with `sudo nginx -t`, then `sudo systemctl start nginx`. If Nginx was killed (e.g. OOM), fix config or resources and start again.
+- Ensure the `chatbot-api` site is enabled; reload after config changes: `sudo systemctl reload nginx`
+- Set `NGINX_SERVER_NAME` and `NGINX_PROXY_PASS` in `.env` and re-run deploy so the generated Nginx config is correct
+- Allow HTTP/HTTPS in firewall: `sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw reload`
+- **Do not use port 8000 from the internet.** The app listens on `127.0.0.1:8000` only. Use Nginx on port 80 (HTTP) or 443 (HTTPS), e.g. `https://yourdomain.com` or `http://72.52.132.145` (if using IP and HTTP).
