@@ -547,7 +547,7 @@ WorkingDirectory=$PROJECT_PATH
 Environment="PATH=$PYTHON_PATH"
 EnvironmentFile=$PROJECT_PATH/.env
 # BACKEND_PORT will be loaded from .env file via EnvironmentFile
-# Use shell to expand BACKEND_PORT with fallback (double quotes allow variable expansion)
+# Use shell to expand BACKEND_PORT from .env, with fallback to the detected port ($BACKEND_PORT)
 ExecStart=/bin/sh -c "exec $UVICORN_PATH main:app --host 127.0.0.1 --port \${BACKEND_PORT:-$BACKEND_PORT}"
 Restart=always
 RestartSec=10
