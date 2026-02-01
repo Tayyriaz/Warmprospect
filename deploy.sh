@@ -34,13 +34,20 @@ PYTHON_VERSION="3.11"
 # HELPER FUNCTIONS
 # ============================================
 
-# Get PORT from .env file
+# Get PORT from .env file (checks BACKEND_PORT first, then PORT)
 get_env_port() {
     local default_port="${1:-8000}"
     if [ -f ".env" ]; then
-        local port=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
-        if [ -n "$port" ] && [ "$port" -gt 0 ] 2>/dev/null; then
-            echo "$port"
+        # Read both BACKEND_PORT and PORT in one grep pass (more efficient)
+        local backend_port port
+        # Extract values, handling quotes and whitespace
+        backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d '=' -f2- | sed "s/^[\"']//; s/[\"']$//; s/^[[:space:]]*//; s/[[:space:]]*$//" || echo "")
+        port=$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2- | sed "s/^[\"']//; s/[\"']$//; s/^[[:space:]]*//; s/[[:space:]]*$//" || echo "")
+        
+        # Use BACKEND_PORT if set, otherwise PORT, otherwise default
+        local final_port="${backend_port:-${port:-$default_port}}"
+        if [ -n "$final_port" ] && [ "$final_port" -gt 0 ] 2>/dev/null; then
+            echo "$final_port"
         else
             echo "$default_port"
         fi
@@ -124,21 +131,32 @@ setup_nginx() {
     source .env 2>/dev/null || true
     set +a
     
-    # Expand PORT in NGINX_PROXY_PASS if it contains ${PORT}
-    if [[ "$NGINX_PROXY_PASS" == *'${PORT}'* ]]; then
-        local port_value="${PORT:-8000}"
-        NGINX_PROXY_PASS="${NGINX_PROXY_PASS/\${PORT}/$port_value}"
+    # Determine backend port (reuse get_env_port function for consistency)
+    local backend_port=$(get_env_port)
+    
+    # Determine Nginx HTTPS port (default 443)
+    local nginx_https_port="${NGINX_HTTPS_PORT:-443}"
+    
+    # Validate ports don't conflict
+    if [ "$nginx_https_port" = "$backend_port" ]; then
+        echo "  ❌ ERROR: NGINX_HTTPS_PORT ($nginx_https_port) cannot be the same as BACKEND_PORT ($backend_port)."
+        echo "     Please set BACKEND_PORT to a different value (e.g., 8001) in your .env file."
+        return 1
     fi
     
+    # Expand BACKEND_PORT or PORT in NGINX_PROXY_PASS (handle both patterns)
+    NGINX_PROXY_PASS="${NGINX_PROXY_PASS//\${BACKEND_PORT}/$backend_port}"
+    NGINX_PROXY_PASS="${NGINX_PROXY_PASS//\${PORT}/$backend_port}"
+    
     # Export variables for envsubst
-    export NGINX_SERVER_NAME NGINX_SSL_CERT_PATH NGINX_SSL_KEY_PATH NGINX_PROXY_PASS
+    export NGINX_SERVER_NAME NGINX_SSL_CERT_PATH NGINX_SSL_KEY_PATH NGINX_PROXY_PASS NGINX_HTTPS_PORT NGINX_ADDITIONAL_HTTPS_PORT
     
     # Generate nginx config with environment variable substitution
     echo "  Generating Nginx configuration from template with .env variables..."
     if command -v envsubst >/dev/null 2>&1; then
         # Use envsubst to replace ${VAR} with values from environment
         # Only substitute the variables we want (to avoid issues with $host, $server_name, etc.)
-        envsubst '$NGINX_SERVER_NAME $NGINX_SSL_CERT_PATH $NGINX_SSL_KEY_PATH $NGINX_PROXY_PASS' < nginx.conf > "${NGINX_AVAILABLE}.tmp" || {
+        envsubst '$NGINX_SERVER_NAME $NGINX_SSL_CERT_PATH $NGINX_SSL_KEY_PATH $NGINX_PROXY_PASS $NGINX_HTTPS_PORT $NGINX_ADDITIONAL_HTTPS_PORT' < nginx.conf > "${NGINX_AVAILABLE}.tmp" || {
             echo "⚠️  Failed to generate Nginx config. Falling back to direct copy."
             cp nginx.conf "$NGINX_AVAILABLE" || {
                 echo "⚠️  Could not copy nginx.conf. You may need to do this manually."
@@ -151,6 +169,20 @@ setup_nginx() {
             rm -f "${NGINX_AVAILABLE}.tmp"
             echo "✅ Nginx configuration is up to date"
             return 0
+        fi
+        
+        # Process additional HTTPS port and clean up old blocks in one sed pass
+        if [ -n "$NGINX_ADDITIONAL_HTTPS_PORT" ]; then
+            sed -i \
+                -e "s/# listen \${NGINX_ADDITIONAL_HTTPS_PORT}/listen ${NGINX_ADDITIONAL_HTTPS_PORT}/g" \
+                -e "s/# listen \[::\]:\${NGINX_ADDITIONAL_HTTPS_PORT}/listen [::]:${NGINX_ADDITIONAL_HTTPS_PORT}/g" \
+                "${NGINX_AVAILABLE}.tmp"
+        else
+            # Remove commented additional port lines and old port 8000 block
+            sed -i \
+                -e '/# listen.*NGINX_ADDITIONAL_HTTPS_PORT/d' \
+                -e '/^# HTTPS server on port 8000/,/^# }$/d' \
+                "${NGINX_AVAILABLE}.tmp"
         fi
         
         mv "${NGINX_AVAILABLE}.tmp" "$NGINX_AVAILABLE" || {
@@ -175,11 +207,21 @@ setup_nginx() {
     echo "  Testing Nginx configuration..."
     if nginx -t 2>/dev/null; then
         echo "✅ Nginx configuration is valid"
-        echo "  Reloading Nginx..."
-        systemctl reload nginx 2>/dev/null || {
-            echo "⚠️  Could not reload Nginx. Run manually: sudo systemctl reload nginx"
-            return 1
-        }
+        
+        # Check if Nginx is running
+        if systemctl is-active --quiet nginx 2>/dev/null; then
+            echo "  Reloading Nginx..."
+            systemctl reload nginx 2>/dev/null || {
+                echo "⚠️  Could not reload Nginx. Run manually: sudo systemctl reload nginx"
+                return 1
+            }
+        else
+            echo "  Starting Nginx (was not running)..."
+            systemctl start nginx 2>/dev/null || {
+                echo "⚠️  Could not start Nginx. Run manually: sudo systemctl start nginx"
+                return 1
+            }
+        fi
         return 0
     else
         echo "⚠️  Nginx configuration test failed. Check the config manually."
