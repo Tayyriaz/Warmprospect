@@ -543,6 +543,52 @@ if [ "$FRESH_DEPLOY" = false ]; then
         fi
     fi
     
+    # Step 7.5: Check for port conflicts
+    echo ""
+    echo "🔍 Step 7.5: Checking for port conflicts..."
+    ENV_PORT=8000
+    if [ -f ".env" ]; then
+        ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "8000")
+    fi
+    
+    # Check if port is in use
+    if command -v lsof >/dev/null 2>&1; then
+        PORT_IN_USE=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
+    elif command -v netstat >/dev/null 2>&1; then
+        PORT_IN_USE=$(netstat -tuln 2>/dev/null | grep ":$ENV_PORT " | awk '{print $7}' | cut -d'/' -f1 | head -1 || echo "")
+    elif command -v ss >/dev/null 2>&1; then
+        PORT_IN_USE=$(ss -tuln 2>/dev/null | grep ":$ENV_PORT " | awk '{print $6}' | cut -d':' -f1 | head -1 || echo "")
+    else
+        PORT_IN_USE=""
+    fi
+    
+    if [ -n "$PORT_IN_USE" ]; then
+        # Check if it's the chatbot service itself
+        SERVICE_PID=$(systemctl show -p MainPID --value $SERVICE_NAME 2>/dev/null || echo "")
+        if [ "$PORT_IN_USE" = "$SERVICE_PID" ] || [ -z "$SERVICE_PID" ]; then
+            echo "⚠️  Port $ENV_PORT is in use by PID $PORT_IN_USE"
+            echo "   Stopping any existing chatbot processes..."
+            systemctl stop $SERVICE_NAME 2>/dev/null || true
+            # Kill any remaining processes on the port
+            if command -v lsof >/dev/null 2>&1; then
+                lsof -ti:$ENV_PORT | xargs kill -9 2>/dev/null || true
+            fi
+            sleep 2
+            echo "✅ Port cleared"
+        else
+            echo "⚠️  Port $ENV_PORT is already in use by PID $PORT_IN_USE (not chatbot service)"
+            echo "   Process info:"
+            ps -p $PORT_IN_USE -o pid,cmd 2>/dev/null || echo "   Could not get process info"
+            echo ""
+            echo "   You may need to:"
+            echo "   1. Stop the process using port $ENV_PORT"
+            echo "   2. Change PORT in .env file to a different port"
+            echo "   3. Or manually kill: sudo kill -9 $PORT_IN_USE"
+        fi
+    else
+        echo "✅ Port $ENV_PORT is available"
+    fi
+    
     # Step 8: Restart service
     echo ""
     echo "🔄 Step 8: Restarting service..."
@@ -565,6 +611,7 @@ if [ "$FRESH_DEPLOY" = false ]; then
                 echo "  - Check .env file has correct GEMINI_API_KEY and DATABASE_URL"
                 echo "  - Verify PostgreSQL is running: sudo systemctl status postgresql"
                 echo "  - Check Python dependencies: cd $PROJECT_PATH && source venv/bin/activate && pip list"
+                echo "  - Port $ENV_PORT may be in use: sudo lsof -i :$ENV_PORT"
                 exit 1
             }
         fi
