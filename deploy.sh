@@ -720,10 +720,14 @@ if [ "$FRESH_DEPLOY" = false ]; then
                       grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || \
                       grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8000")
         ENV_PORT=$(get_env_port)
-        
-        if [ "$CURRENT_PORT" != "$ENV_PORT" ]; then
+        # Force update if current port is invalid (e.g. concatenated value like 800180018001...)
+        NEED_PORT_UPDATE=false
+        if [ "$CURRENT_PORT" != "$ENV_PORT" ]; then NEED_PORT_UPDATE=true; fi
+        if [ -n "$CURRENT_PORT" ] && [ "$CURRENT_PORT" -gt 65535 ] 2>/dev/null; then NEED_PORT_UPDATE=true; fi
+        if [ "$NEED_PORT_UPDATE" = true ]; then
             echo "  Port changed from $CURRENT_PORT to $ENV_PORT. Updating service..."
-            sed -i "s/--port [0-9]*/--port \${BACKEND_PORT:-$ENV_PORT}/g" "$SERVICE_FILE" || {
+            # Always bake the numeric port (no variable) to avoid systemd expansion concatenation bugs
+            sed -i -e "s/--port \${BACKEND_PORT:-[0-9]*}/--port $ENV_PORT/g" -e "s/--port [0-9]*/--port $ENV_PORT/g" "$SERVICE_FILE" || {
                 echo "⚠️  Could not update service file port. Update manually."
             }
             systemctl daemon-reload
