@@ -49,8 +49,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # Using GEMINI_MODEL from .env or defaulting to gemini-2.5-flash
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Port configuration (for deployment platforms like Render)
-# Check BACKEND_PORT first (if set), then fall back to PORT for backward compatibility
+# Port configuration - BACKEND_PORT is primary, PORT is legacy fallback
 PORT = int(os.getenv("BACKEND_PORT") or os.getenv("PORT", "8000")) 
 
 # Clamp how many history turns we send to Gemini to control token use

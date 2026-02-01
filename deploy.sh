@@ -34,7 +34,7 @@ PYTHON_VERSION="3.11"
 # HELPER FUNCTIONS
 # ============================================
 
-# Get PORT from .env file (checks BACKEND_PORT first, then PORT)
+# Get backend port from .env file (BACKEND_PORT is primary, PORT is legacy fallback)
 get_env_port() {
     local default_port="${1:-8000}"
     if [ -f ".env" ]; then
@@ -479,7 +479,7 @@ if [ "$FRESH_DEPLOY" = true ]; then
 GEMINI_API_KEY=your_gemini_api_key_here
 ADMIN_API_KEY=your_admin_api_key_here
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/chatbot_db
-PORT=8000
+BACKEND_PORT=8000
 EOF
             echo "✅ Basic .env file created"
             echo "⚠️  IMPORTANT: Edit .env file and set required values!"
@@ -528,7 +528,7 @@ EOF
         PYTHON_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     fi
     
-    PORT=$(get_env_port)
+    BACKEND_PORT=$(get_env_port)
     
     echo ""
     echo "📝 Creating systemd service..."
@@ -545,9 +545,10 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$PROJECT_PATH
 Environment="PATH=$PYTHON_PATH"
-Environment="PORT=${PORT:-8000}"
 EnvironmentFile=$PROJECT_PATH/.env
-ExecStart=/bin/sh -c 'exec $UVICORN_PATH main:app --host 127.0.0.1 --port \${PORT:-8000}'
+# BACKEND_PORT will be loaded from .env file via EnvironmentFile
+# Use shell to expand BACKEND_PORT with fallback (double quotes allow variable expansion)
+ExecStart=/bin/sh -c "exec $UVICORN_PATH main:app --host 127.0.0.1 --port \${BACKEND_PORT:-$BACKEND_PORT}"
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -716,13 +717,14 @@ if [ "$FRESH_DEPLOY" = false ]; then
     if [ "$SERVICE_EXISTS" = true ] && [ "$NEED_ROOT" = false ]; then
         echo ""
         echo "📝 Step 7: Checking service configuration..."
-        CURRENT_PORT=$(grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || \
+        CURRENT_PORT=$(grep -oP '--port \$\{BACKEND_PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || \
+                      grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || \
                       grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8000")
         ENV_PORT=$(get_env_port)
         
         if [ "$CURRENT_PORT" != "$ENV_PORT" ]; then
             echo "  Port changed from $CURRENT_PORT to $ENV_PORT. Updating service..."
-            sed -i "s/--port [0-9]*/--port \${PORT:-$ENV_PORT}/g" "$SERVICE_FILE" || {
+            sed -i "s/--port [0-9]*/--port \${BACKEND_PORT:-$ENV_PORT}/g" "$SERVICE_FILE" || {
                 echo "⚠️  Could not update service file port. Update manually."
             }
             systemctl daemon-reload
