@@ -545,10 +545,10 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$PROJECT_PATH
 Environment="PATH=$PYTHON_PATH"
+Environment="BACKEND_PORT=$BACKEND_PORT"
 EnvironmentFile=$PROJECT_PATH/.env
-# BACKEND_PORT will be loaded from .env file via EnvironmentFile
-# Use shell to expand BACKEND_PORT from .env, with fallback to the detected port ($BACKEND_PORT)
-ExecStart=/bin/sh -c "exec $UVICORN_PATH main:app --host 127.0.0.1 --port \${BACKEND_PORT:-$BACKEND_PORT}"
+# Port from BACKEND_PORT (set above and/or in .env). Run deploy again if you change it in .env.
+ExecStart=/bin/sh -c 'exec $UVICORN_PATH main:app --host 127.0.0.1 --port ${BACKEND_PORT:-8000}'
 Restart=always
 RestartSec=10
 StandardOutput=journal
