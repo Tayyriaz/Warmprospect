@@ -3,7 +3,7 @@
 
 import os
 from dotenv import load_dotenv
-from core.rag.retriever import GoAccelRetriever, format_context
+from core.rag.retriever import ChatbotRetriever, format_context
 
 load_dotenv()
 
@@ -17,7 +17,7 @@ print(f"Meta path: {meta_path} (exists: {os.path.exists(meta_path)})")
 print()
 
 try:
-    retriever = GoAccelRetriever(
+    retriever = ChatbotRetriever(
         api_key=os.getenv("GEMINI_API_KEY", ""),
         index_path=index_path,
         meta_path=meta_path,

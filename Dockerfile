@@ -1,4 +1,4 @@
-# Dockerfile for GoAccel Concierge Bot
+# Dockerfile for Chatbot Platform
 FROM python:3.11-slim
 
 # Set working directory

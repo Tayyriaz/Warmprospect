@@ -348,16 +348,16 @@ To generate a secure admin API key, use the provided script:
 
 ```bash
 # Generate a key (default: 32 bytes, hex format)
-python3 scripts/generate_admin_key.py
+python3 scripts/utils/generate_admin_key.py
 
 # Generate with custom length (64 bytes = 128 hex characters)
-python3 scripts/generate_admin_key.py --length 64
+python3 scripts/utils/generate_admin_key.py --length 64
 
 # Generate in base64 format
-python3 scripts/generate_admin_key.py --format base64
+python3 scripts/utils/generate_admin_key.py --format base64
 
 # Generate in .env file format (ready to copy-paste)
-python3 scripts/generate_admin_key.py --env-format
+python3 scripts/utils/generate_admin_key.py --env-format
 ```
 
 **Example output:**
@@ -401,7 +401,7 @@ cd /var/www/chatbot
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
-sudo systemctl restart goaccel.service
+sudo systemctl restart chatbot.service
 ```
 
 **First-Time Setup:**
@@ -416,5 +416,5 @@ Run migrations manually if needed:
 ```bash
 cd /var/www/chatbot
 source venv/bin/activate
-python scripts/migrate_db.py
+python scripts/db/migrate_db.py
 ```

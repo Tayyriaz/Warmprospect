@@ -6,10 +6,10 @@ This script generates a cryptographically secure random API key that can be used
 as the ADMIN_API_KEY environment variable.
 
 Usage:
-    python scripts/generate_admin_key.py
-    python scripts/generate_admin_key.py --length 64
-    python scripts/generate_admin_key.py --format hex
-    python scripts/generate_admin_key.py --format base64
+    python scripts/utils/generate_admin_key.py
+    python scripts/utils/generate_admin_key.py --length 64
+    python scripts/utils/generate_admin_key.py --format hex
+    python scripts/utils/generate_admin_key.py --format base64
 """
 
 import secrets

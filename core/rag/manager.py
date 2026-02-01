@@ -4,22 +4,22 @@ RAG (Retrieval Augmented Generation) retriever management.
 
 import os
 from typing import Dict, Any, Optional, List
-from core.rag.retriever import GoAccelRetriever
+from core.rag.retriever import ChatbotRetriever
 from core.config.business_config import config_manager
 
 # Optional RAG retriever(s)
 # NOTE: In multi-tenant mode, each business should have its own index under:
 #   data/{business_id}/index.faiss and data/{business_id}/meta.jsonl
 # The legacy default index (data/index.faiss) is only used when business_id is not provided.
-retriever: Optional[GoAccelRetriever] = None
-_retriever_cache: Dict[str, GoAccelRetriever] = {}
+retriever: Optional[ChatbotRetriever] = None
+_retriever_cache: Dict[str, ChatbotRetriever] = {}
 
 
-def initialize_default_retriever() -> Optional[GoAccelRetriever]:
+def initialize_default_retriever() -> Optional[ChatbotRetriever]:
     """Initialize the default RAG retriever."""
     global retriever
     try:
-        retriever = GoAccelRetriever(
+        retriever = ChatbotRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path="data/index.faiss",
             meta_path="data/meta.jsonl",
@@ -33,7 +33,7 @@ def initialize_default_retriever() -> Optional[GoAccelRetriever]:
         return None
 
 
-def get_retriever_for_business(business_id: Optional[str], force_reload: bool = False) -> Optional[GoAccelRetriever]:
+def get_retriever_for_business(business_id: Optional[str], force_reload: bool = False) -> Optional[ChatbotRetriever]:
     """
     Returns a retriever for the given business_id if a business-specific index exists.
     - If business_id is None -> returns the default retriever (if loaded)
@@ -85,7 +85,7 @@ def get_retriever_for_business(business_id: Optional[str], force_reload: bool = 
 
     try:
         print(f"[RAG] Loading retriever for business_id={business_id}...")
-        biz_ret = GoAccelRetriever(
+        biz_ret = ChatbotRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
             meta_path=meta_path,
@@ -115,6 +115,6 @@ def clear_retriever_cache(business_id: Optional[str] = None):
         print("[RAG] Cleared all retriever caches")
 
 
-def get_default_retriever() -> Optional[GoAccelRetriever]:
+def get_default_retriever() -> Optional[ChatbotRetriever]:
     """Get the default retriever."""
     return retriever

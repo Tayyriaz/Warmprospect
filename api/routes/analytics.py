@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from core.session import get_session, analytics, state_machine
-from core.conversation_planner import conversation_planner
+from core.features import conversation_planner
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)

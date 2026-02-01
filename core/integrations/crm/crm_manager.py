@@ -1,118 +1,66 @@
 """
-CRM Manager - Per-Tenant CRM Function Handler
-Supports different CRM implementations per business/tenant.
-CRM functions are called from CTAs with action="crm_function".
+CRM: only available if a business has businesses/<business_id>/crm.py.
+
+No defaults. If a business has no crm.py, CRM functions are not available.
 """
 
-import os
-import importlib
 import importlib.util
 import sys
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 
+def _load_business_crm(project_root: Path, business_id: str):
+    """Load CRMTools from businesses/<business_id>/crm.py if it exists."""
+    path = project_root / "businesses" / business_id / "crm.py"
+    if not path.exists():
+        return None
+    name = f"crm_{business_id}".replace("-", "_")
+    try:
+        spec = importlib.util.spec_from_file_location(name, path)
+        if not spec or not spec.loader:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+        cls = getattr(mod, "CRMTools", None)
+        return cls(business_id=business_id) if cls else None
+    except Exception as e:
+        print(f"[CRM] Failed to load businesses/{business_id}/crm.py: {e}")
+        return None
+
+
 class CRMManager:
-    """
-    Manages per-tenant CRM function implementations.
-    
-    Architecture:
-    - Each tenant can have their own CRM function file: core_tools/crm_{business_id}.py
-    - CRM functions are called from CTAs with action="crm_function" and function_name specified
-    - Default CRM functions are in core_tools/crm_functions.py (fallback)
-    """
-    
+    """Resolves CRM for a business: businesses/<id>/crm.py if present, else None (no CRM)."""
+
     def __init__(self):
-        self._crm_cache: Dict[str, Any] = {}  # Cache loaded CRM modules per business_id
-    
-    def get_crm_tools(self, business_id: Optional[str]) -> Any:
-        """
-        Get CRM tools instance for a specific business.
-        
-        Args:
-            business_id: Business identifier (e.g., "goaccel-website")
-        
-        Returns:
-            CRM tools instance (class with CRM methods)
-        """
+        self._cache: Dict[str, Optional[Any]] = {}
+
+    def get_crm_tools(self, business_id: Optional[str]):
+        """Get CRM for this business, or None if no businesses/<id>/crm.py exists."""
         if not business_id:
-            # Return default CRM tools
-            from core.integrations.crm.crm_functions import CRMTools
-            return CRMTools()
-        
-        # Check cache first
-        if business_id in self._crm_cache:
-            return self._crm_cache[business_id]
-        
-        # Try to load business-specific CRM module
-        crm_module_name = f"crm_{business_id}"
-        crm_file_path = Path(__file__).parent / f"crm_{business_id}.py"
-        
-        if crm_file_path.exists():
-            try:
-                # Import business-specific CRM module
-                spec = importlib.util.spec_from_file_location(crm_module_name, crm_file_path)
-                if spec and spec.loader:
-                    module = importlib.util.module_from_spec(spec)
-                    sys.modules[crm_module_name] = module
-                    spec.loader.exec_module(module)
-                    
-                    # Get CRM class from module (defaults to CRMTools if not specified)
-                    crm_class = getattr(module, "CRMTools", None)
-                    if crm_class:
-                        crm_instance = crm_class()
-                        self._crm_cache[business_id] = crm_instance
-                        print(f"[CRM] Loaded business-specific CRM for {business_id}")
-                        return crm_instance
-            except Exception as e:
-                print(f"[WARNING] Failed to load CRM module for {business_id}: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Fallback to default CRM tools
-        from core.integrations.crm.crm_functions import CRMTools
-        default_tools = CRMTools()
-        self._crm_cache[business_id] = default_tools
-        return default_tools
-    
+            return None
+        if business_id in self._cache:
+            return self._cache[business_id]
+        root = Path(__file__).resolve().parent.parent.parent
+        instance = _load_business_crm(root, business_id)
+        self._cache[business_id] = instance
+        return instance
+
     def execute_crm_function(
-        self,
-        business_id: Optional[str],
-        function_name: str,
-        **kwargs
+        self, business_id: Optional[str], function_name: str, **kwargs
     ) -> Dict[str, Any]:
-        """
-        Execute a CRM function for a specific business.
-        
-        Args:
-            business_id: Business identifier
-            function_name: Name of CRM function to call (e.g., "search_contact", "create_new_contact")
-            **kwargs: Arguments to pass to the CRM function
-        
-        Returns:
-            Result dictionary from CRM function
-        """
-        crm_tools = self.get_crm_tools(business_id)
-        
-        if not hasattr(crm_tools, function_name):
-            return {
-                "error": f"CRM function '{function_name}' not found for business '{business_id}'",
-                "status": "Function not available"
-            }
-        
+        """Run a CRM function. Returns error if business has no CRM or function doesn't exist."""
+        tools = self.get_crm_tools(business_id)
+        if tools is None:
+            return {"error": f"CRM not available for business '{business_id}'", "status": "CRM not configured"}
+        if not hasattr(tools, function_name):
+            return {"error": f"CRM function '{function_name}' not found", "status": "Function not available"}
         try:
-            func = getattr(crm_tools, function_name)
-            result = func(**kwargs)
-            return result
+            return getattr(tools, function_name)(**kwargs)
         except Exception as e:
-            print(f"[ERROR] CRM function '{function_name}' failed for {business_id}: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "error": str(e),
-                "status": "Error executing CRM function"
-            }
+            print(f"[CRM] {function_name} failed: {e}")
+            return {"error": str(e), "status": "Error executing CRM function"}
 
 
-# Global instance
 crm_manager = CRMManager()

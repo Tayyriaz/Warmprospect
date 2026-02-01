@@ -84,7 +84,7 @@ def trigger_kb_build(business_id: str, website_url: str):
         # Use absolute paths to avoid issues with working directory
         # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        script_path = os.path.join(base_dir, "scripts", "build_kb_for_business.py")
+        script_path = os.path.join(base_dir, "scripts", "kb", "build_kb_for_business.py")
         
         print(f"[DEBUG] Base directory: {base_dir}")
         print(f"[DEBUG] Script path: {script_path}")
@@ -648,7 +648,7 @@ async def update_enabled_categories(
         
         # Update enabled categories in database
         from core.database import BusinessConfigDB
-        from core.rag_manager import clear_retriever_cache
+        from core.rag import clear_retriever_cache
         db_manager = BusinessConfigDB()
         
         # Get all current config values

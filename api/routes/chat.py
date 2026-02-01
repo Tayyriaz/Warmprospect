@@ -10,13 +10,13 @@ from typing import Dict, Any, Optional, List
 from google.genai import types
 from core.rag.retriever import format_context
 from core.session import get_session, save_session, get_or_create_chat_session, save_chat_history_to_session, analytics
-from core.hard_guards import check_hard_guards
+from core.guards import check_hard_guards
 from core.cta import get_entry_point_ctas, should_attach_ctas, detect_intent_from_message
-from core.system_instruction import build_system_instruction
+from core.prompts import build_system_instruction
 from core.config.business_config import config_manager
-from core.rag_manager import get_retriever_for_business
-from core.sentiment_analysis import sentiment_analyzer
-from core.integrations.crm import CRMTools, crm_manager
+from core.rag import get_retriever_for_business
+from core.features import sentiment_analyzer
+from core.integrations.crm import crm_manager
 
 router = APIRouter()
 
@@ -24,8 +24,6 @@ router = APIRouter()
 # The @limiter.limit decorator accesses app.state.limiter automatically
 limiter = Limiter(key_func=get_remote_address)
 
-# Initialize CRM Tool Handler
-crm_tools = CRMTools()
 
 # Base guardrails that apply to every business
 BASE_SYSTEM_INSTRUCTION = """
@@ -185,7 +183,8 @@ async def _handle_chat_request(request: Request):
         system_instruction,
         _client,
         _model_name,
-        stored_history
+        stored_history,
+        business_id=business_id
     )
     
     # 5. RAG Context Retrieval
@@ -217,6 +216,12 @@ async def _handle_chat_request(request: Request):
                 try:
                     # Get CRM tools for this business (per-tenant)
                     crm_tools = crm_manager.get_crm_tools(business_id)
+                    if crm_tools is None:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=function_name,
+                            response={"error": "CRM not available for this business", "status": "CRM not configured"}
+                        ))
+                        continue
                     func_to_call = getattr(crm_tools, function_name)
                     tool_output = func_to_call(**function_args)
                     
@@ -251,12 +256,17 @@ async def _handle_chat_request(request: Request):
         # Get CRM tools for this business (per-tenant)
         crm_tools = crm_manager.get_crm_tools(business_id)
         
+        # Only pass CRM tools to Gemini if this business has CRM configured
+        tools_config = None
+        if crm_tools is not None:
+            tools_config = [crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal]
+        
         gemini_response = _client.models.generate_content(
             model=_model_name,
             contents=current_contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                tools=[crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal],
+                tools=tools_config,
             )
         )
         

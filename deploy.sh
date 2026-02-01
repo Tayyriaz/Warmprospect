@@ -1,6 +1,6 @@
 #!/bin/bash
-# Deploy script for GoAccel Chatbot
-# Handles both initial setup and regular deployments
+# Deploy script for Chatbot Platform
+# Handles both fresh deployments from scratch and redeployments
 
 # Ensure script is run with bash
 if [ -z "$BASH_VERSION" ]; then
@@ -11,25 +11,123 @@ fi
 
 set -e
 
-echo "🚀 GoAccel Deployment Script"
+echo "🚀 Chatbot Platform Deployment Script"
 echo "=============================="
 echo ""
 
 # Check if running as root for service operations
 NEED_ROOT=false
-# Check EUID (Effective User ID) - available in bash
 if [ -n "$EUID" ] && [ "$EUID" -ne 0 ]; then 
     NEED_ROOT=true
 elif [ "$(id -u)" -ne 0 ]; then
-    # Fallback if EUID not available
     NEED_ROOT=true
 fi
 
 # Default values
 PROJECT_PATH="/var/www/chatbot"
 SERVICE_USER="www-data"
-SERVICE_NAME="goaccel.service"
+SERVICE_NAME="chatbot.service"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+PYTHON_VERSION="3.11"
+
+# Function to check if database is initialized
+# Returns "true" if initialized, "false" if not, "unknown" if check failed
+check_db_initialized() {
+    local project_path="$1"
+    
+    # Check if project directory exists and has .env
+    if [ ! -d "$project_path" ] || [ ! -f "$project_path/.env" ]; then
+        echo "false"
+        return
+    fi
+    
+    # Try to check if database tables exist
+    cd "$project_path" || {
+        echo "unknown"
+        return
+    }
+    
+    # Activate venv if it exists
+    if [ -d "venv" ]; then
+        . venv/bin/activate 2>/dev/null || true
+    elif [ -d ".venv" ]; then
+        . .venv/bin/activate 2>/dev/null || true
+    fi
+    
+    # Check if required Python packages are available
+    if ! python3 -c "import sqlalchemy" 2>/dev/null; then
+        echo "unknown"
+        return
+    fi
+    
+    # Try to check if business_configs table exists
+    if python3 -c "
+import sys
+import os
+from pathlib import Path
+sys.path.insert(0, str(Path('$project_path')))
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    from sqlalchemy import inspect, create_engine
+    
+    db_url = os.getenv('DATABASE_URL', '')
+    if not db_url:
+        sys.exit(1)
+    
+    # Ensure psycopg2 driver
+    if db_url.startswith('postgresql://') and 'psycopg2' not in db_url and 'asyncpg' not in db_url:
+        db_url = db_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
+    
+    engine = create_engine(db_url, connect_args={'connect_timeout': 5})
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    
+    if 'business_configs' in tables:
+        sys.exit(0)  # Database is initialized
+    else:
+        sys.exit(1)  # Database not initialized
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+# Detect if this is a fresh deployment
+FRESH_DEPLOY=false
+
+# Check multiple indicators (in order of reliability):
+# 1. Project directory doesn't exist -> fresh deploy
+# 2. .env file doesn't exist -> fresh deploy
+# 3. Database tables don't exist -> fresh deploy (most reliable indicator)
+# 4. Service doesn't exist -> likely fresh deploy
+if [ ! -d "$PROJECT_PATH" ]; then
+    FRESH_DEPLOY=true
+    echo "🆕 Fresh deployment: Project directory doesn't exist"
+elif [ ! -f "$PROJECT_PATH/.env" ]; then
+    FRESH_DEPLOY=true
+    echo "🆕 Fresh deployment: .env file doesn't exist"
+else
+    # Check if database is initialized
+    DB_STATUS=$(check_db_initialized "$PROJECT_PATH")
+    if [ "$DB_STATUS" = "false" ]; then
+        FRESH_DEPLOY=true
+        echo "🆕 Fresh deployment: Database tables don't exist"
+    elif [ "$DB_STATUS" = "unknown" ]; then
+        # Can't check database, fall back to service check
+        if [ ! -f "$SERVICE_FILE" ]; then
+            FRESH_DEPLOY=true
+            echo "🆕 Fresh deployment: Service file doesn't exist (database check unavailable)"
+        else
+            echo "⚠️  Could not verify database status, but service exists. Assuming update."
+        fi
+    else
+        echo "✅ Database is initialized. This appears to be an update."
+    fi
+fi
 
 # Check if service exists
 SERVICE_EXISTS=false
@@ -40,40 +138,184 @@ else
     echo "⚠️  Service file not found: $SERVICE_FILE"
 fi
 
-# If service doesn't exist, create it
-if [ "$SERVICE_EXISTS" = false ]; then
+# ============================================
+# FRESH DEPLOYMENT SETUP
+# ============================================
+if [ "$FRESH_DEPLOY" = true ]; then
     echo ""
-    echo "📝 Setting up new service..."
+    echo "🆕 FRESH DEPLOYMENT DETECTED"
+    echo "=============================="
     
     if [ "$NEED_ROOT" = true ]; then
-        echo "❌ Root access required to create service. Please run with sudo."
+        echo "❌ Root access required for fresh deployment. Please run with sudo."
         exit 1
     fi
     
-    # Get project path if not default
+    # Get project path
     read -p "Enter project path (default: $PROJECT_PATH): " INPUT_PATH
     PROJECT_PATH=${INPUT_PATH:-$PROJECT_PATH}
     
+    # Create project directory if it doesn't exist
     if [ ! -d "$PROJECT_PATH" ]; then
-        echo "❌ Project directory not found: $PROJECT_PATH"
-        exit 1
+        echo "📁 Creating project directory: $PROJECT_PATH"
+        mkdir -p "$PROJECT_PATH"
     fi
+    
+    cd "$PROJECT_PATH"
+    
+    # Check if git repo exists
+    if [ ! -d ".git" ]; then
+        echo ""
+        echo "📥 Initializing git repository..."
+        read -p "Enter git repository URL (or press Enter to skip): " GIT_REPO
+        if [ -n "$GIT_REPO" ]; then
+            git clone "$GIT_REPO" . || {
+                echo "⚠️  Git clone failed. Continuing with manual setup..."
+            }
+        else
+            echo "⚠️  No git repository provided. You'll need to set up the code manually."
+        fi
+    fi
+    
+    # Check for Python
+    echo ""
+    echo "🐍 Checking Python installation..."
+    if ! command -v python3 &> /dev/null; then
+        echo "❌ Python 3 is not installed. Installing Python 3..."
+        apt-get update
+        apt-get install -y python3 python3-pip python3-venv
+    fi
+    
+    PYTHON_VERSION_INSTALLED=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+    echo "✅ Python $PYTHON_VERSION_INSTALLED found"
+    
+    # Create virtual environment if it doesn't exist
+    echo ""
+    echo "📦 Setting up virtual environment..."
+    if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
+        echo "  Creating virtual environment..."
+        python3 -m venv venv
+        echo "✅ Virtual environment created"
+    else
+        echo "✅ Virtual environment already exists"
+    fi
+    
+    # Activate virtual environment
+    if [ -d "venv" ]; then
+        . venv/bin/activate || source venv/bin/activate
+        VENV_PATH="$PROJECT_PATH/venv"
+    elif [ -d ".venv" ]; then
+        . .venv/bin/activate || source .venv/bin/activate
+        VENV_PATH="$PROJECT_PATH/.venv"
+    fi
+    
+    # Upgrade pip
+    echo "  Upgrading pip..."
+    pip install --upgrade pip setuptools wheel -q
+    
+    # Install system dependencies if needed
+    echo ""
+    echo "🔧 Checking system dependencies..."
+    
+    # Check for PostgreSQL client libraries
+    if ! python3 -c "import psycopg2" 2>/dev/null; then
+        echo "  Installing PostgreSQL client libraries..."
+        apt-get install -y libpq-dev postgresql-client || {
+            echo "⚠️  Could not install PostgreSQL libraries. Install manually if needed."
+        }
+    fi
+    
+    # Check for Redis
+    if ! command -v redis-cli &> /dev/null; then
+        echo "  Redis not found. Installing Redis..."
+        apt-get install -y redis-server || {
+            echo "⚠️  Could not install Redis. Install manually if needed."
+        }
+    fi
+    
+    # Install Python dependencies
+    echo ""
+    echo "📦 Installing Python dependencies..."
+    if [ -f "requirements.txt" ]; then
+        pip install -r requirements.txt
+        echo "✅ requirements.txt installed"
+    else
+        echo "⚠️  requirements.txt not found"
+    fi
+    
+    if [ -f "requirements_voice.txt" ]; then
+        pip install -r requirements_voice.txt
+        echo "✅ requirements_voice.txt installed"
+    fi
+    
+    # Create .env file if it doesn't exist
+    echo ""
+    echo "⚙️  Setting up environment configuration..."
+    if [ ! -f ".env" ]; then
+        echo "  Creating .env file from .env.example..."
+        if [ -f ".env.example" ]; then
+            cp .env.example .env
+            echo "✅ .env file created from template"
+            echo "⚠️  IMPORTANT: Edit .env file and set required values:"
+            echo "   - GEMINI_API_KEY"
+            echo "   - ADMIN_API_KEY"
+            echo "   - DATABASE_URL"
+            echo "   - PORT (default: 8000)"
+        else
+            echo "⚠️  .env.example not found. Creating basic .env file..."
+            cat > .env << EOF
+# Chatbot Platform Configuration
+GEMINI_API_KEY=your_gemini_api_key_here
+ADMIN_API_KEY=your_admin_api_key_here
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/chatbot_db
+PORT=8000
+EOF
+            echo "✅ Basic .env file created"
+            echo "⚠️  IMPORTANT: Edit .env file and set required values!"
+        fi
+    else
+        echo "✅ .env file already exists"
+    fi
+    
+    # Set up database
+    echo ""
+    echo "🗄️  Setting up database..."
+    read -p "Run database migration? (y/n, default: y): " RUN_MIGRATION
+    RUN_MIGRATION=${RUN_MIGRATION:-y}
+    if [ "$RUN_MIGRATION" = "y" ] || [ "$RUN_MIGRATION" = "Y" ]; then
+        python scripts/db/migrate_db.py || {
+            echo "⚠️  Database migration failed. Check your DATABASE_URL in .env"
+        }
+    fi
+    
+    # Create necessary directories
+    echo ""
+    echo "📁 Creating necessary directories..."
+    mkdir -p data
+    mkdir -p static
+    echo "✅ Directories created"
     
     # Get service user
     read -p "Enter user to run service as (default: $SERVICE_USER): " INPUT_USER
     SERVICE_USER=${INPUT_USER:-$SERVICE_USER}
     
-    # Detect virtual environment
-    if [ -d "$PROJECT_PATH/venv" ]; then
-        VENV_PATH="$PROJECT_PATH/venv"
-    elif [ -d "$PROJECT_PATH/.venv" ]; then
-        VENV_PATH="$PROJECT_PATH/.venv"
-    else
-        echo "⚠️  Virtual environment not found. Using system Python."
-        VENV_PATH=""
+    # Ensure service user exists
+    if ! id "$SERVICE_USER" &>/dev/null; then
+        echo "  Creating service user: $SERVICE_USER"
+        useradd -r -s /bin/false "$SERVICE_USER" || {
+            echo "⚠️  Could not create user. User may already exist."
+        }
     fi
     
-    # Determine paths
+    # Set ownership
+    echo ""
+    echo "🔐 Setting up permissions..."
+    chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH"
+    chmod 755 "$PROJECT_PATH"
+    chmod 600 "$PROJECT_PATH/.env" 2>/dev/null || true
+    echo "✅ Permissions set"
+    
+    # Determine paths for service file
     if [ -n "$VENV_PATH" ]; then
         UVICORN_PATH="$VENV_PATH/bin/uvicorn"
         PYTHON_PATH="$VENV_PATH/bin"
@@ -82,19 +324,21 @@ if [ "$SERVICE_EXISTS" = false ]; then
         PYTHON_PATH="/usr/bin"
     fi
     
-    # Get port from existing service or default to 8001 (matching goaccel.service)
-    PORT=8001
-    if [ -f "$SERVICE_FILE" ]; then
-        EXISTING_PORT=$(grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8001")
-        if [ -n "$EXISTING_PORT" ] && [ "$EXISTING_PORT" -gt 0 ] 2>/dev/null; then
-            PORT=$EXISTING_PORT
+    # Get port from .env
+    PORT=8000
+    if [ -f ".env" ]; then
+        ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
+        if [ -n "$ENV_PORT" ] && [ "$ENV_PORT" -gt 0 ] 2>/dev/null; then
+            PORT=$ENV_PORT
         fi
     fi
     
     # Create service file
+    echo ""
+    echo "📝 Creating systemd service..."
     cat > $SERVICE_FILE << EOF
 [Unit]
-Description=GoAccel Chatbot API
+Description=Chatbot API
 After=network.target postgresql.service redis-server.service
 Requires=postgresql.service
 Wants=redis-server.service
@@ -105,8 +349,9 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$PROJECT_PATH
 Environment="PATH=$PYTHON_PATH"
+Environment="PORT=${PORT:-8000}"
 EnvironmentFile=$PROJECT_PATH/.env
-ExecStart=$UVICORN_PATH main:app --host 127.0.0.1 --port $PORT
+ExecStart=/bin/sh -c 'exec $UVICORN_PATH main:app --host 127.0.0.1 --port \${PORT:-8000}'
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -116,11 +361,9 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
     
-    echo "✅ Service file created at $SERVICE_FILE"
-    
-    # Set permissions
     chown root:root $SERVICE_FILE
     chmod 644 $SERVICE_FILE
+    echo "✅ Service file created at $SERVICE_FILE"
     
     # Reload systemd
     echo "🔄 Reloading systemd..."
@@ -130,139 +373,181 @@ EOF
     echo "✅ Enabling service..."
     systemctl enable $SERVICE_NAME
     
-    # Step: Set up permissions for first-time deployment
     echo ""
-    echo "🔐 Setting up permissions (first-time setup)..."
-    
-    # Set ownership of project directory
-    echo "  Setting ownership of project directory..."
-    chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH" 2>/dev/null || {
-        echo "  ⚠️  Could not set ownership. Run manually: sudo chown -R $SERVICE_USER:$SERVICE_USER $PROJECT_PATH"
-    }
-    
-    # Ensure data directory exists and is writable
-    echo "  Creating data directory..."
-    mkdir -p "$PROJECT_PATH/data"
-    chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/data" 2>/dev/null || {
-        echo "  ⚠️  Could not set data directory ownership. Run manually: sudo chown -R $SERVICE_USER:$SERVICE_USER $PROJECT_PATH/data"
-    }
-    chmod -R 755 "$PROJECT_PATH/data" 2>/dev/null || {
-        echo "  ⚠️  Could not set data directory permissions. Run manually: sudo chmod -R 755 $PROJECT_PATH/data"
-    }
-    
-    # Ensure logs directory is writable (if it exists)
-    if [ -d "$PROJECT_PATH/logs" ]; then
-        echo "  Setting up logs directory..."
-        chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/logs" 2>/dev/null || true
-        chmod -R 755 "$PROJECT_PATH/logs" 2>/dev/null || true
-    fi
-    
-    # Ensure .env file is readable by service user
-    if [ -f "$PROJECT_PATH/.env" ]; then
-        echo "  Setting .env file permissions..."
-        chown $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH/.env" 2>/dev/null || true
-        chmod 600 "$PROJECT_PATH/.env" 2>/dev/null || true
-    fi
-    
-    # Remove deprecated files
-    echo "  Cleaning up deprecated files..."
-    if [ -f "$PROJECT_PATH/business_configs.json" ]; then
-        rm -f "$PROJECT_PATH/business_configs.json"
-        echo "  ✅ Removed deprecated business_configs.json"
-    fi
-    
-    echo "✅ Permissions setup complete"
+    echo "✅ Fresh deployment setup complete!"
+    echo ""
+    echo "⚠️  NEXT STEPS:"
+    echo "   1. Edit $PROJECT_PATH/.env and set all required values"
+    echo "   2. Ensure PostgreSQL and Redis are running"
+    echo "   3. Run 'sudo systemctl start $SERVICE_NAME' to start the service"
+    echo ""
     
     SERVICE_EXISTS=true
 fi
 
-# Navigate to project directory
-if [ ! -d "$PROJECT_PATH" ]; then
-    echo "❌ Project directory not found: $PROJECT_PATH"
-    exit 1
-fi
-
-cd "$PROJECT_PATH"
-echo ""
-echo "📂 Working directory: $(pwd)"
-
-# Step 1: Pull latest changes
-echo ""
-echo "📥 Step 1: Pulling latest changes from git..."
-if git pull origin main; then
-    echo "✅ Git pull successful"
-else
-    echo "⚠️  Git pull had issues, but continuing..."
-fi
-
-# Step 2: Activate virtual environment
-echo ""
-echo "🐍 Step 2: Setting up Python environment..."
-if [ -d "venv" ]; then
-    # Use . instead of source for better compatibility, but source should work in bash
-    . venv/bin/activate || source venv/bin/activate
-    echo "✅ Virtual environment activated"
-elif [ -d ".venv" ]; then
-    . .venv/bin/activate || source .venv/bin/activate
-    echo "✅ Virtual environment activated"
-else
-    echo "⚠️  No virtual environment found, using system Python"
-fi
-
-# Step 3: Clean up deprecated files
-echo ""
-echo "🧹 Step 3: Cleaning up deprecated files..."
-# Remove old file-based config (now using database only)
-if [ -f "business_configs.json" ]; then
-    rm -f business_configs.json
-    echo "✅ Removed deprecated business_configs.json (now using database only)"
-fi
-
-# Step 4: Ensure data directory exists and is writable
-echo ""
-echo "📁 Step 4: Ensuring data directory is writable..."
-if [ "$NEED_ROOT" = false ]; then
-    mkdir -p data
-    chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
-    chmod -R 755 data/ 2>/dev/null || true
-    echo "✅ Data directory permissions set"
-else
-    echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
-fi
-
-# Step 5: Install/update dependencies
-echo ""
-echo "📦 Step 5: Installing dependencies..."
-if [ -f "requirements.txt" ]; then
-    pip install -q -r requirements.txt
-    echo "✅ requirements.txt installed"
-else
-    echo "⚠️  requirements.txt not found"
-fi
-
-if [ -f "requirements_voice.txt" ]; then
-    pip install -q -r requirements_voice.txt
-    echo "✅ requirements_voice.txt installed"
-fi
-
-# Step 6: Restart service
-echo ""
-echo "🔄 Step 6: Restarting service..."
-
-if [ "$NEED_ROOT" = true ]; then
-    echo "⚠️  Root access required to restart service."
-    echo "   Please run manually: sudo systemctl restart $SERVICE_NAME"
-else
-    systemctl restart $SERVICE_NAME
-    echo "✅ Service restarted"
-    
-    # Wait a moment for service to start
-    sleep 3
-    
-    # Check status
+# ============================================
+# REDEPLOYMENT / UPDATE
+# ============================================
+if [ "$FRESH_DEPLOY" = false ]; then
     echo ""
-    echo "📊 Step 7: Checking service status..."
-    systemctl status $SERVICE_NAME --no-pager -l | head -20
+    echo "🔄 REDEPLOYMENT / UPDATE"
+    echo "=============================="
+    
+    # Navigate to project directory
+    if [ ! -d "$PROJECT_PATH" ]; then
+        echo "❌ Project directory not found: $PROJECT_PATH"
+        exit 1
+    fi
+    
+    cd "$PROJECT_PATH"
+    echo "📂 Working directory: $(pwd)"
+    
+    # Step 1: Pull latest changes
+    echo ""
+    echo "📥 Step 1: Pulling latest changes from git..."
+    if [ -d ".git" ]; then
+        # Check if there are uncommitted changes
+        if [ -n "$(git status --porcelain)" ]; then
+            echo "⚠️  You have uncommitted changes. Stashing them..."
+            git stash || true
+        fi
+        
+        if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
+            echo "✅ Git pull successful"
+        else
+            echo "⚠️  Git pull had issues, but continuing..."
+        fi
+    else
+        echo "⚠️  Not a git repository, skipping git pull"
+    fi
+    
+    # Step 2: Setup Python environment
+    echo ""
+    echo "🐍 Step 2: Setting up Python environment..."
+    
+    # Create venv if it doesn't exist
+    if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
+        echo "  Creating virtual environment..."
+        python3 -m venv venv
+    fi
+    
+    # Activate virtual environment
+    if [ -d "venv" ]; then
+        . venv/bin/activate || source venv/bin/activate
+        echo "✅ Virtual environment activated"
+    elif [ -d ".venv" ]; then
+        . .venv/bin/activate || source .venv/bin/activate
+        echo "✅ Virtual environment activated"
+    else
+        echo "⚠️  No virtual environment found, using system Python"
+    fi
+    
+    # Upgrade pip
+    pip install --upgrade pip setuptools wheel -q
+    
+    # Step 3: Clean up deprecated files
+    echo ""
+    echo "🧹 Step 3: Cleaning up deprecated files..."
+    if [ -f "business_configs.json" ]; then
+        rm -f business_configs.json
+        echo "✅ Removed deprecated business_configs.json"
+    fi
+    
+    # Step 4: Ensure data directory exists and is writable
+    echo ""
+    echo "📁 Step 4: Ensuring data directory is writable..."
+    mkdir -p data
+    if [ "$NEED_ROOT" = false ]; then
+        chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
+        chmod -R 755 data/ 2>/dev/null || true
+        echo "✅ Data directory permissions set"
+    else
+        echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
+    fi
+    
+    # Step 5: Install/update dependencies
+    echo ""
+    echo "📦 Step 5: Installing/updating dependencies..."
+    if [ -f "requirements.txt" ]; then
+        pip install -q --upgrade -r requirements.txt
+        echo "✅ requirements.txt installed/updated"
+    else
+        echo "⚠️  requirements.txt not found"
+    fi
+    
+    if [ -f "requirements_voice.txt" ]; then
+        pip install -q --upgrade -r requirements_voice.txt
+        echo "✅ requirements_voice.txt installed/updated"
+    fi
+    
+    # Step 6: Run database migrations
+    echo ""
+    echo "🗄️  Step 6: Running database migrations..."
+    if [ -f "scripts/db/migrate_db.py" ]; then
+        python scripts/db/migrate_db.py || {
+            echo "⚠️  Database migration had issues. Check your DATABASE_URL"
+        }
+        echo "✅ Database migrations complete"
+    else
+        echo "⚠️  Migration script not found, skipping"
+    fi
+    
+    # Step 7: Update service file if needed
+    if [ "$SERVICE_EXISTS" = true ] && [ "$NEED_ROOT" = false ]; then
+        echo ""
+        echo "📝 Step 7: Checking service configuration..."
+        
+        # Check if PORT changed in .env
+        CURRENT_PORT=$(grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8000")
+        ENV_PORT=8000
+        if [ -f ".env" ]; then
+            ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "8000")
+        fi
+        
+        if [ "$CURRENT_PORT" != "$ENV_PORT" ]; then
+            echo "  Port changed from $CURRENT_PORT to $ENV_PORT. Updating service..."
+            # Update service file with new port
+            sed -i "s/--port [0-9]*/--port \${PORT:-$ENV_PORT}/g" "$SERVICE_FILE" || {
+                echo "⚠️  Could not update service file port. Update manually."
+            }
+            systemctl daemon-reload
+            echo "✅ Service configuration updated"
+        fi
+    fi
+    
+    # Step 8: Restart service
+    echo ""
+    echo "🔄 Step 8: Restarting service..."
+    
+    if [ "$NEED_ROOT" = true ]; then
+        echo "⚠️  Root access required to restart service."
+        echo "   Please run manually: sudo systemctl restart $SERVICE_NAME"
+    else
+        if systemctl is-active --quiet $SERVICE_NAME; then
+            systemctl restart $SERVICE_NAME
+            echo "✅ Service restarted"
+        else
+            echo "⚠️  Service is not running. Starting it..."
+            systemctl start $SERVICE_NAME || {
+                echo "❌ Failed to start service. Check logs: sudo journalctl -u $SERVICE_NAME -n 50"
+            }
+        fi
+        
+        # Wait for service to start
+        sleep 3
+        
+        # Check status
+        echo ""
+        echo "📊 Step 9: Checking service status..."
+        if systemctl is-active --quiet $SERVICE_NAME; then
+            echo "✅ Service is running"
+            systemctl status $SERVICE_NAME --no-pager -l | head -15
+        else
+            echo "❌ Service failed to start!"
+            echo "   Check logs: sudo journalctl -u $SERVICE_NAME -n 50"
+            exit 1
+        fi
+    fi
 fi
 
 echo ""
@@ -273,3 +558,4 @@ echo "  - View logs:    sudo journalctl -u $SERVICE_NAME -f"
 echo "  - Check status: sudo systemctl status $SERVICE_NAME"
 echo "  - Restart:      sudo systemctl restart $SERVICE_NAME"
 echo "  - Stop:         sudo systemctl stop $SERVICE_NAME"
+echo "  - Start:        sudo systemctl start $SERVICE_NAME"

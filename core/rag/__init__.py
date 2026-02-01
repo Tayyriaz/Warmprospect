@@ -1,11 +1,22 @@
 """
-RAG (Retrieval-Augmented Generation) Module
-Handles knowledge base retrieval and vector search.
+RAG (Retrieval Augmented Generation) module.
 """
 
-from .retriever import GoAccelRetriever, format_context
+from .retriever import ChatbotRetriever, format_context
+from .manager import (
+    initialize_default_retriever,
+    get_retriever_for_business,
+    clear_retriever_cache,
+    get_default_retriever,
+)
+from .builder import build_kb_for_business
 
 __all__ = [
-    "GoAccelRetriever",
+    "ChatbotRetriever",
     "format_context",
+    "initialize_default_retriever",
+    "get_retriever_for_business",
+    "clear_retriever_cache",
+    "get_default_retriever",
+    "build_kb_for_business",
 ]

@@ -1,5 +1,5 @@
 [Unit]
-Description=GoAccel Chatbot Service
+Description=Chatbot Service
 After=network.target postgresql.service redis-server.service
 Requires=postgresql.service
 Wants=redis-server.service
@@ -10,8 +10,9 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/chatbot
 Environment="PATH=/var/www/chatbot/venv/bin"
+Environment="PORT=8000"
 EnvironmentFile=/var/www/chatbot/.env
-ExecStart=/var/www/chatbot/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
+ExecStart=/bin/sh -c 'exec /var/www/chatbot/venv/bin/uvicorn main:app --host 127.0.0.1 --port ${PORT:-8000}'
 Restart=always
 RestartSec=10
 StandardOutput=journal
