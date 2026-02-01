@@ -124,11 +124,21 @@ setup_nginx() {
     source .env 2>/dev/null || true
     set +a
     
+    # Expand PORT in NGINX_PROXY_PASS if it contains ${PORT}
+    if [[ "$NGINX_PROXY_PASS" == *'${PORT}'* ]]; then
+        local port_value="${PORT:-8000}"
+        NGINX_PROXY_PASS="${NGINX_PROXY_PASS/\${PORT}/$port_value}"
+    fi
+    
+    # Export variables for envsubst
+    export NGINX_SERVER_NAME NGINX_SSL_CERT_PATH NGINX_SSL_KEY_PATH NGINX_PROXY_PASS
+    
     # Generate nginx config with environment variable substitution
     echo "  Generating Nginx configuration from template with .env variables..."
     if command -v envsubst >/dev/null 2>&1; then
         # Use envsubst to replace ${VAR} with values from environment
-        envsubst < nginx.conf > "${NGINX_AVAILABLE}.tmp" || {
+        # Only substitute the variables we want (to avoid issues with $host, $server_name, etc.)
+        envsubst '$NGINX_SERVER_NAME $NGINX_SSL_CERT_PATH $NGINX_SSL_KEY_PATH $NGINX_PROXY_PASS' < nginx.conf > "${NGINX_AVAILABLE}.tmp" || {
             echo "⚠️  Failed to generate Nginx config. Falling back to direct copy."
             cp nginx.conf "$NGINX_AVAILABLE" || {
                 echo "⚠️  Could not copy nginx.conf. You may need to do this manually."
