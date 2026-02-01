@@ -633,14 +633,20 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo ""
     echo "📦 Step 5: Installing/updating dependencies..."
     if [ -f "requirements.txt" ]; then
-        pip install -q --upgrade -r requirements.txt
+        echo "  Installing from requirements.txt..."
+        pip install --upgrade -r requirements.txt || {
+            echo "⚠️  Some packages failed to install. Continuing..."
+        }
         echo "✅ requirements.txt installed/updated"
     else
         echo "⚠️  requirements.txt not found"
     fi
     
     if [ -f "requirements_voice.txt" ]; then
-        pip install -q --upgrade -r requirements_voice.txt
+        echo "  Installing from requirements_voice.txt..."
+        pip install --upgrade -r requirements_voice.txt || {
+            echo "⚠️  Some voice packages failed to install. Continuing..."
+        }
         echo "✅ requirements_voice.txt installed/updated"
     fi
     
