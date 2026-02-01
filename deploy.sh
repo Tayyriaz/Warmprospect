@@ -318,10 +318,11 @@ EOF
     # Determine paths for service file
     if [ -n "$VENV_PATH" ]; then
         UVICORN_PATH="$VENV_PATH/bin/uvicorn"
-        PYTHON_PATH="$VENV_PATH/bin"
+        # Include both venv and system paths for proper execution
+        PYTHON_PATH="$VENV_PATH/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     else
         UVICORN_PATH="uvicorn"
-        PYTHON_PATH="/usr/bin"
+        PYTHON_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     fi
     
     # Get port from .env
@@ -529,7 +530,15 @@ if [ "$FRESH_DEPLOY" = false ]; then
         else
             echo "⚠️  Service is not running. Starting it..."
             systemctl start $SERVICE_NAME || {
-                echo "❌ Failed to start service. Check logs: sudo journalctl -u $SERVICE_NAME -n 50"
+                echo "❌ Failed to start service. Checking logs..."
+                echo ""
+                journalctl -u $SERVICE_NAME -n 50 --no-pager
+                echo ""
+                echo "Common issues:"
+                echo "  - Check .env file has correct GEMINI_API_KEY and DATABASE_URL"
+                echo "  - Verify PostgreSQL is running: sudo systemctl status postgresql"
+                echo "  - Check Python dependencies: cd $PROJECT_PATH && source venv/bin/activate && pip list"
+                exit 1
             }
         fi
         
