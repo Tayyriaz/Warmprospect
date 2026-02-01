@@ -543,7 +543,7 @@ if [ "$FRESH_DEPLOY" = false ]; then
         fi
     fi
     
-    # Step 7.5: Check for port conflicts
+    # Step 7.5: Check for port conflicts and stop service first
     echo ""
     echo "🔍 Step 7.5: Checking for port conflicts..."
     ENV_PORT=8000
@@ -551,7 +551,27 @@ if [ "$FRESH_DEPLOY" = false ]; then
         ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "8000")
     fi
     
-    # Check if port is in use
+    # Stop the service first to break any restart loops
+    echo "   Stopping service to prevent restart loop..."
+    systemctl stop $SERVICE_NAME 2>/dev/null || true
+    sleep 2
+    
+    # Kill any processes using the port (including zombie processes)
+    echo "   Checking for processes using port $ENV_PORT..."
+    if command -v lsof >/dev/null 2>&1; then
+        PORT_PIDS=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
+        if [ -n "$PORT_PIDS" ]; then
+            echo "   Found processes using port $ENV_PORT: $PORT_PIDS"
+            echo "   Killing processes..."
+            echo "$PORT_PIDS" | xargs kill -9 2>/dev/null || true
+            sleep 2
+        fi
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k $ENV_PORT/tcp 2>/dev/null || true
+        sleep 2
+    fi
+    
+    # Double-check port is clear
     if command -v lsof >/dev/null 2>&1; then
         PORT_IN_USE=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
     elif command -v netstat >/dev/null 2>&1; then
@@ -563,27 +583,24 @@ if [ "$FRESH_DEPLOY" = false ]; then
     fi
     
     if [ -n "$PORT_IN_USE" ]; then
-        # Check if it's the chatbot service itself
-        SERVICE_PID=$(systemctl show -p MainPID --value $SERVICE_NAME 2>/dev/null || echo "")
-        if [ "$PORT_IN_USE" = "$SERVICE_PID" ] || [ -z "$SERVICE_PID" ]; then
-            echo "⚠️  Port $ENV_PORT is in use by PID $PORT_IN_USE"
-            echo "   Stopping any existing chatbot processes..."
-            systemctl stop $SERVICE_NAME 2>/dev/null || true
-            # Kill any remaining processes on the port
-            if command -v lsof >/dev/null 2>&1; then
-                lsof -ti:$ENV_PORT | xargs kill -9 2>/dev/null || true
-            fi
-            sleep 2
-            echo "✅ Port cleared"
+        echo "⚠️  Port $ENV_PORT is still in use by PID(s): $PORT_IN_USE"
+        echo "   Process info:"
+        for pid in $PORT_IN_USE; do
+            ps -p $pid -o pid,cmd 2>/dev/null || echo "   PID $pid (process may have terminated)"
+        done
+        echo ""
+        echo "   Attempting to force kill..."
+        echo "$PORT_IN_USE" | xargs kill -9 2>/dev/null || true
+        sleep 2
+        
+        # Final check
+        FINAL_CHECK=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
+        if [ -n "$FINAL_CHECK" ]; then
+            echo "❌ Port $ENV_PORT is still in use. Manual intervention required:"
+            echo "   Run: sudo lsof -i :$ENV_PORT"
+            echo "   Then: sudo kill -9 <PID>"
         else
-            echo "⚠️  Port $ENV_PORT is already in use by PID $PORT_IN_USE (not chatbot service)"
-            echo "   Process info:"
-            ps -p $PORT_IN_USE -o pid,cmd 2>/dev/null || echo "   Could not get process info"
-            echo ""
-            echo "   You may need to:"
-            echo "   1. Stop the process using port $ENV_PORT"
-            echo "   2. Change PORT in .env file to a different port"
-            echo "   3. Or manually kill: sudo kill -9 $PORT_IN_USE"
+            echo "✅ Port cleared successfully"
         fi
     else
         echo "✅ Port $ENV_PORT is available"
