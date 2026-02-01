@@ -407,16 +407,43 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo ""
     echo "📥 Step 1: Pulling latest changes from git..."
     if [ -d ".git" ]; then
-        # Check if there are uncommitted changes
-        if [ -n "$(git status --porcelain)" ]; then
-            echo "⚠️  You have uncommitted changes. Stashing them..."
-            git stash || true
-        fi
+        # Detect current branch
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
         
-        if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
-            echo "✅ Git pull successful"
+        if [ -z "$CURRENT_BRANCH" ]; then
+            echo "⚠️  Could not detect git branch, trying common branches..."
+            # Try to pull from common branch names
+            if git pull origin main 2>/dev/null; then
+                echo "✅ Git pull successful (main branch)"
+            elif git pull origin master 2>/dev/null; then
+                echo "✅ Git pull successful (master branch)"
+            else
+                echo "⚠️  Git pull failed. Continuing with existing code..."
+            fi
         else
-            echo "⚠️  Git pull had issues, but continuing..."
+            echo "  Current branch: $CURRENT_BRANCH"
+            
+            # Check if there are uncommitted changes
+            if [ -n "$(git status --porcelain)" ]; then
+                echo "⚠️  You have uncommitted changes. Stashing them..."
+                git stash || true
+            fi
+            
+            # Fetch latest changes
+            echo "  Fetching latest changes..."
+            git fetch origin "$CURRENT_BRANCH" 2>/dev/null || git fetch origin 2>/dev/null || true
+            
+            # Pull latest changes
+            if git pull origin "$CURRENT_BRANCH" 2>/dev/null; then
+                echo "✅ Git pull successful"
+            elif git pull origin main 2>/dev/null; then
+                echo "✅ Git pull successful (fallback to main)"
+            elif git pull origin master 2>/dev/null; then
+                echo "✅ Git pull successful (fallback to master)"
+            else
+                echo "⚠️  Git pull had issues, but continuing with existing code..."
+                echo "   You may want to manually run: git pull origin $CURRENT_BRANCH"
+            fi
         fi
     else
         echo "⚠️  Not a git repository, skipping git pull"
