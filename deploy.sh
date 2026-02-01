@@ -726,9 +726,11 @@ if [ "$FRESH_DEPLOY" = false ]; then
         if [ -n "$CURRENT_PORT" ] && [ "$CURRENT_PORT" -gt 65535 ] 2>/dev/null; then NEED_PORT_UPDATE=true; fi
         if [ "$NEED_PORT_UPDATE" = true ]; then
             echo "  Port changed from $CURRENT_PORT to $ENV_PORT. Updating service..."
-            # Always bake the numeric port (no variable) to avoid systemd expansion concatenation bugs
-            sed -i -e "s/--port \${BACKEND_PORT:-[0-9]*}/--port $ENV_PORT/g" -e "s/--port [0-9]*/--port $ENV_PORT/g" "$SERVICE_FILE" || {
-                echo "⚠️  Could not update service file port. Update manually."
+            # Replace entire ExecStart line so no $VAR in .env can concatenate (systemd expands EnvFile into ExecStart)
+            UVICORN_PATH="$PROJECT_PATH/venv/bin/uvicorn"
+            [ ! -x "$UVICORN_PATH" ] && UVICORN_PATH="uvicorn"
+            sed -i "s|^ExecStart=.*|ExecStart=$UVICORN_PATH main:app --host 127.0.0.1 --port $ENV_PORT|" "$SERVICE_FILE" || {
+                echo "⚠️  Could not update service file. Update ExecStart manually to: --port $ENV_PORT"
             }
             systemctl daemon-reload
             echo "✅ Service configuration updated"
