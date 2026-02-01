@@ -30,37 +30,216 @@ SERVICE_NAME="chatbot.service"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
 PYTHON_VERSION="3.11"
 
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
+
+# Get PORT from .env file
+get_env_port() {
+    local default_port="${1:-8000}"
+    if [ -f ".env" ]; then
+        local port=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
+        if [ -n "$port" ] && [ "$port" -gt 0 ] 2>/dev/null; then
+            echo "$port"
+        else
+            echo "$default_port"
+        fi
+    else
+        echo "$default_port"
+    fi
+}
+
+# Activate virtual environment
+activate_venv() {
+    if [ -d "venv" ]; then
+        . venv/bin/activate 2>/dev/null || source venv/bin/activate 2>/dev/null || true
+        echo "$PROJECT_PATH/venv"
+    elif [ -d ".venv" ]; then
+        . .venv/bin/activate 2>/dev/null || source .venv/bin/activate 2>/dev/null || true
+        echo "$PROJECT_PATH/.venv"
+    else
+        echo ""
+    fi
+}
+
+# Clear port conflicts
+clear_port() {
+    local port="$1"
+    echo "   Checking for processes using port $port..."
+    
+    # Stop service first
+    systemctl stop $SERVICE_NAME 2>/dev/null || true
+    sleep 2
+    
+    # Find and kill processes using the port
+    local port_pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        port_pids=$(lsof -ti:$port 2>/dev/null || echo "")
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k $port/tcp 2>/dev/null || true
+        sleep 2
+        return 0
+    fi
+    
+    if [ -n "$port_pids" ]; then
+        echo "   Found processes using port $port: $port_pids"
+        echo "   Killing processes..."
+        echo "$port_pids" | xargs kill -9 2>/dev/null || true
+        sleep 2
+        
+        # Verify port is clear
+        local final_check=$(lsof -ti:$port 2>/dev/null || echo "")
+        if [ -n "$final_check" ]; then
+            echo "⚠️  Port $port is still in use by PID(s): $final_check"
+            for pid in $final_check; do
+                ps -p $pid -o pid,cmd 2>/dev/null || echo "   PID $pid (process may have terminated)"
+            done
+            echo ""
+            echo "   Manual intervention may be required: sudo lsof -i :$port"
+            return 1
+        fi
+    fi
+    echo "✅ Port $port is available"
+    return 0
+}
+
+# Setup/update Nginx configuration
+setup_nginx() {
+    if [ ! -f "nginx.conf" ]; then
+        echo "⚠️  nginx.conf not found. Skipping Nginx setup."
+        return 1
+    fi
+    
+    if [ ! -f ".env" ]; then
+        echo "⚠️  .env file not found. Cannot generate Nginx config with environment variables."
+        return 1
+    fi
+    
+    local NGINX_SITE="chatbot-api"
+    local NGINX_AVAILABLE="/etc/nginx/sites-available/$NGINX_SITE"
+    local NGINX_ENABLED="/etc/nginx/sites-enabled/$NGINX_SITE"
+    
+    # Load environment variables from .env
+    set -a
+    source .env 2>/dev/null || true
+    set +a
+    
+    # Generate nginx config with environment variable substitution
+    echo "  Generating Nginx configuration from template with .env variables..."
+    if command -v envsubst >/dev/null 2>&1; then
+        # Use envsubst to replace ${VAR} with values from environment
+        envsubst < nginx.conf > "${NGINX_AVAILABLE}.tmp" || {
+            echo "⚠️  Failed to generate Nginx config. Falling back to direct copy."
+            cp nginx.conf "$NGINX_AVAILABLE" || {
+                echo "⚠️  Could not copy nginx.conf. You may need to do this manually."
+                return 1
+            }
+        }
+        
+        # Check if generated config is different
+        if [ -f "$NGINX_AVAILABLE" ] && cmp -s "${NGINX_AVAILABLE}.tmp" "$NGINX_AVAILABLE" 2>/dev/null; then
+            rm -f "${NGINX_AVAILABLE}.tmp"
+            echo "✅ Nginx configuration is up to date"
+            return 0
+        fi
+        
+        mv "${NGINX_AVAILABLE}.tmp" "$NGINX_AVAILABLE" || {
+            echo "⚠️  Could not move generated config. You may need to do this manually."
+            return 1
+        }
+    else
+        echo "⚠️  envsubst not found. Copying nginx.conf without variable substitution."
+        echo "   Install gettext-base package for environment variable support: apt-get install gettext-base"
+        cp nginx.conf "$NGINX_AVAILABLE" || {
+            echo "⚠️  Could not copy nginx.conf. You may need to do this manually."
+            return 1
+        }
+    fi
+    
+    echo "  Enabling Nginx site..."
+    ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED" || {
+        echo "⚠️  Could not enable Nginx site. You may need to do this manually."
+        return 1
+    }
+    
+    echo "  Testing Nginx configuration..."
+    if nginx -t 2>/dev/null; then
+        echo "✅ Nginx configuration is valid"
+        echo "  Reloading Nginx..."
+        systemctl reload nginx 2>/dev/null || {
+            echo "⚠️  Could not reload Nginx. Run manually: sudo systemctl reload nginx"
+            return 1
+        }
+        return 0
+    else
+        echo "⚠️  Nginx configuration test failed. Check the config manually."
+        echo "   Run: sudo nginx -t"
+        return 1
+    fi
+}
+
+# Start or restart service
+start_service() {
+    local port=$(get_env_port)
+    
+    # Clear port conflicts first
+    clear_port "$port" || true
+    
+    echo ""
+    echo "🚀 Starting service..."
+    if systemctl is-active --quiet $SERVICE_NAME 2>/dev/null; then
+        systemctl restart $SERVICE_NAME
+        echo "✅ Service restarted"
+    else
+        systemctl start $SERVICE_NAME || {
+            echo "❌ Failed to start service. Checking logs..."
+            echo ""
+            journalctl -u $SERVICE_NAME -n 50 --no-pager
+            echo ""
+            echo "Common issues:"
+            echo "  - Check .env file has correct GEMINI_API_KEY and DATABASE_URL"
+            echo "  - Verify PostgreSQL is running: sudo systemctl status postgresql"
+            echo "  - Check Python dependencies: cd $PROJECT_PATH && source venv/bin/activate && pip list"
+            echo "  - Port $port may be in use: sudo lsof -i :$port"
+            return 1
+        }
+        echo "✅ Service started"
+    fi
+    
+    sleep 3
+    
+    if systemctl is-active --quiet $SERVICE_NAME; then
+        echo "✅ Service is running"
+        systemctl status $SERVICE_NAME --no-pager -l | head -15
+        return 0
+    else
+        echo "❌ Service failed to start!"
+        echo "   Check logs: sudo journalctl -u $SERVICE_NAME -n 50"
+        return 1
+    fi
+}
+
 # Function to check if database is initialized
-# Returns "true" if initialized, "false" if not, "unknown" if check failed
 check_db_initialized() {
     local project_path="$1"
     
-    # Check if project directory exists and has .env
     if [ ! -d "$project_path" ] || [ ! -f "$project_path/.env" ]; then
         echo "false"
         return
     fi
     
-    # Try to check if database tables exist
     cd "$project_path" || {
         echo "unknown"
         return
     }
     
-    # Activate venv if it exists
-    if [ -d "venv" ]; then
-        . venv/bin/activate 2>/dev/null || true
-    elif [ -d ".venv" ]; then
-        . .venv/bin/activate 2>/dev/null || true
-    fi
+    local venv_path=$(activate_venv)
     
-    # Check if required Python packages are available
     if ! python3 -c "import sqlalchemy" 2>/dev/null; then
         echo "unknown"
         return
     fi
     
-    # Try to check if business_configs table exists
     if python3 -c "
 import sys
 import os
@@ -75,7 +254,6 @@ try:
     if not db_url:
         sys.exit(1)
     
-    # Ensure psycopg2 driver
     if db_url.startswith('postgresql://') and 'psycopg2' not in db_url and 'asyncpg' not in db_url:
         db_url = db_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
     
@@ -83,10 +261,7 @@ try:
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     
-    if 'business_configs' in tables:
-        sys.exit(0)  # Database is initialized
-    else:
-        sys.exit(1)  # Database not initialized
+    sys.exit(0 if 'business_configs' in tables else 1)
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
@@ -96,14 +271,12 @@ except Exception:
     fi
 }
 
-# Detect if this is a fresh deployment
+# ============================================
+# DETECT DEPLOYMENT TYPE
+# ============================================
+
 FRESH_DEPLOY=false
 
-# Check multiple indicators (in order of reliability):
-# 1. Project directory doesn't exist -> fresh deploy
-# 2. .env file doesn't exist -> fresh deploy
-# 3. Database tables don't exist -> fresh deploy (most reliable indicator)
-# 4. Service doesn't exist -> likely fresh deploy
 if [ ! -d "$PROJECT_PATH" ]; then
     FRESH_DEPLOY=true
     echo "🆕 Fresh deployment: Project directory doesn't exist"
@@ -111,14 +284,12 @@ elif [ ! -f "$PROJECT_PATH/.env" ]; then
     FRESH_DEPLOY=true
     echo "🆕 Fresh deployment: .env file doesn't exist"
 else
-    # Check if database is initialized
     DB_STATUS=$(check_db_initialized "$PROJECT_PATH")
     if [ "$DB_STATUS" = "false" ]; then
         FRESH_DEPLOY=true
         echo "🆕 Fresh deployment: Database tables don't exist"
     elif [ "$DB_STATUS" = "unknown" ]; then
-        # Can't check database, fall back to service check
-        if [ ! -f "$SERVICE_FILE" ]; then
+        if [ ! -f "/etc/systemd/system/${SERVICE_NAME}" ]; then
             FRESH_DEPLOY=true
             echo "🆕 Fresh deployment: Service file doesn't exist (database check unavailable)"
         else
@@ -129,7 +300,6 @@ else
     fi
 fi
 
-# Check if service exists
 SERVICE_EXISTS=false
 if [ -f "$SERVICE_FILE" ]; then
     SERVICE_EXISTS=true
@@ -151,11 +321,9 @@ if [ "$FRESH_DEPLOY" = true ]; then
         exit 1
     fi
     
-    # Get project path
     read -p "Enter project path (default: $PROJECT_PATH): " INPUT_PATH
     PROJECT_PATH=${INPUT_PATH:-$PROJECT_PATH}
     
-    # Create project directory if it doesn't exist
     if [ ! -d "$PROJECT_PATH" ]; then
         echo "📁 Creating project directory: $PROJECT_PATH"
         mkdir -p "$PROJECT_PATH"
@@ -163,7 +331,6 @@ if [ "$FRESH_DEPLOY" = true ]; then
     
     cd "$PROJECT_PATH"
     
-    # Check if git repo exists
     if [ ! -d ".git" ]; then
         echo ""
         echo "📥 Initializing git repository..."
@@ -177,7 +344,6 @@ if [ "$FRESH_DEPLOY" = true ]; then
         fi
     fi
     
-    # Check for Python
     echo ""
     echo "🐍 Checking Python installation..."
     if ! command -v python3 &> /dev/null; then
@@ -189,7 +355,6 @@ if [ "$FRESH_DEPLOY" = true ]; then
     PYTHON_VERSION_INSTALLED=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
     echo "✅ Python $PYTHON_VERSION_INSTALLED found"
     
-    # Create virtual environment if it doesn't exist
     echo ""
     echo "📦 Setting up virtual environment..."
     if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
@@ -200,24 +365,13 @@ if [ "$FRESH_DEPLOY" = true ]; then
         echo "✅ Virtual environment already exists"
     fi
     
-    # Activate virtual environment
-    if [ -d "venv" ]; then
-        . venv/bin/activate || source venv/bin/activate
-        VENV_PATH="$PROJECT_PATH/venv"
-    elif [ -d ".venv" ]; then
-        . .venv/bin/activate || source .venv/bin/activate
-        VENV_PATH="$PROJECT_PATH/.venv"
-    fi
+    VENV_PATH=$(activate_venv)
     
-    # Upgrade pip
     echo "  Upgrading pip..."
     pip install --upgrade pip setuptools wheel -q
     
-    # Install system dependencies if needed
     echo ""
     echo "🔧 Checking system dependencies..."
-    
-    # Check for PostgreSQL client libraries
     if ! python3 -c "import psycopg2" 2>/dev/null; then
         echo "  Installing PostgreSQL client libraries..."
         apt-get install -y libpq-dev postgresql-client || {
@@ -225,7 +379,6 @@ if [ "$FRESH_DEPLOY" = true ]; then
         }
     fi
     
-    # Check for Redis
     if ! command -v redis-cli &> /dev/null; then
         echo "  Redis not found. Installing Redis..."
         apt-get install -y redis-server || {
@@ -233,7 +386,14 @@ if [ "$FRESH_DEPLOY" = true ]; then
         }
     fi
     
-    # Install Python dependencies
+    # Check for envsubst (needed for nginx config generation)
+    if ! command -v envsubst &> /dev/null; then
+        echo "  Installing gettext-base for environment variable substitution..."
+        apt-get install -y gettext-base || {
+            echo "⚠️  Could not install gettext-base. Nginx config may not use .env variables."
+        }
+    fi
+    
     echo ""
     echo "📦 Installing Python dependencies..."
     if [ -f "requirements.txt" ]; then
@@ -248,7 +408,6 @@ if [ "$FRESH_DEPLOY" = true ]; then
         echo "✅ requirements_voice.txt installed"
     fi
     
-    # Create .env file if it doesn't exist
     echo ""
     echo "⚙️  Setting up environment configuration..."
     if [ ! -f ".env" ]; then
@@ -277,7 +436,6 @@ EOF
         echo "✅ .env file already exists"
     fi
     
-    # Set up database
     echo ""
     echo "🗄️  Setting up database..."
     read -p "Run database migration? (y/n, default: y): " RUN_MIGRATION
@@ -288,18 +446,14 @@ EOF
         }
     fi
     
-    # Create necessary directories
     echo ""
     echo "📁 Creating necessary directories..."
-    mkdir -p data
-    mkdir -p static
+    mkdir -p data static
     echo "✅ Directories created"
     
-    # Get service user
     read -p "Enter user to run service as (default: $SERVICE_USER): " INPUT_USER
     SERVICE_USER=${INPUT_USER:-$SERVICE_USER}
     
-    # Ensure service user exists
     if ! id "$SERVICE_USER" &>/dev/null; then
         echo "  Creating service user: $SERVICE_USER"
         useradd -r -s /bin/false "$SERVICE_USER" || {
@@ -307,7 +461,6 @@ EOF
         }
     fi
     
-    # Set ownership
     echo ""
     echo "🔐 Setting up permissions..."
     chown -R $SERVICE_USER:$SERVICE_USER "$PROJECT_PATH"
@@ -315,26 +468,16 @@ EOF
     chmod 600 "$PROJECT_PATH/.env" 2>/dev/null || true
     echo "✅ Permissions set"
     
-    # Determine paths for service file
     if [ -n "$VENV_PATH" ]; then
         UVICORN_PATH="$VENV_PATH/bin/uvicorn"
-        # Include both venv and system paths for proper execution
         PYTHON_PATH="$VENV_PATH/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     else
         UVICORN_PATH="uvicorn"
         PYTHON_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     fi
     
-    # Get port from .env
-    PORT=8000
-    if [ -f ".env" ]; then
-        ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
-        if [ -n "$ENV_PORT" ] && [ "$ENV_PORT" -gt 0 ] 2>/dev/null; then
-            PORT=$ENV_PORT
-        fi
-    fi
+    PORT=$(get_env_port)
     
-    # Create service file
     echo ""
     echo "📝 Creating systemd service..."
     cat > $SERVICE_FILE << EOF
@@ -366,21 +509,40 @@ EOF
     chmod 644 $SERVICE_FILE
     echo "✅ Service file created at $SERVICE_FILE"
     
-    # Reload systemd
     echo "🔄 Reloading systemd..."
     systemctl daemon-reload
     
-    # Enable service
     echo "✅ Enabling service..."
     systemctl enable $SERVICE_NAME
     
     echo ""
+    echo "🔍 Checking for port conflicts before starting service..."
+    clear_port "$PORT" || true
+    
+    start_service || {
+        echo "⚠️  Service start failed. Check logs and configuration."
+    }
+    
+    echo ""
+    echo "🌐 Setting up Nginx configuration..."
+    setup_nginx || true
+    
+    echo ""
     echo "✅ Fresh deployment setup complete!"
     echo ""
-    echo "⚠️  NEXT STEPS:"
-    echo "   1. Edit $PROJECT_PATH/.env and set all required values"
-    echo "   2. Ensure PostgreSQL and Redis are running"
-    echo "   3. Run 'sudo systemctl start $SERVICE_NAME' to start the service"
+    echo "📋 NEXT STEPS:"
+    echo "   1. Verify .env file has all required values (GEMINI_API_KEY, DATABASE_URL, etc.)"
+    echo "   2. Ensure PostgreSQL and Redis are running:"
+    echo "      sudo systemctl status postgresql"
+    echo "      sudo systemctl status redis"
+    echo "   3. Check service status: sudo systemctl status $SERVICE_NAME"
+    echo "   4. Check service logs: sudo journalctl -u $SERVICE_NAME -f"
+    echo "   5. Verify Nginx is running: sudo systemctl status nginx"
+    echo ""
+    echo "📋 Useful commands:"
+    echo "   - View logs:    sudo journalctl -u $SERVICE_NAME -f"
+    echo "   - Check status: sudo systemctl status $SERVICE_NAME"
+    echo "   - Restart:      sudo systemctl restart $SERVICE_NAME"
     echo ""
     
     SERVICE_EXISTS=true
@@ -394,7 +556,6 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo "🔄 REDEPLOYMENT / UPDATE"
     echo "=============================="
     
-    # Navigate to project directory
     if [ ! -d "$PROJECT_PATH" ]; then
         echo "❌ Project directory not found: $PROJECT_PATH"
         exit 1
@@ -403,43 +564,33 @@ if [ "$FRESH_DEPLOY" = false ]; then
     cd "$PROJECT_PATH"
     echo "📂 Working directory: $(pwd)"
     
-    # Step 1: Pull latest changes
     echo ""
     echo "📥 Step 1: Pulling latest changes from git..."
     if [ -d ".git" ]; then
-        # Detect current branch
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
         
         if [ -z "$CURRENT_BRANCH" ]; then
             echo "⚠️  Could not detect git branch, trying common branches..."
-            # Try to pull from common branch names
-            if git pull origin main 2>/dev/null; then
-                echo "✅ Git pull successful (main branch)"
-            elif git pull origin master 2>/dev/null; then
-                echo "✅ Git pull successful (master branch)"
+            if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
+                echo "✅ Git pull successful"
             else
                 echo "⚠️  Git pull failed. Continuing with existing code..."
             fi
         else
             echo "  Current branch: $CURRENT_BRANCH"
             
-            # Check if there are uncommitted changes
             if [ -n "$(git status --porcelain)" ]; then
                 echo "⚠️  You have uncommitted changes. Stashing them..."
                 git stash || true
             fi
             
-            # Fetch latest changes
             echo "  Fetching latest changes..."
             git fetch origin "$CURRENT_BRANCH" 2>/dev/null || git fetch origin 2>/dev/null || true
             
-            # Pull latest changes
-            if git pull origin "$CURRENT_BRANCH" 2>/dev/null; then
+            if git pull origin "$CURRENT_BRANCH" 2>/dev/null || \
+               git pull origin main 2>/dev/null || \
+               git pull origin master 2>/dev/null; then
                 echo "✅ Git pull successful"
-            elif git pull origin main 2>/dev/null; then
-                echo "✅ Git pull successful (fallback to main)"
-            elif git pull origin master 2>/dev/null; then
-                echo "✅ Git pull successful (fallback to master)"
             else
                 echo "⚠️  Git pull had issues, but continuing with existing code..."
                 echo "   You may want to manually run: git pull origin $CURRENT_BRANCH"
@@ -449,31 +600,18 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "⚠️  Not a git repository, skipping git pull"
     fi
     
-    # Step 2: Setup Python environment
     echo ""
     echo "🐍 Step 2: Setting up Python environment..."
-    
-    # Create venv if it doesn't exist
     if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
         echo "  Creating virtual environment..."
         python3 -m venv venv
     fi
     
-    # Activate virtual environment
-    if [ -d "venv" ]; then
-        . venv/bin/activate || source venv/bin/activate
-        echo "✅ Virtual environment activated"
-    elif [ -d ".venv" ]; then
-        . .venv/bin/activate || source .venv/bin/activate
-        echo "✅ Virtual environment activated"
-    else
-        echo "⚠️  No virtual environment found, using system Python"
-    fi
+    activate_venv >/dev/null
     
-    # Upgrade pip
+    echo "  Upgrading pip..."
     pip install --upgrade pip setuptools wheel -q
     
-    # Step 3: Clean up deprecated files
     echo ""
     echo "🧹 Step 3: Cleaning up deprecated files..."
     if [ -f "business_configs.json" ]; then
@@ -481,7 +619,6 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "✅ Removed deprecated business_configs.json"
     fi
     
-    # Step 4: Ensure data directory exists and is writable
     echo ""
     echo "📁 Step 4: Ensuring data directory is writable..."
     mkdir -p data
@@ -493,7 +630,6 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
     fi
     
-    # Step 5: Install/update dependencies
     echo ""
     echo "📦 Step 5: Installing/updating dependencies..."
     if [ -f "requirements.txt" ]; then
@@ -508,7 +644,6 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "✅ requirements_voice.txt installed/updated"
     fi
     
-    # Step 6: Run database migrations
     echo ""
     echo "🗄️  Step 6: Running database migrations..."
     if [ -f "scripts/db/migrate_db.py" ]; then
@@ -520,21 +655,15 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "⚠️  Migration script not found, skipping"
     fi
     
-    # Step 7: Update service file if needed
     if [ "$SERVICE_EXISTS" = true ] && [ "$NEED_ROOT" = false ]; then
         echo ""
         echo "📝 Step 7: Checking service configuration..."
-        
-        # Check if PORT changed in .env
-        CURRENT_PORT=$(grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8000")
-        ENV_PORT=8000
-        if [ -f ".env" ]; then
-            ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "8000")
-        fi
+        CURRENT_PORT=$(grep -oP '--port \$\{PORT:-?\K\d+' "$SERVICE_FILE" 2>/dev/null || \
+                      grep -oP '--port \K\d+' "$SERVICE_FILE" 2>/dev/null || echo "8000")
+        ENV_PORT=$(get_env_port)
         
         if [ "$CURRENT_PORT" != "$ENV_PORT" ]; then
             echo "  Port changed from $CURRENT_PORT to $ENV_PORT. Updating service..."
-            # Update service file with new port
             sed -i "s/--port [0-9]*/--port \${PORT:-$ENV_PORT}/g" "$SERVICE_FILE" || {
                 echo "⚠️  Could not update service file port. Update manually."
             }
@@ -543,111 +672,23 @@ if [ "$FRESH_DEPLOY" = false ]; then
         fi
     fi
     
-    # Step 7.5: Check for port conflicts and stop service first
     echo ""
     echo "🔍 Step 7.5: Checking for port conflicts..."
-    ENV_PORT=8000
-    if [ -f ".env" ]; then
-        ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "8000")
-    fi
+    ENV_PORT=$(get_env_port)
+    clear_port "$ENV_PORT" || true
     
-    # Stop the service first to break any restart loops
-    echo "   Stopping service to prevent restart loop..."
-    systemctl stop $SERVICE_NAME 2>/dev/null || true
-    sleep 2
-    
-    # Kill any processes using the port (including zombie processes)
-    echo "   Checking for processes using port $ENV_PORT..."
-    if command -v lsof >/dev/null 2>&1; then
-        PORT_PIDS=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
-        if [ -n "$PORT_PIDS" ]; then
-            echo "   Found processes using port $ENV_PORT: $PORT_PIDS"
-            echo "   Killing processes..."
-            echo "$PORT_PIDS" | xargs kill -9 2>/dev/null || true
-            sleep 2
-        fi
-    elif command -v fuser >/dev/null 2>&1; then
-        fuser -k $ENV_PORT/tcp 2>/dev/null || true
-        sleep 2
-    fi
-    
-    # Double-check port is clear
-    if command -v lsof >/dev/null 2>&1; then
-        PORT_IN_USE=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
-    elif command -v netstat >/dev/null 2>&1; then
-        PORT_IN_USE=$(netstat -tuln 2>/dev/null | grep ":$ENV_PORT " | awk '{print $7}' | cut -d'/' -f1 | head -1 || echo "")
-    elif command -v ss >/dev/null 2>&1; then
-        PORT_IN_USE=$(ss -tuln 2>/dev/null | grep ":$ENV_PORT " | awk '{print $6}' | cut -d':' -f1 | head -1 || echo "")
-    else
-        PORT_IN_USE=""
-    fi
-    
-    if [ -n "$PORT_IN_USE" ]; then
-        echo "⚠️  Port $ENV_PORT is still in use by PID(s): $PORT_IN_USE"
-        echo "   Process info:"
-        for pid in $PORT_IN_USE; do
-            ps -p $pid -o pid,cmd 2>/dev/null || echo "   PID $pid (process may have terminated)"
-        done
-        echo ""
-        echo "   Attempting to force kill..."
-        echo "$PORT_IN_USE" | xargs kill -9 2>/dev/null || true
-        sleep 2
-        
-        # Final check
-        FINAL_CHECK=$(lsof -ti:$ENV_PORT 2>/dev/null || echo "")
-        if [ -n "$FINAL_CHECK" ]; then
-            echo "❌ Port $ENV_PORT is still in use. Manual intervention required:"
-            echo "   Run: sudo lsof -i :$ENV_PORT"
-            echo "   Then: sudo kill -9 <PID>"
-        else
-            echo "✅ Port cleared successfully"
-        fi
-    else
-        echo "✅ Port $ENV_PORT is available"
-    fi
-    
-    # Step 8: Restart service
     echo ""
     echo "🔄 Step 8: Restarting service..."
-    
     if [ "$NEED_ROOT" = true ]; then
         echo "⚠️  Root access required to restart service."
         echo "   Please run manually: sudo systemctl restart $SERVICE_NAME"
     else
-        if systemctl is-active --quiet $SERVICE_NAME; then
-            systemctl restart $SERVICE_NAME
-            echo "✅ Service restarted"
-        else
-            echo "⚠️  Service is not running. Starting it..."
-            systemctl start $SERVICE_NAME || {
-                echo "❌ Failed to start service. Checking logs..."
-                echo ""
-                journalctl -u $SERVICE_NAME -n 50 --no-pager
-                echo ""
-                echo "Common issues:"
-                echo "  - Check .env file has correct GEMINI_API_KEY and DATABASE_URL"
-                echo "  - Verify PostgreSQL is running: sudo systemctl status postgresql"
-                echo "  - Check Python dependencies: cd $PROJECT_PATH && source venv/bin/activate && pip list"
-                echo "  - Port $ENV_PORT may be in use: sudo lsof -i :$ENV_PORT"
-                exit 1
-            }
-        fi
-        
-        # Wait for service to start
-        sleep 3
-        
-        # Check status
-        echo ""
-        echo "📊 Step 9: Checking service status..."
-        if systemctl is-active --quiet $SERVICE_NAME; then
-            echo "✅ Service is running"
-            systemctl status $SERVICE_NAME --no-pager -l | head -15
-        else
-            echo "❌ Service failed to start!"
-            echo "   Check logs: sudo journalctl -u $SERVICE_NAME -n 50"
-            exit 1
-        fi
+        start_service || exit 1
     fi
+    
+    echo ""
+    echo "🌐 Step 9: Updating Nginx configuration..."
+    setup_nginx || true
 fi
 
 echo ""

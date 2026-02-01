@@ -4,11 +4,11 @@ overview: ""
 todos: []
 ---
 
-# WarmProspect Chatbot Platform
+# Chatbot Platform
 
 ## Project Overview
 
-**WarmProspect Chatbot Platform** enables businesses to create customized AI assistants. The system uses Google Gemini AI for natural language processing, supports both text and voice interactions, and includes CRM integration capabilities.
+**Chatbot Platform** enables businesses to create customized AI assistants. The system uses Google Gemini AI for natural language processing, supports both text and voice interactions, and includes CRM integration capabilities.
 
 ## Core Architecture
 
@@ -72,7 +72,7 @@ todos: []
 
 - **CRM Integration**
   - Per-tenant CRM integration configuration (each business can connect to their own CRM system)
-  - Support for multiple CRM types: custom systems, ready-made CRMs (Salesforce, HubSpot, etc.), or WarmProspect CRM
+  - Support for multiple CRM types: custom systems, ready-made CRMs (Salesforce, HubSpot, etc.), or custom CRM systems
   - Dynamic CRM connector system allowing businesses to configure their own API endpoints and authentication
   - CRM tools exposed to AI through function calling
   - Standard CRM operations: contact search (by email or phone), contact creation with PII validation, deal creation linked to contacts
@@ -119,281 +119,51 @@ todos: []
 - **A/B testing framework**: Support for experimentation and testing different configurations
 - **Dynamic CTA integration**: Context-aware CTA selection and injection into responses
 
-### Tasks To Be Completed 📋
-
-#### High Priority - Dynamic Configuration
-
-- [x] **Multi-level CTA system**: Implemented hierarchical CTA tree structure (cta_tree)
-- [x] **Context-aware CTA selection**: CTA selection based on conversation flow and user intent
-- [ ] **Conditional CTA logic**: CTAs that appear/disappear based on user responses, conversation state, business rules, or metadata (rules engine exists but needs integration)
-- [ ] **Dynamic CTA generation**: Generate CTAs dynamically based on available services/products
-- [x] **Business rules engine**: Pluggable rule system for conditional logic in conversation flow (framework implemented)
-- [ ] **Dynamic routing decisions**: Context-aware routing based on business rules (router exists but needs rule integration)
-- [x] **A/B testing framework**: Support for experimentation and testing different configurations (framework implemented)
-
-#### Session & Conversation Enhancements
-
-- [x] **Session metadata support**: Custom attributes and metadata storage per session
-- [x] **Session state machine**: Complex conversation flow management with state transitions
-- [x] **Session analytics**: Tracking and analytics for session data (with API endpoints)
-- [x] **Conversation state management**: State machine for multi-step conversation flows
-- [x] **Intent detection**: Classify user intent to improve routing and responses
-- [x] **Sentiment analysis**: Personalized responses based on user sentiment
-- [x] **Multi-turn conversation planning**: Better handling of complex, multi-step conversations
-
-#### Chat Engine Improvements
-
-- [x] **Dynamic CTA integration**: Context-aware CTA selection and injection into responses
-- [ ] **Error handling**: More graceful degradation when services fail
-- [ ] **Response validation**: Ensure responses meet format requirements before sending
-- [ ] **Token management**: Intelligent history summarization instead of hard truncation (currently uses MAX_HISTORY_TURNS truncation)
-- [ ] **Streaming responses**: Support for streaming responses for better UX
-- [ ] **Response caching**: Cache common responses to reduce API calls
-
-#### RAG Enhancements
-
-- [ ] **Real-time knowledge base updates**: Update knowledge bases without full rebuild
-- [ ] **Multi-source aggregation**: Intelligently aggregate information from multiple sources
-- [ ] **Knowledge base versioning**: Track versions for rollback capability
-- [ ] **Confidence scoring**: Score retrieval confidence and filter low-confidence results
-- [ ] **Hybrid search**: Combine vector search with keyword/BM25 search
-- [ ] **Re-ranking**: Re-rank retrieved results using cross-encoder models
-- [ ] **Chunk optimization**: Better chunking strategies (semantic chunking, overlap handling)
-- [ ] **Metadata filtering**: Filter by metadata (date, category, source type)
-- [ ] **Query expansion**: Expand user queries for better retrieval
-- [ ] **Incremental indexing**: Add/update documents without full index rebuild
-- [ ] **Index health monitoring**: Monitor index quality and retrieval performance
-- [ ] **Multi-modal support**: Support for images, PDFs, and other document types
-
-#### CRM Integration
-
-- [ ] **Dynamic CRM connector system**: Per-tenant CRM integration configuration
-  - Support for multiple CRM types (custom systems, Salesforce, HubSpot, WarmProspect CRM, etc.)
-  - Configurable API endpoints and authentication per business
-  - CRM connector plugins/adapters for different CRM systems
-- [ ] **CRM configuration management**: Admin API for businesses to configure their CRM integration
-  - API endpoint configuration
-  - Authentication credentials (API keys, OAuth, etc.)
-  - Field mapping between chatbot and CRM fields
-  - Custom field support
-- [ ] **Real CRM API integration**: Replace placeholder implementations with dynamic connector system
-- [ ] **Contact deduplication**: Advanced logic for finding and merging duplicate contacts
-- [ ] **Deal pipeline management**: Integration with deal stages and pipeline workflows
-- [ ] **CRM webhooks**: Support for CRM events and updates (bidirectional sync)
-- [ ] **CRM adapter framework**: Pluggable adapter system for easy integration with new CRM systems
-
-#### Production Hardening
-
-- [ ] **Enforce Redis**: Remove in-memory fallback, require Redis in production
-- [ ] **Structured logging**: Replace print statements with structured logging (structlog)
-- [ ] **Database migrations**: Automate migrations in CI/CD pipeline
-- [ ] **Connection pooling**: Optimize database connection pooling configuration
-- [ ] **Monitoring & metrics**: Set up monitoring, metrics, and alerting
-- [ ] **Error tracking**: Implement error tracking and reporting
-- [ ] **Performance optimization**: Optimize RAG retrieval and API response times
-
-#### Testing & Quality
-
-- [ ] **Unit tests**: Write unit tests for core functionality
-- [ ] **Integration tests**: Create integration tests for API endpoints
-- [ ] **End-to-end tests**: Add E2E tests for chat flows
-- [ ] **Test coverage**: Implement test coverage reporting
-- [ ] **Load testing**: Performance and load testing
-
-#### Voice Enhancements
-
-- [ ] **Per-tenant phone call configuration**: Each business can configure their own Twilio integration
-  - Business-specific Twilio phone number configuration
-  - Webhook routing per business (business routes their Twilio calls to platform)
-  - Business-specific voice personality and greeting messages
-  - Apply same business prompts, CTAs, and knowledge base to voice calls
-- [ ] **Dynamic voice routing**: Route incoming calls to correct business chatbot based on phone number or business_id
-- [ ] **Lower latency**: Migrate to Gemini Live WebSocket for real-time voice
-- [ ] **Audio format support**: Expand support for more audio formats
-- [ ] **Voice quality optimization**: Improve audio processing and quality
-- [ ] **Voice call session management**: Manage voice call sessions with same business_id:session_id isolation
-
-## Data Flow
-
-### Chat Request Flow
-
-```javascript
-User Message → FastAPI /chat endpoint
-  ↓
-Load Business Config (PostgreSQL)
-  ↓
-Build System Instruction (Base + Business-specific)
-  ↓
-Get/Create Chat Session (Gemini SDK with history)
-  ↓
-RAG Retrieval (if business KB exists)
-  ↓
-Send to Gemini with Tools + Context
-  ↓
-Handle Function Calls (CRM tools)
-  ↓
-Return Response → Client Application
-```
-
-
-
-### Voice Request Flow (Twilio Phone Calls)
-
-```javascript
-Incoming Phone Call → Business's Twilio Phone Number
-  ↓
-Twilio → POST /voice/incoming (webhook with business_id)
-  ↓
-Load Business Config → Build System Instruction
-  ↓
-Return TwiML → Connect to WebSocket /media-stream
-  ↓
-WebSocket Audio Stream → Gemini Audio APIs
-  ↓
-Gemini Bot (with business personality, prompts, CTAs, knowledge base)
-  ↓
-Audio Response → Twilio WebSocket
-  ↓
-Phone Call (business-specific chatbot)
-```
-
-
-## API Endpoints
-
-> **Note**: This platform provides API endpoints only. Frontend UIs (chat widget and admin panel) are included for testing purposes only and are not used in production. Production integrations should use the API endpoints directly.
-
-### Public Endpoints
-
-- `GET /` - Chat widget UI (testing only, not for production)
-- `GET /health` - Health check
-- `POST /chat` - Main chat endpoint (rate limited)
-  - **Request Body**:
-    - `business_id` (required) - Identifies which business's chatbot to use
-    - `user_id` or `session_id` (required) - Unique identifier for the conversation session
-    - `message` (required) - User's message/input
-  - **Response**: 
-    - `response` - AI-generated response text (CTAs are NEVER included in response text)
-    - `cta` (optional) - Separate CTA array - CTAs are always returned as a separate field, never in the response text
-- `GET /api/business/{business_id}/config` - Widget configuration
-  - Returns business-specific configuration (branding, CTAs, greeting message, etc.)
-  - Used by client applications to fetch business configuration
-
-### Admin Endpoints (API Key Protected)
-
-- `GET /admin` - Admin panel UI (testing only, not for production)
-- `POST /admin/business` - Create/update business
-  - **Request Body**: Business configuration (businessId, businessName, systemPrompt, ctaTree, etc.)
-  - **Note**: Knowledge base scraping must be triggered separately using `/admin/business/{business_id}/scrape`
-  - **Response**: Created/updated business configuration (camelCase format)
-- `GET /admin/business` - List all businesses
-  - **Response**: Dictionary of all businesses keyed by business_id (camelCase format)
-- `GET /admin/business/{business_id}` - Get business config
-  - **Response**: Complete business configuration object (camelCase format)
-- `DELETE /admin/business/{business_id}` - Delete business
-  - **Response**: Success confirmation
-- `POST /admin/business/{business_id}/scrape` - Manually trigger knowledge base scraping
-  - **Response**: Success confirmation with scraping status
-  - **Note**: Requires business to have `websiteUrl` configured
-- `POST /admin/business/{business_id}/refresh-kb` - Refresh/rebuild knowledge base from scratch
-  - **Response**: Success confirmation
-  - **Note**: Clears old index files and rebuilds from websiteUrl
-- `GET /admin/business/{business_id}/scraping-status` - Get current scraping status
-  - **Response**: Status object with `status`, `message`, `progress` (0-100), `updated_at`
-
-### Voice Endpoints (Twilio Integration)
-
-- `POST /voice/incoming` - Twilio webhook (TwiML)
-  - **Request**: Twilio webhook payload (business routes their Twilio calls here)
-  - **Query Parameter**: `business_id` (required) - Identifies which business's chatbot to use
-  - **Response**: TwiML XML to start media stream
-  - Handles incoming phone calls routed from business's Twilio account
-- `WebSocket /media-stream` - Twilio media stream
-  - **Query Parameter**: `business_id` (required) - Identifies which business's chatbot to use
-  - Bidirectional WebSocket connecting Gemini bot with Gemini audio APIs
-  - Real-time audio streaming between Twilio phone number and Gemini
-  - Uses business-specific chatbot configuration (personality, prompts, CTAs, knowledge base)
-
-## Setup & Configuration
-
-### Environment Variables
-
-The platform requires several environment variables to be configured. Create a `.env` file in the project root:
-
-```env
-# Required
-GEMINI_API_KEY=your_gemini_api_key_here
-DATABASE_URL=postgresql://user:password@localhost:5432/warmprospect
-REDIS_URL=redis://localhost:6379/0
-
-# Admin API Key (Required for admin endpoints)
-ADMIN_API_KEY=your_admin_api_key_here
-
-# Optional
-GEMINI_MODEL=gemini-2.5-flash
-MAX_HISTORY_TURNS=20
-PORT=8000
-ALLOWED_ORIGINS=["*"]  # JSON array, e.g., ["https://example.com", "https://app.example.com"]
-SESSION_TTL_SECONDS=604800  # 7 days in seconds
-
-# Twilio (per-tenant configuration - each business configures their own)
-# Platform-level Twilio credentials (if needed for platform operations)
-TWILIO_ACCOUNT_SID=...  # Optional: for platform-level operations
-TWILIO_AUTH_TOKEN=...   # Optional: for platform-level operations
-# Note: Each business configures their own Twilio integration and routes calls to platform webhook
-```
-
-### Generating Admin API Key
-
-To generate a secure admin API key, use the provided script:
-
-```bash
-# Generate a key (default: 32 bytes, hex format)
-python3 scripts/utils/generate_admin_key.py
-
-# Generate with custom length (64 bytes = 128 hex characters)
-python3 scripts/utils/generate_admin_key.py --length 64
-
-# Generate in base64 format
-python3 scripts/utils/generate_admin_key.py --format base64
-
-# Generate in .env file format (ready to copy-paste)
-python3 scripts/utils/generate_admin_key.py --env-format
-```
-
-**Example output:**
-```
-Generated Admin API Key:
-32de014f3e9155c37a948ac120893f157dc087d2084e6e438bb6d31fec79c921
-
-# Add to your .env file as:
-ADMIN_API_KEY=32de014f3e9155c37a948ac120893f157dc087d2084e6e438bb6d31fec79c921
-```
-
-Copy the generated key and add it to your `.env` file as `ADMIN_API_KEY=...`. This key is required to access admin endpoints and should be kept secure.
-
-**Security Notes:**
-- Use a strong, randomly generated key (minimum 32 bytes recommended)
-- Never commit the `.env` file to version control
-- Rotate keys periodically in production
-- Use different keys for development and production environments
-
 ## Deployment
 
 ### VPS Deployment
 
-The platform includes an automated deployment script (`deploy.sh`) that handles:
-- Git pull and updates
-- Virtual environment activation
-- Dependency installation
-- Permission setup (first-time)
-- Service restart
-- Cleanup of deprecated files (e.g., `business_configs.json`)
+The platform includes an automated deployment script (`deploy.sh`) that handles both fresh deployments and updates:
+
+**Features:**
+- Automatic detection of fresh vs. existing deployment (checks database initialization)
+- Git pull with branch detection and conflict handling
+- Virtual environment setup and activation
+- Dependency installation and updates
+- Database schema synchronization
+- Port conflict detection and resolution
+- Systemd service creation and management
+- Nginx configuration with environment variable substitution
+- Permission setup and data directory management
+- Service startup and health checks
 
 **Quick Deploy:**
 ```bash
 cd /var/www/chatbot
-sudo ./deploy.sh
+sudo bash deploy.sh
 ```
+
+**What the script does:**
+
+**Fresh Deployment:**
+- Creates project directory
+- Sets up Python virtual environment
+- Installs system dependencies (PostgreSQL, Redis, gettext-base)
+- Installs Python dependencies
+- Creates `.env` file from template
+- Sets up database (with migration prompt)
+- Creates systemd service file
+- Configures Nginx reverse proxy
+- Starts the service automatically
+
+**Redeployment/Update:**
+- Pulls latest code from git (auto-detects branch)
+- Updates Python dependencies
+- Runs database migrations
+- Updates service configuration if needed
+- Clears port conflicts
+- Restarts service
+- Updates Nginx configuration if changed
 
 **Manual Deploy (if needed):**
 ```bash
@@ -401,20 +171,21 @@ cd /var/www/chatbot
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
+python scripts/db/migrate_db.py
 sudo systemctl restart chatbot.service
 ```
 
-**First-Time Setup:**
-The `deploy.sh` script will automatically:
-- Create systemd service if it doesn't exist
-- Set up proper file permissions for `www-data` user
-- Configure data directory permissions
-- Clean up deprecated files
-
 **Database Migration:**
-Run migrations manually if needed:
+Database migrations run automatically during deployment. To run manually:
 ```bash
 cd /var/www/chatbot
 source venv/bin/activate
 python scripts/db/migrate_db.py
 ```
+
+**Nginx Configuration:**
+The deploy script automatically generates nginx configuration from `nginx.conf` template using environment variables from `.env`. Make sure to set:
+- `NGINX_SERVER_NAME`
+- `NGINX_SSL_CERT_PATH`
+- `NGINX_SSL_KEY_PATH`
+- `NGINX_PROXY_PASS` (uses `${PORT}` automatically)

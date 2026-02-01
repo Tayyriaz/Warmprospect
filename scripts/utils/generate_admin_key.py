@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a secure admin API key for WarmProspect Chatbot Platform.
+Generate a secure admin API key for Chatbot Platform.
 
 This script generates a cryptographically secure random API key that can be used
 as the ADMIN_API_KEY environment variable.
@@ -43,7 +43,7 @@ def generate_api_key(length: int = 32, format_type: str = "hex") -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate a secure admin API key for WarmProspect Chatbot Platform"
+        description="Generate a secure admin API key for Chatbot Platform"
     )
     parser.add_argument(
         "--length",
