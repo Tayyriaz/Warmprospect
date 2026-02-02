@@ -55,6 +55,43 @@ def get_cta_children(cta_tree: Dict[str, Any], cta_id: str) -> List[Dict[str, An
     return children_ctas
 
 
+def find_cta_in_displayed_ctas(displayed_ctas: List[Dict[str, Any]], message: str) -> Optional[str]:
+    """
+    Find a CTA ID by matching the user message to recently displayed CTA labels or IDs.
+    This prevents false positives by only matching CTAs that were actually shown.
+    
+    Args:
+        displayed_ctas: List of CTA objects that were recently displayed
+        message: User message to match against CTA labels
+    
+    Returns:
+        CTA ID if match found, None otherwise
+    """
+    if not displayed_ctas or not message:
+        return None
+    
+    message_lower = message.strip().lower()
+    
+    # Check displayed CTAs for label or ID match
+    for cta in displayed_ctas:
+        cta_id = cta.get("id")
+        cta_label = cta.get("label", "").strip().lower()
+        
+        # Exact match on label (most reliable)
+        if cta_label and message_lower == cta_label:
+            return cta_id
+        
+        # Exact match on ID
+        if cta_id and message_lower == cta_id.lower():
+            return cta_id
+        
+        # Partial match on label (for flexibility)
+        if cta_label and cta_label in message_lower and len(cta_label) > 3:
+            return cta_id
+    
+    return None
+
+
 def get_cta_by_id(cta_tree: Dict[str, Any], cta_id: str) -> Optional[Dict[str, Any]]:
     """
     Get a single CTA by ID (without children array).

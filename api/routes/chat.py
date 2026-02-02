@@ -106,9 +106,10 @@ async def _handle_chat_request(request: Request):
         user_input = data.get("message", "")
         user_id = data.get("user_id", "default_user")
         business_id = data.get("business_id")
+        cta_id = data.get("cta_id")  # Optional: explicit CTA ID for API consumers
         # appointment_link removed - use CTA tree with redirect action instead
 
-        print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...'")
+        print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...', cta_id={cta_id}")
 
     except Exception as e:
         print(f"[ERROR] Failed to parse request: {e}")
@@ -331,9 +332,6 @@ async def _handle_chat_request(request: Request):
     # 9. Save chat history to session
     save_chat_history_to_session(chat, session, _max_history_turns)
     
-    # 10. Save session state
-    save_session(session_key, session)
-    
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
     print(f"[ANALYTICS] Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
 
@@ -346,9 +344,25 @@ async def _handle_chat_request(request: Request):
     if business_id:
         config = config_manager.get_business(business_id)
         if config and config.get("cta_tree"):
-            entry_ctas = get_entry_point_ctas(business_id, user_input)
-            if entry_ctas and (should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
-                cta_payload = {"cta": entry_ctas}
+            cta_tree = config.get("cta_tree", {})
+            from core.cta.cta_tree import get_cta_children
+            
+            # If explicit cta_id provided (for API-only consumers), return its children
+            if cta_id:
+                matched_cta = cta_tree.get(cta_id)
+                if matched_cta and matched_cta.get("action") == "show_children":
+                    children_ctas = get_cta_children(cta_tree, cta_id)
+                    if children_ctas:
+                        cta_payload = {"cta": children_ctas}
+            
+            # If no explicit CTA or no children, return entry point CTAs
+            if not cta_payload:
+                entry_ctas = get_entry_point_ctas(business_id, user_input)
+                if entry_ctas and (should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
+                    cta_payload = {"cta": entry_ctas}
+    
+    # 10. Save session state (after updating CTA context)
+    save_session(session_key, session)
     
     # Return response and CTA separately - CTAs are NEVER in the response object
     if cta_payload:

@@ -669,57 +669,6 @@
       typingNode = null;
     }
 
-    async function handleCtaClick(option) {
-      const action = option.action || "send";
-      const ctaId = option.id;
-      const message = option.message || option.label || "";
-      const url = option.url;
-
-      if (action === "show_children") {
-        // Call CTA endpoint to get children
-        try {
-          showTyping();
-          const ctaUrl = getApiUrl('/chat/cta');
-          const res = await fetch(ctaUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              cta_id: ctaId,
-              business_id: CHATBOT_CONFIG.businessId,
-              session_id: userIdEl.value.trim() || "default_user",
-            }),
-          });
-
-          if (!res.ok) {
-            throw new Error(`Server error: ${res.status}`);
-          }
-
-          const data = await res.json();
-          hideTyping();
-          
-          // Show response message if provided
-          if (data.response) {
-            addMessage(data.response, "bot");
-          }
-          
-          // Show children CTAs if provided
-          if (data.cta && Array.isArray(data.cta)) {
-            addOptionChips(data.cta, "cta");
-          }
-        } catch (err) {
-          hideTyping();
-          addMessage("Error loading options. Please try again.", "error");
-          console.error("CTA click error:", err);
-        }
-      } else if (action === "link" && url) {
-        // Redirect to URL
-        window.open(url, '_blank');
-      } else {
-        // Default: send message
-        sendMessage(message);
-      }
-    }
-
     function addOptionChips(options, type) {
       if (!options || !options.length) return;
       // remove previous option block to avoid duplicates
