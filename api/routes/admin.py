@@ -283,15 +283,20 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             "website_url": website_url
         }
         
-        # If forcing re-scrape, clear old status file
+        # If forcing re-scrape, clear old status and KB files so build runs from scratch
         if force_rescrape:
             try:
-                # Delete old status file completely
                 if os.path.exists(status_file):
                     os.remove(status_file)
                     print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
+                meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
+                index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
+                for path in (meta_path, index_path):
+                    if os.path.exists(path):
+                        os.remove(path)
+                        print(f"[INFO] Deleted {path} for force re-scrape: {business_id}")
             except Exception as e:
-                print(f"[WARN] Failed to clear old status file for re-scrape: {e}")
+                print(f"[WARN] Failed to clear old files for re-scrape: {e}")
         
         # If scraping was already completed and NOT forcing re-scrape, return existing categories from DB
         if not force_rescrape:
@@ -450,19 +455,26 @@ async def get_scraping_status(
                                 file_status = json.load(f)
                                 status_data.update(file_status)
                                 
-                                # Auto-fix logic
-                                status_age = time.time() - file_status.get("updated_at", 0)
-                                is_recent_pending = file_status.get("status") == "pending" and status_age < 60
-                                status_message = file_status.get("message", "").lower()
-                                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                                
-                                if categories_exist and index_exists and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                                    categories_data = db_config.get("categories")
-                                    status_data["status"] = "completed"
-                                    status_data["message"] = "Knowledge base built successfully!"
-                                    status_data["progress"] = 100
-                                    status_data["categories"] = categories_data.get("categories", [])
-                                    status_data["total_pages"] = categories_data.get("total_pages", 0)
+                                # Stale: status says "completed" but KB files were deleted
+                                if file_status.get("status") == "completed" and not index_exists:
+                                    status_data["status"] = "not_started"
+                                    status_data["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
+                                    status_data["progress"] = 0
+                                    for key in ["categories", "total_pages"]:
+                                        status_data.pop(key, None)
+                                # Auto-fix: stuck status when index exists
+                                elif index_exists:
+                                    status_age = time.time() - file_status.get("updated_at", 0)
+                                    is_recent_pending = file_status.get("status") == "pending" and status_age < 60
+                                    status_message = file_status.get("message", "").lower()
+                                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                                    if categories_exist and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                                        categories_data = db_config.get("categories")
+                                        status_data["status"] = "completed"
+                                        status_data["message"] = "Knowledge base built successfully!"
+                                        status_data["progress"] = 100
+                                        status_data["categories"] = categories_data.get("categories", [])
+                                        status_data["total_pages"] = categories_data.get("total_pages", 0)
                         except Exception as e:
                             print(f"[ERROR] Failed to read status file in SSE: {e}")
                     
@@ -526,47 +538,59 @@ async def get_scraping_status(
                 status_data = json.load(f)
                 response.update(status_data)
                 
+                # If status says "completed" but KB files were deleted, treat as stale (don't show Complete!)
+                if status_data.get("status") == "completed" and not index_exists:
+                    response["status"] = "not_started"
+                    response["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
+                    response["progress"] = 0
+                    if "categories" in response:
+                        del response["categories"]
+                    if "total_pages" in response:
+                        del response["total_pages"]
+                    try:
+                        os.remove(status_file)
+                        print(f"[INFO] Removed stale status file (KB files missing): {business_id}")
+                    except Exception:
+                        pass
                 # Auto-fix: If categories exist but status is stuck, update to completed
                 # BUT: Don't auto-fix if status was recently set to "pending" (within last 60 seconds)
                 # This prevents auto-completing a fresh re-scrape
-                status_age = time.time() - status_data.get("updated_at", 0)
-                is_recent_pending = status_data.get("status") == "pending" and status_age < 60
-                
-                # Check if message indicates a fresh start
-                status_message = status_data.get("message", "").lower()
-                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                
-                # Only auto-fix if:
-                # - Categories and index exist
-                # - Status is not recently set to pending (>= 60 seconds old)
-                # - Message doesn't indicate a fresh start
-                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                    print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
-                    try:
-                        # Load categories from database
-                        categories_data = db_config.get("categories")
-                        
-                        # Update status to completed
-                        status_data["status"] = "completed"
-                        status_data["message"] = "Knowledge base built successfully!"
-                        status_data["progress"] = 100
-                        status_data["updated_at"] = time.time()
-                        status_data["categories"] = categories_data.get("categories", [])
-                        status_data["total_pages"] = categories_data.get("total_pages", 0)
-                        
-                        # Write updated status
-                        with open(status_file, "w", encoding="utf-8") as f:
-                            json.dump(status_data, f, indent=2)
-                        
-                        response.update(status_data)
-                        print(f"[SUCCESS] Auto-fixed status for {business_id}")
-                    except Exception as e:
-                        print(f"[WARN] Failed to auto-fix status: {e}")
+                elif index_exists:
+                    status_age = time.time() - status_data.get("updated_at", 0)
+                    is_recent_pending = status_data.get("status") == "pending" and status_age < 60
+                    status_message = status_data.get("message", "").lower()
+                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                    # Only auto-fix if:
+                    # - Categories and index exist
+                    # - Status is not recently set to pending (>= 60 seconds old)
+                    # - Message doesn't indicate a fresh start
+                    if categories_exist and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                        print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
+                        try:
+                            # Load categories from database
+                            categories_data = db_config.get("categories")
+                            
+                            # Update status to completed
+                            status_data["status"] = "completed"
+                            status_data["message"] = "Knowledge base built successfully!"
+                            status_data["progress"] = 100
+                            status_data["updated_at"] = time.time()
+                            status_data["categories"] = categories_data.get("categories", [])
+                            status_data["total_pages"] = categories_data.get("total_pages", 0)
+                            
+                            # Write updated status
+                            with open(status_file, "w", encoding="utf-8") as f:
+                                json.dump(status_data, f, indent=2)
+                            
+                            response.update(status_data)
+                            print(f"[SUCCESS] Auto-fixed status for {business_id}")
+                        except Exception as e:
+                            print(f"[WARN] Failed to auto-fix status: {e}")
         except Exception as e:
             print(f"[ERROR] Failed to read status file: {e}")
     
-    # Add categories if available from database
-    if categories_exist:
+    # Add categories if available from database (only when KB exists, so we don't show stale "1 page" after user deleted files)
+    if categories_exist and index_exists:
         try:
             categories_data = db_config.get("categories")
             enabled_categories = db_config.get("enabled_categories", [])
