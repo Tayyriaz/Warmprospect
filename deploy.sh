@@ -620,16 +620,16 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo "🔄 REDEPLOYMENT / UPDATE"
     echo "=============================="
     
-    if [ ! -d "$PROJECT_PATH" ]; then
-        echo "❌ Project directory not found: $PROJECT_PATH"
-        exit 1
-    fi
-    
-    cd "$PROJECT_PATH"
-    echo "📂 Working directory: $(pwd)"
-    
-    echo ""
-    echo "📥 Step 1: Pulling latest changes from git..."
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "❌ Project directory not found: $PROJECT_PATH"
+    exit 1
+fi
+
+cd "$PROJECT_PATH"
+echo "📂 Working directory: $(pwd)"
+
+echo ""
+echo "📥 Step 1: Pulling latest changes from git..."
     if [ -d ".git" ]; then
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
         
@@ -654,8 +654,8 @@ if [ "$FRESH_DEPLOY" = false ]; then
             if git pull origin "$CURRENT_BRANCH" 2>/dev/null || \
                git pull origin main 2>/dev/null || \
                git pull origin master 2>/dev/null; then
-                echo "✅ Git pull successful"
-            else
+    echo "✅ Git pull successful"
+else
                 echo "⚠️  Git pull had issues, but continuing with existing code..."
                 echo "   You may want to manually run: git pull origin $CURRENT_BRANCH"
             fi
@@ -664,8 +664,8 @@ if [ "$FRESH_DEPLOY" = false ]; then
         echo "⚠️  Not a git repository, skipping git pull"
     fi
     
-    echo ""
-    echo "🐍 Step 2: Setting up Python environment..."
+echo ""
+echo "🐍 Step 2: Setting up Python environment..."
     if [ ! -d "venv" ] && [ ! -d ".venv" ]; then
         echo "  Creating virtual environment..."
         python3 -m venv venv
@@ -676,27 +676,27 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo "  Upgrading pip..."
     pip install --upgrade pip setuptools wheel -q
     
-    echo ""
-    echo "🧹 Step 3: Cleaning up deprecated files..."
-    if [ -f "business_configs.json" ]; then
-        rm -f business_configs.json
+echo ""
+echo "🧹 Step 3: Cleaning up deprecated files..."
+if [ -f "business_configs.json" ]; then
+    rm -f business_configs.json
         echo "✅ Removed deprecated business_configs.json"
-    fi
-    
-    echo ""
-    echo "📁 Step 4: Ensuring data directory is writable..."
+fi
+
+echo ""
+echo "📁 Step 4: Ensuring data directory is writable..."
     mkdir -p data
     if [ "$NEED_ROOT" = false ]; then
-        chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
-        chmod -R 755 data/ 2>/dev/null || true
-        echo "✅ Data directory permissions set"
-    else
-        echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
-    fi
-    
-    echo ""
+    chown -R $SERVICE_USER:$SERVICE_USER data/ 2>/dev/null || true
+    chmod -R 755 data/ 2>/dev/null || true
+    echo "✅ Data directory permissions set"
+else
+    echo "⚠️  Run 'sudo chown -R $SERVICE_USER:$SERVICE_USER data/' to fix permissions"
+fi
+
+echo ""
     echo "📦 Step 5: Installing/updating dependencies..."
-    if [ -f "requirements.txt" ]; then
+if [ -f "requirements.txt" ]; then
         echo "  Installing from requirements.txt..."
         pip install --upgrade -r requirements.txt || {
             echo "⚠️  Some packages failed to install. Continuing..."
@@ -710,10 +710,10 @@ if [ "$FRESH_DEPLOY" = false ]; then
             (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
             grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
         fi
-    else
-        echo "⚠️  requirements.txt not found"
-    fi
-    
+else
+    echo "⚠️  requirements.txt not found"
+fi
+
     echo ""
     echo "🗄️  Step 6: Running database migrations..."
     if [ -f "scripts/db/migrate_db.py" ]; then
@@ -749,17 +749,17 @@ if [ "$FRESH_DEPLOY" = false ]; then
         fi
     fi
     
-    echo ""
+echo ""
     echo "🔍 Step 7.5: Checking for port conflicts..."
     ENV_PORT=$(get_env_port)
     clear_port "$ENV_PORT" || true
-    
+
     echo ""
     echo "🔄 Step 8: Restarting service..."
-    if [ "$NEED_ROOT" = true ]; then
-        echo "⚠️  Root access required to restart service."
-        echo "   Please run manually: sudo systemctl restart $SERVICE_NAME"
-    else
+if [ "$NEED_ROOT" = true ]; then
+    echo "⚠️  Root access required to restart service."
+    echo "   Please run manually: sudo systemctl restart $SERVICE_NAME"
+else
         start_service || exit 1
     fi
     
