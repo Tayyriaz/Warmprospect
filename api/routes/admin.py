@@ -177,11 +177,10 @@ def trigger_kb_build(business_id: str, website_url: str):
             error_snippet = raw[-500:] if len(raw) > 500 else raw
             if not error_snippet:
                 error_snippet = f"Exit code {result.returncode}"
-            # Clear message when Playwright browsers are missing
+            # Clear message when Playwright browsers are missing (deploy script installs; user may need to re-deploy or set PLAYWRIGHT_BROWSERS_PATH)
             if "Playwright was just installed" in raw or "playwright install" in raw:
                 error_snippet = (
-                    "Playwright browsers not installed. On the server run: "
-                    "python -m playwright install chromium   then restart the app and trigger Re-scrape."
+                    "Playwright browsers not installed. Re-run deploy script or set PLAYWRIGHT_BROWSERS_PATH in .env and install Chromium; then restart the app and trigger Re-scrape."
                 )
             error_msg = f"Scraping failed: {error_snippet}"
             print(f"[ERROR] KB build failed for business: {business_id}")

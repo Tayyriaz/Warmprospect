@@ -56,6 +56,23 @@ get_env_port() {
     fi
 }
 
+# Install Playwright Chromium to project-local path (single place for all installs).
+# Also runs install-deps so system libs (e.g. libatk-1.0) are present for headless Chromium.
+install_playwright_browsers() {
+    if pip show playwright &>/dev/null; then
+        echo "  Installing Playwright system dependencies (libatk, libgbm, etc.)..."
+        (python -m playwright install-deps chromium 2>/dev/null || python3 -m playwright install-deps chromium 2>/dev/null) || {
+            echo "  ⚠️  If Chromium fails with 'libatk-1.0.so.0: cannot open shared object', run: sudo $(command -v python || command -v python3) -m playwright install-deps chromium"
+        }
+        echo "  Installing Playwright Chromium browser (project-local)..."
+        PLAYWRIGHT_DIR="$(pwd)/.playwright-browsers"
+        mkdir -p "$PLAYWRIGHT_DIR"
+        export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_DIR"
+        (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
+        grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
+    fi
+}
+
 # Activate virtual environment
 activate_venv() {
     if [ -d "venv" ]; then
@@ -451,14 +468,7 @@ if [ "$FRESH_DEPLOY" = true ]; then
     if [ -f "requirements.txt" ]; then
         pip install -r requirements.txt
         echo "✅ requirements.txt installed"
-        if pip show playwright &>/dev/null; then
-            echo "  Installing Playwright Chromium browser (project-local)..."
-            PLAYWRIGHT_DIR="$(pwd)/.playwright-browsers"
-            mkdir -p "$PLAYWRIGHT_DIR"
-            export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_DIR"
-            (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
-            grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
-        fi
+        install_playwright_browsers
     else
         echo "⚠️  requirements.txt not found"
     fi
@@ -702,14 +712,7 @@ if [ -f "requirements.txt" ]; then
             echo "⚠️  Some packages failed to install. Continuing..."
         }
         echo "✅ requirements.txt installed/updated"
-        if pip show playwright &>/dev/null; then
-            echo "  Ensuring Playwright Chromium browser (project-local)..."
-            PLAYWRIGHT_DIR="$(pwd)/.playwright-browsers"
-            mkdir -p "$PLAYWRIGHT_DIR"
-            export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_DIR"
-            (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
-            grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
-        fi
+        install_playwright_browsers
 else
     echo "⚠️  requirements.txt not found"
 fi
