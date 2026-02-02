@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-from fastapi import Security, HTTPException, status, Request
+from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from dotenv import load_dotenv
 
@@ -50,7 +50,6 @@ async def get_api_key(api_key_header: Optional[str] = Security(api_key_header)):
 
 
 async def get_api_key_header_or_query(
-    request: Request,
     api_key_header: Optional[str] = Security(api_key_header),
     api_key_query_param: Optional[str] = Security(api_key_query),
 ):
