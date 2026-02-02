@@ -86,11 +86,16 @@ def is_allowed(url: str, base_domain: str) -> bool:
 def fetch(url: str) -> str:
     """Fetch HTML from URL."""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
     }
-    resp = requests.get(url, timeout=(3, 10), headers=headers, allow_redirects=True)
+    # SSL verification setting from config.yaml only
+    verify_ssl = _scraping_config.get("verify_ssl", True)
+    resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
     resp.raise_for_status()
     return resp.text
 
@@ -178,6 +183,7 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
     q: queue.Queue = queue.Queue()
     started = time.time()
     last_status_update = started
+    fetch_errors = []
     
     for s in seed_urls:
         q.put((s, 0))
@@ -193,7 +199,10 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         
         if business_id and (time.time() - last_status_update) > 10:
             progress = min(20 + int((len(pages) / MAX_PAGES) * 20), 40)
-            update_status(business_id, "scraping", f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}", progress)
+            error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
+            if fetch_errors:
+                error_msg += f". Errors: {len(fetch_errors)}"
+            update_status(business_id, "scraping", error_msg, progress)
             last_status_update = time.time()
         
         url, depth = q.get()
@@ -201,13 +210,21 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             continue
         seen.add(url)
         
+        html = None
         try:
             html = fetch(url)
             page = extract(url, html)
-            if page.text:
+            if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
                 pages.append(page)
+                print(f"  ✓ Fetched: {url} ({len(page.text)} chars)")
+            else:
+                print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
             time.sleep(0.1)
-        except Exception:
+        except Exception as e:
+            error_msg = f"{url}: {str(e)[:100]}"
+            fetch_errors.append(error_msg)
+            if len(fetch_errors) <= 5:  # Only log first 5 errors
+                print(f"  ✗ Error fetching {url}: {e}")
             continue
 
         if html and q.qsize() < MAX_QUEUE_SIZE:
@@ -225,7 +242,15 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
                 pass
     
     if business_id:
-        update_status(business_id, "scraping", f"Finished scraping. Fetched {len(pages)} pages.", 40)
+        status_msg = f"Finished scraping. Fetched {len(pages)} pages."
+        if fetch_errors and len(pages) == 0:
+            status_msg += f" Errors encountered: {fetch_errors[0] if fetch_errors else 'Unknown error'}"
+        update_status(business_id, "scraping", status_msg, 40)
+    
+    if len(pages) == 0 and fetch_errors:
+        print(f"\n[ERROR] Failed to fetch any pages. Sample errors:")
+        for err in fetch_errors[:5]:
+            print(f"  - {err}")
     
     return pages
 

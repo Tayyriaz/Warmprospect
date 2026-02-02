@@ -17,6 +17,10 @@ scraping:
   
   # Maximum queue size to prevent memory issues
   max_queue_size: 1000
+  
+  # SSL verification for website scraping
+  # Set to false to disable SSL verification (useful for sites with self-signed certs)
+  verify_ssl: false
 
 rag:
   # Size of text chunks for RAG indexing
