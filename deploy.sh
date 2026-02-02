@@ -505,8 +505,15 @@ EOF
     mkdir -p data static
     echo "✅ Directories created"
     
-    read -p "Enter user to run service as (default: $SERVICE_USER): " INPUT_USER
-    SERVICE_USER=${INPUT_USER:-$SERVICE_USER}
+    # Default SERVICE_USER to owner of PROJECT_PATH (if directory exists)
+    if [ -d "$PROJECT_PATH" ]; then
+        DEFAULT_USER=$(stat -c '%U' "$PROJECT_PATH" 2>/dev/null || echo "$SERVICE_USER")
+    else
+        DEFAULT_USER="$SERVICE_USER"
+    fi
+    
+    read -p "Enter user to run service as (default: $DEFAULT_USER): " INPUT_USER
+    SERVICE_USER=${INPUT_USER:-$DEFAULT_USER}
     
     if ! id "$SERVICE_USER" &>/dev/null; then
         echo "  Creating service user: $SERVICE_USER"
