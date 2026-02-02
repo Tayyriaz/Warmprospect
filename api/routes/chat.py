@@ -355,10 +355,10 @@ async def _handle_chat_request(request: Request):
                     if children_ctas:
                         cta_payload = {"cta": children_ctas}
             
-            # If no explicit CTA or no children, return entry point CTAs
+            # If no explicit CTA or no children, return entry point CTAs only when response suggests options (not every message)
             if not cta_payload:
                 entry_ctas = get_entry_point_ctas(business_id, user_input)
-                if entry_ctas and (should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
+                if entry_ctas and should_attach_ctas(final_response_text):
                     cta_payload = {"cta": entry_ctas}
     
     # 10. Save session state (after updating CTA context)

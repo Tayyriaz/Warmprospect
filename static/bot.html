@@ -269,6 +269,7 @@
     let CHATBOT_CONFIG = {
       businessId: businessId,
       businessName: null,
+      footerBrand: null,
       businessPrimaryGoal: "Generate more leads.",
       personalityPrompt: "Gentle, collaborative and to the point.",
       greetingMessage: "Hi - How can we help you today?",
@@ -303,9 +304,12 @@
         // Update subtitle
         const subtitleEl = document.getElementById('businessSubtitle');
         if (subtitleEl) subtitleEl.textContent = "Ask about services, pricing or booking – 24/7";
-        // Update footer
+        // Update footer (from .env CHATBOT_FOOTER_BRAND if set, else business name)
         const footerEl = document.getElementById('businessFooter');
-        if (footerEl) footerEl.textContent = `Powered by ${businessName} • AI assistant`;
+        if (footerEl) {
+          const brand = (CHATBOT_CONFIG.footerBrand && CHATBOT_CONFIG.footerBrand.trim()) ? CHATBOT_CONFIG.footerBrand.trim() : businessName;
+          footerEl.textContent = brand ? `Powered by ${brand} • AI assistant` : "Powered by Chatbot Platform • AI assistant";
+        }
         // Update page title
         document.title = `${businessName} - Chat Assistant`;
       }
@@ -346,6 +350,7 @@
         CHATBOT_CONFIG = {
           businessId: config.businessId || businessId,
           businessName: config.businessName || CHATBOT_CONFIG.businessName,
+          footerBrand: config.footerBrand != null ? config.footerBrand : CHATBOT_CONFIG.footerBrand,
           businessPrimaryGoal: config.businessPrimaryGoal || CHATBOT_CONFIG.businessPrimaryGoal,
           personalityPrompt: config.personalityPrompt || CHATBOT_CONFIG.personalityPrompt,
           greetingMessage: config.greetingMessage || CHATBOT_CONFIG.greetingMessage,

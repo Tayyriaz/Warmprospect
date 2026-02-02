@@ -11,7 +11,7 @@ import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
-from core.security import get_api_key
+from core.security import get_api_key, get_api_key_header_or_query
 from core.config.business_config import config_manager
 from core.utils.helpers import convert_config_to_camel
 
@@ -424,7 +424,7 @@ async def get_scraping_status(
     business_id: str, 
     request: Request,
     stream: bool = False,
-    api_key: str = Depends(get_api_key)
+    api_key: str = Depends(get_api_key_header_or_query)
 ):
     """
     Get current scraping status for a business, including categories if available.
