@@ -2,6 +2,7 @@
 Knowledge Base Builder: Core logic for scraping websites and building RAG indexes.
 """
 
+import gzip
 import hashlib
 import json
 import os
@@ -83,8 +84,16 @@ def is_allowed(url: str, base_domain: str) -> bool:
     return parsed.hostname == base_domain or parsed.hostname.endswith("." + base_domain)
 
 
+def _looks_like_binary(s: str) -> bool:
+    """True if string looks like binary data decoded as text (e.g. gzip as UTF-8)."""
+    if "\x00" in s:
+        return True
+    control = sum(1 for c in s if ord(c) < 32 and c not in "\n\r\t")
+    return control > max(3, len(s) // 100)
+
+
 def fetch(url: str) -> str:
-    """Fetch HTML from URL."""
+    """Fetch HTML from URL. Ensures response is decoded text, not binary-as-text."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -97,7 +106,21 @@ def fetch(url: str) -> str:
     verify_ssl = _scraping_config.get("verify_ssl", True)
     resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
     resp.raise_for_status()
-    return resp.text
+    raw = resp.content
+    text = resp.text
+    # If we got gibberish (binary decoded as UTF-8), try decompressing and decoding
+    if _looks_like_binary(text):
+        try:
+            raw = gzip.decompress(raw)
+            text = raw.decode("utf-8", errors="replace")
+        except Exception:
+            pass
+    if _looks_like_binary(text) or "<" not in text or ">" not in text:
+        raise ValueError(
+            f"Response from {url} does not look like HTML (possibly binary or wrong encoding). "
+            "Refusing to store to avoid gibberish in knowledge base."
+        )
+    return text
 
 
 def extract(url: str, html: str) -> Page:
@@ -253,6 +276,11 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             print(f"  - {err}")
     
     return pages
+
+
+def _sanitize_text_for_meta(s: str) -> str:
+    """Remove control characters that cause gibberish in JSON/text storage."""
+    return "".join(c for c in s if ord(c) >= 32 or c in "\n\r\t")
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
@@ -465,10 +493,11 @@ def build_kb_for_business(business_id: str, website_url: str):
             continue
         vectors = embed_chunks(client, chunks)
         for i, ch in enumerate(chunks):
+            clean_chunk = _sanitize_text_for_meta(ch).strip() or " "
             meta_records.append({
                 "url": page.url,
-                "title": page.title,
-                "text": ch,
+                "title": _sanitize_text_for_meta(page.title),
+                "text": clean_chunk,
                 "checksum": page.checksum,
                 "fetched_at": page.fetched_at,
                 "chunk_id": f"{page.url}#chunk-{i}",

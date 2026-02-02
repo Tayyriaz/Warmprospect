@@ -41,13 +41,12 @@ async def health():
 
 @router.get("/rag/status")
 async def rag_status():
-    """Returns whether the default RAG index is loaded (legacy)."""
-    retriever = get_default_retriever()
+    """Returns RAG status (deprecated - use /rag/test/{business_id} for business-specific RAG)."""
     return {
-        "rag_loaded": retriever is not None,
-        "note": "Legacy default retriever. Use /rag/test/{business_id} for business-specific RAG.",
-        "index_path": "data/index.faiss" if retriever else None,
-        "meta_path": "data/meta.jsonl" if retriever else None,
+        "rag_loaded": False,
+        "note": "No default retriever. Use /rag/test/{business_id} for business-specific RAG.",
+        "index_path": None,
+        "meta_path": None,
     }
 
 
