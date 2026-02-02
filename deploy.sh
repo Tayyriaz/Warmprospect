@@ -556,7 +556,7 @@ WorkingDirectory=$PROJECT_PATH
 Environment="PATH=$PYTHON_PATH"
 EnvironmentFile=$PROJECT_PATH/.env
 # Port is baked in at deploy time (run deploy again if you change BACKEND_PORT in .env)
-ExecStart=$UVICORN_PATH main:app --host 127.0.0.1 --port $BACKEND_PORT
+ExecStart=$UVICORN_PATH main:app --host 0.0.0.0 --port $BACKEND_PORT
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -738,8 +738,8 @@ if [ "$FRESH_DEPLOY" = false ]; then
             # Replace entire ExecStart line so no $VAR in .env can concatenate (systemd expands EnvFile into ExecStart)
             UVICORN_PATH="$PROJECT_PATH/venv/bin/uvicorn"
             [ ! -x "$UVICORN_PATH" ] && UVICORN_PATH="uvicorn"
-            sed -i "s|^ExecStart=.*|ExecStart=$UVICORN_PATH main:app --host 127.0.0.1 --port $ENV_PORT|" "$SERVICE_FILE" || {
-                echo "⚠️  Could not update service file. Update ExecStart manually to: --port $ENV_PORT"
+            sed -i "s|^ExecStart=.*|ExecStart=$UVICORN_PATH main:app --host 0.0.0.0 --port $ENV_PORT|" "$SERVICE_FILE" || {
+                echo "⚠️  Could not update service file. Update ExecStart manually to: --host 0.0.0.0 --port $ENV_PORT"
             }
             systemctl daemon-reload
             echo "✅ Service configuration updated"
