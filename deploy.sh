@@ -493,7 +493,9 @@ EOF
     read -p "Run database migration? (y/n, default: y): " RUN_MIGRATION
     RUN_MIGRATION=${RUN_MIGRATION:-y}
     if [ "$RUN_MIGRATION" = "y" ] || [ "$RUN_MIGRATION" = "Y" ]; then
-        python scripts/db/migrate_db.py || {
+        MIGRATE_PYTHON="${VENV_PATH}/bin/python"
+        [ -z "$VENV_PATH" ] && MIGRATE_PYTHON="python3"
+        "$MIGRATE_PYTHON" scripts/db/migrate_db.py || {
             echo "⚠️  Database migration failed. Check your DATABASE_URL in .env"
         }
     fi
@@ -569,7 +571,7 @@ EOF
     
     echo ""
     echo "🔍 Checking for port conflicts before starting service..."
-    clear_port "$PORT" || true
+    clear_port "$BACKEND_PORT" || true
     
     start_service || {
         echo "⚠️  Service start failed. Check logs and configuration."
@@ -705,7 +707,7 @@ if [ "$FRESH_DEPLOY" = false ]; then
     echo ""
     echo "🗄️  Step 6: Running database migrations..."
     if [ -f "scripts/db/migrate_db.py" ]; then
-        python scripts/db/migrate_db.py || {
+        (command -v python3 &>/dev/null && python3 scripts/db/migrate_db.py || python scripts/db/migrate_db.py) || {
             echo "⚠️  Database migration had issues. Check your DATABASE_URL"
         }
         echo "✅ Database migrations complete"
