@@ -207,34 +207,62 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
                 detail="businessId (or business_id) is required. Please include either 'businessId' or 'business_id' in your request."
             )
         
+        # Check if business exists for partial update
+        existing_business = config_manager.get_business(business_id)
+        
         # Accept both camelCase and snake_case for all fields
         website_url = data.get("websiteUrl") or data.get("website_url")
         
-        config = config_manager.create_or_update_business(
-            business_id=business_id,
-            business_name=data.get("businessName") or data.get("business_name") or business_id,
-            system_prompt=data.get("systemPrompt") or data.get("system_prompt") or "",
-            greeting_message=data.get("greetingMessage") or data.get("greeting_message"),
-            # appointment_link removed - use CTA tree with redirect action instead
-            primary_goal=data.get("primaryGoal") or data.get("primary_goal"),
-            personality=data.get("personality"),
-            privacy_statement=data.get("privacyStatement") or data.get("privacy_statement"),
-            theme_color=data.get("themeColor") or data.get("theme_color") or "#2563eb",
-            widget_position=data.get("widgetPosition") or data.get("widget_position") or "center",
-            website_url=website_url,
-            contact_email=data.get("contactEmail") or data.get("contact_email"),
-            contact_phone=data.get("contactPhone") or data.get("contact_phone"),
-            cta_tree=data.get("ctaTree") or data.get("cta_tree"),
-            rules=data.get("rules"),
-            custom_routes=data.get("customRoutes") or data.get("custom_routes"),
-            available_services=data.get("availableServices") or data.get("available_services"),
-            topic_ctas=data.get("topicCtas") or data.get("topic_ctas"),
-            experiments=data.get("experiments"),
-            voice_enabled=data.get("voiceEnabled") if "voiceEnabled" in data else (data.get("voice_enabled") if "voice_enabled" in data else False),
-            chatbot_button_text=data.get("chatbotButtonText") or data.get("chatbot_button_text"),
-            business_logo=data.get("businessLogo") or data.get("business_logo"),
-            enabled_categories=data.get("enabledCategories") or data.get("enabled_categories"),
-        )
+        # Build update dict - only include fields that are explicitly provided in the request
+        # This prevents overwriting existing values with None when field is not in update request
+        update_data = {
+            "business_id": business_id,
+        }
+        
+        # Required fields for new businesses, optional for updates
+        if not existing_business:
+            # For new business, require business_name and system_prompt
+            update_data["business_name"] = data.get("businessName") or data.get("business_name") or business_id
+            update_data["system_prompt"] = data.get("systemPrompt") or data.get("system_prompt") or ""
+        else:
+            # For existing business, only update if explicitly provided
+            if "businessName" in data or "business_name" in data:
+                update_data["business_name"] = data.get("businessName") or data.get("business_name")
+            if "systemPrompt" in data or "system_prompt" in data:
+                update_data["system_prompt"] = data.get("systemPrompt") or data.get("system_prompt")
+        
+        # Optional fields - only include if explicitly provided in request
+        if "greetingMessage" in data or "greeting_message" in data:
+            update_data["greeting_message"] = data.get("greetingMessage") or data.get("greeting_message")
+        if "primaryGoal" in data or "primary_goal" in data:
+            update_data["primary_goal"] = data.get("primaryGoal") or data.get("primary_goal")
+        if "personality" in data:
+            update_data["personality"] = data.get("personality")
+        if "privacyStatement" in data or "privacy_statement" in data:
+            update_data["privacy_statement"] = data.get("privacyStatement") or data.get("privacy_statement")
+        if "themeColor" in data or "theme_color" in data:
+            update_data["theme_color"] = data.get("themeColor") or data.get("theme_color")
+        if "widgetPosition" in data or "widget_position" in data:
+            update_data["widget_position"] = data.get("widgetPosition") or data.get("widget_position")
+        if "websiteUrl" in data or "website_url" in data:
+            update_data["website_url"] = website_url
+        if "contactEmail" in data or "contact_email" in data:
+            update_data["contact_email"] = data.get("contactEmail") or data.get("contact_email")
+        if "contactPhone" in data or "contact_phone" in data:
+            update_data["contact_phone"] = data.get("contactPhone") or data.get("contact_phone")
+        if "ctaTree" in data or "cta_tree" in data:
+            update_data["cta_tree"] = data.get("ctaTree") or data.get("cta_tree")
+        if "voiceEnabled" in data or "voice_enabled" in data:
+            update_data["voice_enabled"] = data.get("voiceEnabled") if "voiceEnabled" in data else data.get("voice_enabled")
+        if "chatbotButtonText" in data or "chatbot_button_text" in data:
+            update_data["chatbot_button_text"] = data.get("chatbotButtonText") or data.get("chatbot_button_text")
+        if "businessLogo" in data or "business_logo" in data:
+            update_data["business_logo"] = data.get("businessLogo") or data.get("business_logo")
+        if "enabledCategories" in data or "enabled_categories" in data:
+            update_data["enabled_categories"] = data.get("enabledCategories") or data.get("enabled_categories")
+        
+        # Call with only provided fields - this ensures partial updates don't overwrite with None
+        config = config_manager.create_or_update_business(**update_data)
         
         return {
             "success": True, 

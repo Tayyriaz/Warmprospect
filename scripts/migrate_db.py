@@ -110,6 +110,19 @@ def migrate():
         else:
             print("✓ categories already exists.")
 
+        # Check for cta_tree
+        result = conn.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='business_configs' AND column_name='cta_tree';
+        """))
+        if not result.fetchone():
+            print("Adding cta_tree column...")
+            conn.execute(text("ALTER TABLE business_configs ADD COLUMN cta_tree TEXT"))
+            print("✅ cta_tree added.")
+        else:
+            print("✓ cta_tree already exists.")
+
         print("✅ Migration complete.")
 
 if __name__ == "__main__":

@@ -142,15 +142,15 @@ class BusinessConfigDB:
     def create_or_update_business(
         self,
         business_id: str,
-        business_name: str,
-        system_prompt: str,
+        business_name: str = None,
+        system_prompt: str = None,
         greeting_message: str = None,
         # appointment_link removed - use CTA tree instead
         primary_goal: str = None,
         personality: str = None,
         privacy_statement: str = None,
-        theme_color: str = "#2563eb",
-        widget_position: str = "center",
+        theme_color: str = None,
+        widget_position: str = None,
         website_url: str = None,
         contact_email: str = None,
         contact_phone: str = None,
@@ -160,7 +160,7 @@ class BusinessConfigDB:
         available_services = None,
         topic_ctas = None,
         experiments = None,
-        voice_enabled = False,
+        voice_enabled = None,
         chatbot_button_text: str = None,
         business_logo: str = None,
         enabled_categories: List[str] = None,
@@ -196,23 +196,40 @@ class BusinessConfigDB:
             ).first()
             
             if existing:
-                # Update existing - only update columns that exist in the model
-                existing.business_name = business_name
-                existing.system_prompt = system_prompt
-                existing.greeting_message = greeting_message
+                # Update existing - only update fields that are explicitly provided (not None)
+                # This prevents overwriting existing values with None when field is not in update request
+                if business_name is not None:
+                    existing.business_name = business_name
+                if system_prompt is not None:
+                    existing.system_prompt = system_prompt
+                if greeting_message is not None:
+                    existing.greeting_message = greeting_message
                 # appointment_link removed - use CTA tree instead
-                existing.primary_goal = primary_goal
-                existing.personality = personality
-                existing.privacy_statement = privacy_statement
-                existing.theme_color = theme_color
-                existing.widget_position = widget_position
-                existing.website_url = website_url
-                existing.contact_email = contact_email
-                existing.contact_phone = contact_phone
-                existing.cta_tree = _serialize_json(cta_tree)
-                existing.voice_enabled = voice_enabled
-                existing.chatbot_button_text = chatbot_button_text
-                existing.business_logo = business_logo
+                if primary_goal is not None:
+                    existing.primary_goal = primary_goal
+                if personality is not None:
+                    existing.personality = personality
+                if privacy_statement is not None:
+                    existing.privacy_statement = privacy_statement
+                if theme_color is not None:
+                    existing.theme_color = theme_color
+                if widget_position is not None:
+                    existing.widget_position = widget_position
+                if website_url is not None:
+                    existing.website_url = website_url
+                if contact_email is not None:
+                    existing.contact_email = contact_email
+                if contact_phone is not None:
+                    existing.contact_phone = contact_phone
+                if cta_tree is not None:
+                    existing.cta_tree = _serialize_json(cta_tree)
+                # voice_enabled: only update if explicitly provided (not None)
+                if voice_enabled is not None:
+                    existing.voice_enabled = voice_enabled
+                if chatbot_button_text is not None:
+                    existing.chatbot_button_text = chatbot_button_text
+                if business_logo is not None:
+                    existing.business_logo = business_logo
                 if enabled_categories is not None and hasattr(existing, 'enabled_categories'):
                     existing.enabled_categories = _serialize_json(enabled_categories)
                 if categories is not None and hasattr(existing, 'categories'):
@@ -224,6 +241,12 @@ class BusinessConfigDB:
                 db.refresh(existing)
                 return existing.to_dict()
             else:
+                # Create new - require business_name and system_prompt for new businesses
+                if business_name is None:
+                    raise ValueError("business_name is required for new businesses")
+                if system_prompt is None:
+                    raise ValueError("system_prompt is required for new businesses")
+                
                 # Create new - only pass columns that exist in the model
                 new_business = BusinessConfig(
                     business_id=business_id,
@@ -234,13 +257,13 @@ class BusinessConfigDB:
                     primary_goal=primary_goal,
                     personality=personality,
                     privacy_statement=privacy_statement,
-                    theme_color=theme_color,
-                    widget_position=widget_position,
+                    theme_color=theme_color or "#2563eb",
+                    widget_position=widget_position or "center",
                     website_url=website_url,
                     contact_email=contact_email,
                     contact_phone=contact_phone,
                     cta_tree=_serialize_json(cta_tree),
-                    voice_enabled=voice_enabled,
+                    voice_enabled=voice_enabled if voice_enabled is not None else False,
                     chatbot_button_text=chatbot_button_text,
                     business_logo=business_logo,
                     enabled_categories=_serialize_json(enabled_categories) if enabled_categories else None if hasattr(BusinessConfig, 'enabled_categories') else None,
