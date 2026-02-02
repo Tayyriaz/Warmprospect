@@ -18,6 +18,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 import requests
+import urllib3
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from google import genai
 import yaml
@@ -51,6 +52,9 @@ def _load_config() -> dict:
 _config = _load_config()
 _scraping_config = _config.get("scraping", {})
 _rag_config = _config.get("rag", {})
+# Suppress InsecureRequestWarning when verify_ssl is off, so stderr shows real errors
+if not _scraping_config.get("verify_ssl", True):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _models_config = _config.get("models", {})
 
 # Config values (read from config.yaml only, not from environment variables)

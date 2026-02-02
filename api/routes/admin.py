@@ -170,7 +170,14 @@ def trigger_kb_build(business_id: str, website_url: str):
             # Update status with categories included
             update_scraping_status(business_id, "completed", success_msg, 100, categories_data)
         else:
-            error_msg = f"Scraping failed: {result.stderr[:500] if result.stderr else result.stdout[:500]}"
+            # Prefer last part of stderr (actual exception); strip InsecureRequestWarning so we show real error
+            raw = (result.stderr or result.stdout or "").strip()
+            lines = [ln for ln in raw.splitlines() if "InsecureRequestWarning" not in ln and "warnings.warn" not in ln]
+            raw = "\n".join(lines).strip()
+            error_snippet = raw[-500:] if len(raw) > 500 else raw
+            if not error_snippet:
+                error_snippet = f"Exit code {result.returncode}"
+            error_msg = f"Scraping failed: {error_snippet}"
             print(f"[ERROR] KB build failed for business: {business_id}")
             print(f"[ERROR] Return code: {result.returncode}")
             print(f"[ERROR] Error output: {result.stderr}")
