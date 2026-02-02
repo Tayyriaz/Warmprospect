@@ -119,13 +119,17 @@ def _fetch_requests(url: str) -> str:
 
 def _fetch_playwright(browser, url: str) -> str:
     """Fetch HTML using a Playwright browser (real Chromium). Use when site blocks requests or needs JS."""
-    page = browser.new_page()
+    ignore_https = not _scraping_config.get("verify_ssl", True)
+    context = browser.new_context(ignore_https_errors=ignore_https)
     try:
-        ignore_https = not _scraping_config.get("verify_ssl", True)
-        page.goto(url, wait_until="domcontentloaded", timeout=30000, ignore_https_errors=ignore_https)
-        text = page.content()
+        page = context.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            text = page.content()
+        finally:
+            page.close()
     finally:
-        page.close()
+        context.close()
     if not text or "<" not in text or ">" not in text:
         raise ValueError(f"Response from {url} does not look like HTML.")
     return text
