@@ -691,7 +691,16 @@
         btn.type = "button";
         btn.textContent = icon ? `${icon} ${label}` : label;
         btn.addEventListener("click", () => {
-          handleCtaClick(option);
+          if (action === "show_children") {
+            // For CTAs with show_children, send message with cta_id
+            sendMessageWithCta(message, option.id);
+          } else if (action === "link" && option.url) {
+            // For link CTAs, open URL
+            window.open(option.url, '_blank');
+          } else {
+            // For send CTAs, just send the message
+            sendMessage(message);
+          }
         });
         row.appendChild(btn);
       });
@@ -722,7 +731,12 @@
       return parts.join("\n");
     }
 
-    async function sendMessage(messageOverride) {
+    async function sendMessageWithCta(message, ctaId) {
+      // Send message with explicit cta_id for backend to handle CTA navigation
+      await sendMessage(message, ctaId);
+    }
+
+    async function sendMessage(messageOverride, ctaIdOverride) {
       const message = (messageOverride ?? inputEl.value).trim();
       const userId = userIdEl.value.trim() || "default_user";
       if (!message) return;
@@ -744,16 +758,22 @@
 
       try {
         const chatUrl = getApiUrl('/chat');
+        const requestBody = {
+          message,
+          user_id: userId,
+          business_id: CHATBOT_CONFIG.businessId,
+          system_prompt: buildBusinessSystemPrompt(),
+        };
+        
+        // Add cta_id if provided (for CTA navigation)
+        if (ctaIdOverride) {
+          requestBody.cta_id = ctaIdOverride;
+        }
+        
         const res = await fetch(chatUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            user_id: userId,
-            business_id: CHATBOT_CONFIG.businessId,
-            system_prompt: buildBusinessSystemPrompt(),
-            // appointment_link removed - use CTA tree with redirect action instead
-          }),
+          body: JSON.stringify(requestBody),
         });
         
         // Check if response is OK
