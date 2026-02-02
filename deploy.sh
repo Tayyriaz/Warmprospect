@@ -373,8 +373,8 @@ if [ "$FRESH_DEPLOY" = true ]; then
         exit 1
     fi
     
-    read -p "Enter project path (default: $PROJECT_PATH): " INPUT_PATH
-    PROJECT_PATH=${INPUT_PATH:-$PROJECT_PATH}
+    read -p "Enter project path (default: $(pwd)): " INPUT_PATH
+    PROJECT_PATH=${INPUT_PATH:-$(pwd)}
     
     if [ ! -d "$PROJECT_PATH" ]; then
         echo "📁 Creating project directory: $PROJECT_PATH"
