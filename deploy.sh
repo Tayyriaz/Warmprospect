@@ -451,6 +451,10 @@ if [ "$FRESH_DEPLOY" = true ]; then
     if [ -f "requirements.txt" ]; then
         pip install -r requirements.txt
         echo "✅ requirements.txt installed"
+        if pip show playwright &>/dev/null; then
+            echo "  Installing Playwright Chromium browser..."
+            playwright install chromium 2>/dev/null || true
+        fi
     else
         echo "⚠️  requirements.txt not found"
     fi
@@ -699,6 +703,10 @@ if [ "$FRESH_DEPLOY" = false ]; then
             echo "⚠️  Some packages failed to install. Continuing..."
         }
         echo "✅ requirements.txt installed/updated"
+        if pip show playwright &>/dev/null; then
+            echo "  Ensuring Playwright Chromium browser..."
+            playwright install chromium 2>/dev/null || true
+        fi
     else
         echo "⚠️  requirements.txt not found"
     fi

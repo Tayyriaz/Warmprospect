@@ -11,7 +11,7 @@ import re
 import time
 import warnings
 from dataclasses import dataclass
-from typing import List, Dict, Set, Iterable, Optional
+from typing import List, Dict, Set, Iterable, Optional, Tuple
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -88,16 +88,8 @@ def is_allowed(url: str, base_domain: str) -> bool:
     return parsed.hostname == base_domain or parsed.hostname.endswith("." + base_domain)
 
 
-def _looks_like_binary(s: str) -> bool:
-    """True if string looks like binary data decoded as text (e.g. gzip as UTF-8)."""
-    if "\x00" in s:
-        return True
-    control = sum(1 for c in s if ord(c) < 32 and c not in "\n\r\t")
-    return control > max(3, len(s) // 100)
-
-
-def fetch(url: str) -> str:
-    """Fetch HTML from URL. Ensures response is decoded text, not binary-as-text."""
+def _fetch_requests(url: str) -> str:
+    """Fetch HTML using requests (default)."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -106,13 +98,11 @@ def fetch(url: str) -> str:
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
-    # SSL verification setting from config.yaml only
     verify_ssl = _scraping_config.get("verify_ssl", True)
     resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
     resp.raise_for_status()
     raw = resp.content
     text = resp.text
-    # If we got gibberish (binary decoded as UTF-8), try decompressing and decoding
     if _looks_like_binary(text):
         try:
             raw = gzip.decompress(raw)
@@ -125,6 +115,46 @@ def fetch(url: str) -> str:
             "Refusing to store to avoid gibberish in knowledge base."
         )
     return text
+
+
+def _fetch_playwright(browser, url: str) -> str:
+    """Fetch HTML using a Playwright browser (real Chromium). Use when site blocks requests or needs JS."""
+    page = browser.new_page()
+    try:
+        ignore_https = not _scraping_config.get("verify_ssl", True)
+        page.goto(url, wait_until="domcontentloaded", timeout=30000, ignore_https_errors=ignore_https)
+        text = page.content()
+    finally:
+        page.close()
+    if not text or "<" not in text or ">" not in text:
+        raise ValueError(f"Response from {url} does not look like HTML.")
+    return text
+
+
+def fetch(url: str, fetcher=None) -> str:
+    """Fetch HTML from URL. Uses fetcher if provided, else requests (or Playwright when configured)."""
+    if fetcher is not None:
+        return fetcher(url)
+    if _scraping_config.get("use_playwright", False):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return _fetch_requests(url)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                return _fetch_playwright(browser, url)
+            finally:
+                browser.close()
+    return _fetch_requests(url)
+
+
+def _looks_like_binary(s: str) -> bool:
+    """True if string looks like binary data decoded as text (e.g. gzip as UTF-8)."""
+    if "\x00" in s:
+        return True
+    control = sum(1 for c in s if ord(c) < 32 and c not in "\n\r\t")
+    return control > max(3, len(s) // 100)
 
 
 def extract(url: str, html: str) -> Page:
@@ -174,11 +204,11 @@ def extract(url: str, html: str) -> Page:
     return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time())
 
 
-def fetch_sitemap_urls(sitemap_url: str, base_domain: str) -> List[str]:
+def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None) -> List[str]:
     """Fetch URLs from sitemap.xml."""
     urls: List[str] = []
     try:
-        xml = fetch(sitemap_url)
+        xml = fetch(sitemap_url, fetcher)
     except Exception:
         return urls
     for loc in re.findall(r"<loc>(.*?)</loc>", xml):
@@ -204,8 +234,8 @@ def update_status(business_id: str, status: str, message: str = "", progress: in
         pass  # Don't fail scraping if status update fails
 
 
-def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id: Optional[str] = None) -> List[Page]:
-    """Crawl website starting from seed URLs."""
+def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id: Optional[str] = None, fetcher=None) -> Tuple[List[Page], List[str]]:
+    """Crawl website starting from seed URLs. Returns (pages, fetch_errors). Optional fetcher uses e.g. Playwright."""
     seen: Set[str] = set()
     q: queue.Queue = queue.Queue()
     started = time.time()
@@ -239,7 +269,7 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         
         html = None
         try:
-            html = fetch(url)
+            html = fetch(url, fetcher)
             page = extract(url, html)
             if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
                 pages.append(page)
@@ -279,7 +309,7 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         for err in fetch_errors[:5]:
             print(f"  - {err}")
     
-    return pages
+    return pages, fetch_errors
 
 
 def _sanitize_text_for_meta(s: str) -> str:
@@ -393,24 +423,43 @@ def build_kb_for_business(business_id: str, website_url: str):
     
     update_status(business_id, "scraping", "Finding website pages...", 10)
     sitemap_url = f"{root_url}/sitemap.xml"
-    seeds = fetch_sitemap_urls(sitemap_url, base_domain)
-    if not seeds:
-        seeds = [root_url]
-        print(f"No sitemap found, crawling from root: {root_url}")
+    use_playwright = _scraping_config.get("use_playwright", False)
+    pw_ctx = None
+    if use_playwright:
+        try:
+            from playwright.sync_api import sync_playwright
+            pw_ctx = sync_playwright()
+        except ImportError:
+            print(f"[WARN] use_playwright is true but playwright not installed. Using requests.")
+            use_playwright = False
+
+    def _do_crawl(fetcher):
+        seeds = fetch_sitemap_urls(sitemap_url, base_domain, fetcher)
+        if not seeds:
+            seeds = [root_url]
+            print(f"No sitemap found, crawling from root: {root_url}")
+        else:
+            print(f"Using sitemap URLs ({len(seeds)}) as seeds.")
+        print(f"Building KB for business: {business_id}")
+        print(f"Website: {website_url}")
+        print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
+        update_status(business_id, "scraping", "Scraping website content...", 20)
+        return crawl(seeds, base_domain, root_url, business_id, fetcher)
+
+    if use_playwright and pw_ctx is not None:
+        with pw_ctx as p:
+            browser = p.chromium.launch(headless=True)
+            fetcher = lambda url: _fetch_playwright(browser, url)
+            print(f"Using Playwright (browser) to scrape.")
+            pages, fetch_errors = _do_crawl(fetcher)
     else:
-        print(f"Using sitemap URLs ({len(seeds)}) as seeds.")
-    
-    print(f"Building KB for business: {business_id}")
-    print(f"Website: {website_url}")
-    print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
-    
-    update_status(business_id, "scraping", "Scraping website content...", 20)
-    pages = crawl(seeds, base_domain, root_url, business_id)
+        pages, fetch_errors = _do_crawl(None)
     print(f"\n[SUCCESS] Fetched {len(pages)} pages")
     
     if not pages:
-        update_status(business_id, "failed", "No pages fetched.", 0)
-        raise RuntimeError("No pages fetched.")
+        reason = fetch_errors[0] if fetch_errors else "No URLs could be fetched."
+        update_status(business_id, "failed", f"No pages fetched. {reason}", 0)
+        raise RuntimeError(f"No pages fetched. {reason}")
     
     total_text = sum(len(p.text) for p in pages)
     print(f"   Total text: {total_text:,} characters")

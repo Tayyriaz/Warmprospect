@@ -19,3 +19,4 @@ edge-tts
 pydub
 scipy
 pyyaml
+playwright
