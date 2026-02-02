@@ -452,16 +452,15 @@ if [ "$FRESH_DEPLOY" = true ]; then
         pip install -r requirements.txt
         echo "✅ requirements.txt installed"
         if pip show playwright &>/dev/null; then
-            echo "  Installing Playwright Chromium browser..."
-            playwright install chromium 2>/dev/null || true
+            echo "  Installing Playwright Chromium browser (project-local)..."
+            PLAYWRIGHT_DIR="$(pwd)/.playwright-browsers"
+            mkdir -p "$PLAYWRIGHT_DIR"
+            export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_DIR"
+            (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
+            grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
         fi
     else
         echo "⚠️  requirements.txt not found"
-    fi
-    
-    if [ -f "requirements_voice.txt" ]; then
-        pip install -r requirements_voice.txt
-        echo "✅ requirements_voice.txt installed"
     fi
     
     echo ""
@@ -704,19 +703,15 @@ if [ "$FRESH_DEPLOY" = false ]; then
         }
         echo "✅ requirements.txt installed/updated"
         if pip show playwright &>/dev/null; then
-            echo "  Ensuring Playwright Chromium browser..."
-            playwright install chromium 2>/dev/null || true
+            echo "  Ensuring Playwright Chromium browser (project-local)..."
+            PLAYWRIGHT_DIR="$(pwd)/.playwright-browsers"
+            mkdir -p "$PLAYWRIGHT_DIR"
+            export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_DIR"
+            (python -m playwright install chromium 2>/dev/null || python3 -m playwright install chromium 2>/dev/null) || true
+            grep -q 'PLAYWRIGHT_BROWSERS_PATH' .env 2>/dev/null || echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_DIR" >> .env
         fi
     else
         echo "⚠️  requirements.txt not found"
-    fi
-    
-    if [ -f "requirements_voice.txt" ]; then
-        echo "  Installing from requirements_voice.txt..."
-        pip install --upgrade -r requirements_voice.txt || {
-            echo "⚠️  Some voice packages failed to install. Continuing..."
-        }
-        echo "✅ requirements_voice.txt installed/updated"
     fi
     
     echo ""
