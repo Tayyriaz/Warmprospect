@@ -37,6 +37,10 @@ def get_entry_point_ctas(
     # Return ALL entry point CTAs (CTAs with action="show_children" at root level)
     entry_ctas = []
     for cta_id, cta in cta_tree.items():
+        # Skip if cta is not a dict (e.g. corrupted data, string, etc.)
+        if not isinstance(cta, dict):
+            print(f"[WARN] Skipping invalid CTA entry '{cta_id}': expected dict, got {type(cta).__name__}")
+            continue
         if cta.get("action") == "show_children":
             cta_obj = {
                 "id": cta.get("id", cta_id),

@@ -350,7 +350,7 @@ async def _handle_chat_request(request: Request):
             # If explicit cta_id provided (for API-only consumers), return its children
             if cta_id:
                 matched_cta = cta_tree.get(cta_id)
-                if matched_cta and matched_cta.get("action") == "show_children":
+                if matched_cta and isinstance(matched_cta, dict) and matched_cta.get("action") == "show_children":
                     children_ctas = get_cta_children(cta_tree, cta_id)
                     if children_ctas:
                         cta_payload = {"cta": children_ctas}

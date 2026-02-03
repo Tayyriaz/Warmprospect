@@ -31,6 +31,11 @@ def get_cta_children(cta_tree: Dict[str, Any], cta_id: str) -> List[Dict[str, An
     if not cta:
         return []
     
+    # Skip if cta is not a dict (e.g. corrupted data)
+    if not isinstance(cta, dict):
+        print(f"[WARN] Invalid CTA '{cta_id}': expected dict, got {type(cta).__name__}")
+        return []
+    
     # Only return children if action is show_children
     if cta.get("action") != "show_children" or not cta.get("children"):
         return []
@@ -39,12 +44,12 @@ def get_cta_children(cta_tree: Dict[str, Any], cta_id: str) -> List[Dict[str, An
     children_ctas = []
     for child_id in cta["children"]:
         child_cta = cta_tree.get(child_id)
-        if child_cta:
+        if child_cta and isinstance(child_cta, dict):
             # Return CTA without children array (frontend doesn't need it)
             cta_obj = {
-                "id": child_cta["id"],
-                "label": child_cta["label"],
-                "action": child_cta["action"]
+                "id": child_cta.get("id", child_id),
+                "label": child_cta.get("label", child_id),
+                "action": child_cta.get("action", "send")
             }
             if child_cta.get("url"):
                 cta_obj["url"] = child_cta["url"]
@@ -110,11 +115,16 @@ def get_cta_by_id(cta_tree: Dict[str, Any], cta_id: str) -> Optional[Dict[str, A
     if not cta:
         return None
     
+    # Skip if cta is not a dict (e.g. corrupted data)
+    if not isinstance(cta, dict):
+        print(f"[WARN] Invalid CTA '{cta_id}': expected dict, got {type(cta).__name__}")
+        return None
+    
     # Return CTA without children array
     cta_obj = {
-        "id": cta["id"],
-        "label": cta["label"],
-        "action": cta["action"]
+        "id": cta.get("id", cta_id),
+        "label": cta.get("label", cta_id),
+        "action": cta.get("action", "send")
     }
     if cta.get("url"):
         cta_obj["url"] = cta["url"]
@@ -293,7 +303,7 @@ def get_entry_point_cta(
     # No hardcoded CTA IDs - use generic fallback to find first available entry point
     # Return first available CTA with show_children action (entry point)
     for cta_id, cta in cta_tree.items():
-        if cta.get("action") == "show_children":
+        if isinstance(cta, dict) and cta.get("action") == "show_children":
             return get_cta_by_id(cta_tree, cta_id)
     
     return None
