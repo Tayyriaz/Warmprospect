@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from core.rag.retriever import format_context
-from core.rag_manager import get_default_retriever, get_retriever_for_business
+from core.rag import get_default_retriever, get_retriever_for_business
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ async def health():
     retriever = get_default_retriever()
     health_status = {
         "status": "ok",
-        "message": "GoAccel Concierge Bot is running",
+        "message": "Chatbot API is running",
         "components": {
             "api": "healthy",
             "rag": "loaded" if retriever is not None else "not_loaded",
@@ -41,19 +41,19 @@ async def health():
 
 @router.get("/rag/status")
 async def rag_status():
-    """Returns whether the RAG index is loaded."""
-    retriever = get_default_retriever()
+    """Returns RAG status (deprecated - use /rag/test/{business_id} for business-specific RAG)."""
     return {
-        "rag_loaded": retriever is not None,
-        "index_path": "data/index.faiss",
-        "meta_path": "data/meta.jsonl",
+        "rag_loaded": False,
+        "note": "No default retriever. Use /rag/test/{business_id} for business-specific RAG.",
+        "index_path": None,
+        "meta_path": None,
     }
 
 
 @router.get("/rag/test/{business_id}")
 async def test_rag_for_business(business_id: str):
     """Test RAG retrieval for a specific business."""
-    test_query = "What is GoAccel?"
+    test_query = "What services do you offer?"
     
     try:
         biz_retriever = get_retriever_for_business(business_id)

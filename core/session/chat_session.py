@@ -5,10 +5,7 @@ Chat session management with Gemini SDK.
 from typing import Dict, Any, List, Optional
 from google.genai import types
 from core.session.session_management import get_chat_sessions_cache
-from core.integrations.crm import CRMTools
-
-# Initialize CRM Tool Handler
-crm_tools = CRMTools()
+from core.integrations.crm import crm_manager
 
 
 def get_or_create_chat_session(
@@ -16,7 +13,8 @@ def get_or_create_chat_session(
     system_instruction: str,
     client,
     model_name: str,
-    stored_history: Optional[List[Dict[str, Any]]] = None
+    stored_history: Optional[List[Dict[str, Any]]] = None,
+    business_id: Optional[str] = None
 ):
     """
     Get or create a chat session for a user, restoring history if available.
@@ -46,7 +44,7 @@ def get_or_create_chat_session(
 
     # Create new chat session for this user using the effective system instruction
     print(f"[DEBUG] Creating new chat session for user: {user_id}")
-    chat = create_chat_session(system_instruction, client, model_name)
+    chat = create_chat_session(system_instruction, client, model_name, business_id)
     _chat_sessions_cache[user_id] = {"chat": chat, "system_instruction": system_instruction}
     
     # Restore history if provided
@@ -56,14 +54,20 @@ def get_or_create_chat_session(
     return chat
 
 
-def create_chat_session(system_instruction: str, client, model_name: str):
+def create_chat_session(system_instruction: str, client, model_name: str, business_id: Optional[str] = None):
     """
     Creates a new Gemini chat session with system instruction and tools.
     The chat API automatically manages conversation history internally.
     """
+    # Get CRM tools for this business (if available)
+    crm_tools = crm_manager.get_crm_tools(business_id)
+    tools_config = None
+    if crm_tools is not None:
+        tools_config = [crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal]
+    
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        tools=[crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal],
+        tools=tools_config,
     )
     
     # Create chat session with config - SDK will manage history automatically

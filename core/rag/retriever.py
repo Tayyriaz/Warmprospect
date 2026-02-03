@@ -7,7 +7,7 @@ import numpy as np
 from google import genai
 
 
-class GoAccelRetriever:
+class ChatbotRetriever:
     """
     Lightweight retriever that loads a FAISS index and associated metadata.
     """
@@ -15,8 +15,8 @@ class GoAccelRetriever:
     def __init__(
         self,
         api_key: str,
-        index_path: str = "data/index.faiss",
-        meta_path: str = "data/meta.jsonl",
+        index_path: str,  # Required: e.g. "data/<business_id>/index.faiss"
+        meta_path: str,   # Required: e.g. "data/<business_id>/meta.jsonl"
         model: str = "text-embedding-004",
         top_k: int = 8,
         enabled_categories: Optional[List[str]] = None,

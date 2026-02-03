@@ -11,7 +11,7 @@ import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
-from core.security import get_api_key
+from core.security import get_api_key, get_api_key_header_or_query
 from core.config.business_config import config_manager
 from core.utils.helpers import convert_config_to_camel
 
@@ -84,7 +84,7 @@ def trigger_kb_build(business_id: str, website_url: str):
         # Use absolute paths to avoid issues with working directory
         # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        script_path = os.path.join(base_dir, "scripts", "build_kb_for_business.py")
+        script_path = os.path.join(base_dir, "scripts", "kb", "build_kb_for_business.py")
         
         print(f"[DEBUG] Base directory: {base_dir}")
         print(f"[DEBUG] Script path: {script_path}")
@@ -170,7 +170,19 @@ def trigger_kb_build(business_id: str, website_url: str):
             # Update status with categories included
             update_scraping_status(business_id, "completed", success_msg, 100, categories_data)
         else:
-            error_msg = f"Scraping failed: {result.stderr[:500] if result.stderr else result.stdout[:500]}"
+            # Prefer last part of stderr (actual exception); strip InsecureRequestWarning so we show real error
+            raw = (result.stderr or result.stdout or "").strip()
+            lines = [ln for ln in raw.splitlines() if "InsecureRequestWarning" not in ln and "warnings.warn" not in ln]
+            raw = "\n".join(lines).strip()
+            error_snippet = raw[-500:] if len(raw) > 500 else raw
+            if not error_snippet:
+                error_snippet = f"Exit code {result.returncode}"
+            # Clear message when Playwright browsers are missing (deploy script installs; user may need to re-deploy or set PLAYWRIGHT_BROWSERS_PATH)
+            if "Playwright was just installed" in raw or "playwright install" in raw:
+                error_snippet = (
+                    "Playwright browsers not installed. Re-run deploy script or set PLAYWRIGHT_BROWSERS_PATH in .env and install Chromium; then restart the app and trigger Re-scrape."
+                )
+            error_msg = f"Scraping failed: {error_snippet}"
             print(f"[ERROR] KB build failed for business: {business_id}")
             print(f"[ERROR] Return code: {result.returncode}")
             print(f"[ERROR] Error output: {result.stderr}")
@@ -311,15 +323,20 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             "website_url": website_url
         }
         
-        # If forcing re-scrape, clear old status file
+        # If forcing re-scrape, clear old status and KB files so build runs from scratch
         if force_rescrape:
             try:
-                # Delete old status file completely
                 if os.path.exists(status_file):
                     os.remove(status_file)
                     print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
+                meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
+                index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
+                for path in (meta_path, index_path):
+                    if os.path.exists(path):
+                        os.remove(path)
+                        print(f"[INFO] Deleted {path} for force re-scrape: {business_id}")
             except Exception as e:
-                print(f"[WARN] Failed to clear old status file for re-scrape: {e}")
+                print(f"[WARN] Failed to clear old files for re-scrape: {e}")
         
         # If scraping was already completed and NOT forcing re-scrape, return existing categories from DB
         if not force_rescrape:
@@ -435,7 +452,7 @@ async def get_scraping_status(
     business_id: str, 
     request: Request,
     stream: bool = False,
-    api_key: str = Depends(get_api_key)
+    api_key: str = Depends(get_api_key_header_or_query)
 ):
     """
     Get current scraping status for a business, including categories if available.
@@ -478,19 +495,26 @@ async def get_scraping_status(
                                 file_status = json.load(f)
                                 status_data.update(file_status)
                                 
-                                # Auto-fix logic
-                                status_age = time.time() - file_status.get("updated_at", 0)
-                                is_recent_pending = file_status.get("status") == "pending" and status_age < 60
-                                status_message = file_status.get("message", "").lower()
-                                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                                
-                                if categories_exist and index_exists and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                                    categories_data = db_config.get("categories")
-                                    status_data["status"] = "completed"
-                                    status_data["message"] = "Knowledge base built successfully!"
-                                    status_data["progress"] = 100
-                                    status_data["categories"] = categories_data.get("categories", [])
-                                    status_data["total_pages"] = categories_data.get("total_pages", 0)
+                                # Stale: status says "completed" but KB files were deleted
+                                if file_status.get("status") == "completed" and not index_exists:
+                                    status_data["status"] = "not_started"
+                                    status_data["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
+                                    status_data["progress"] = 0
+                                    for key in ["categories", "total_pages"]:
+                                        status_data.pop(key, None)
+                                # Auto-fix: stuck status when index exists
+                                elif index_exists:
+                                    status_age = time.time() - file_status.get("updated_at", 0)
+                                    is_recent_pending = file_status.get("status") == "pending" and status_age < 60
+                                    status_message = file_status.get("message", "").lower()
+                                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                                    if categories_exist and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                                        categories_data = db_config.get("categories")
+                                        status_data["status"] = "completed"
+                                        status_data["message"] = "Knowledge base built successfully!"
+                                        status_data["progress"] = 100
+                                        status_data["categories"] = categories_data.get("categories", [])
+                                        status_data["total_pages"] = categories_data.get("total_pages", 0)
                         except Exception as e:
                             print(f"[ERROR] Failed to read status file in SSE: {e}")
                     
@@ -554,47 +578,59 @@ async def get_scraping_status(
                 status_data = json.load(f)
                 response.update(status_data)
                 
+                # If status says "completed" but KB files were deleted, treat as stale (don't show Complete!)
+                if status_data.get("status") == "completed" and not index_exists:
+                    response["status"] = "not_started"
+                    response["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
+                    response["progress"] = 0
+                    if "categories" in response:
+                        del response["categories"]
+                    if "total_pages" in response:
+                        del response["total_pages"]
+                    try:
+                        os.remove(status_file)
+                        print(f"[INFO] Removed stale status file (KB files missing): {business_id}")
+                    except Exception:
+                        pass
                 # Auto-fix: If categories exist but status is stuck, update to completed
                 # BUT: Don't auto-fix if status was recently set to "pending" (within last 60 seconds)
                 # This prevents auto-completing a fresh re-scrape
-                status_age = time.time() - status_data.get("updated_at", 0)
-                is_recent_pending = status_data.get("status") == "pending" and status_age < 60
-                
-                # Check if message indicates a fresh start
-                status_message = status_data.get("message", "").lower()
-                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                
-                # Only auto-fix if:
-                # - Categories and index exist
-                # - Status is not recently set to pending (>= 60 seconds old)
-                # - Message doesn't indicate a fresh start
-                if categories_exist and index_exists and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                    print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
-                    try:
-                        # Load categories from database
-                        categories_data = db_config.get("categories")
-                        
-                        # Update status to completed
-                        status_data["status"] = "completed"
-                        status_data["message"] = "Knowledge base built successfully!"
-                        status_data["progress"] = 100
-                        status_data["updated_at"] = time.time()
-                        status_data["categories"] = categories_data.get("categories", [])
-                        status_data["total_pages"] = categories_data.get("total_pages", 0)
-                        
-                        # Write updated status
-                        with open(status_file, "w", encoding="utf-8") as f:
-                            json.dump(status_data, f, indent=2)
-                        
-                        response.update(status_data)
-                        print(f"[SUCCESS] Auto-fixed status for {business_id}")
-                    except Exception as e:
-                        print(f"[WARN] Failed to auto-fix status: {e}")
+                elif index_exists:
+                    status_age = time.time() - status_data.get("updated_at", 0)
+                    is_recent_pending = status_data.get("status") == "pending" and status_age < 60
+                    status_message = status_data.get("message", "").lower()
+                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                    # Only auto-fix if:
+                    # - Categories and index exist
+                    # - Status is not recently set to pending (>= 60 seconds old)
+                    # - Message doesn't indicate a fresh start
+                    if categories_exist and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                        print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
+                        try:
+                            # Load categories from database
+                            categories_data = db_config.get("categories")
+                            
+                            # Update status to completed
+                            status_data["status"] = "completed"
+                            status_data["message"] = "Knowledge base built successfully!"
+                            status_data["progress"] = 100
+                            status_data["updated_at"] = time.time()
+                            status_data["categories"] = categories_data.get("categories", [])
+                            status_data["total_pages"] = categories_data.get("total_pages", 0)
+                            
+                            # Write updated status
+                            with open(status_file, "w", encoding="utf-8") as f:
+                                json.dump(status_data, f, indent=2)
+                            
+                            response.update(status_data)
+                            print(f"[SUCCESS] Auto-fixed status for {business_id}")
+                        except Exception as e:
+                            print(f"[WARN] Failed to auto-fix status: {e}")
         except Exception as e:
             print(f"[ERROR] Failed to read status file: {e}")
     
-    # Add categories if available from database
-    if categories_exist:
+    # Add categories if available from database (only when KB exists, so we don't show stale "1 page" after user deleted files)
+    if categories_exist and index_exists:
         try:
             categories_data = db_config.get("categories")
             enabled_categories = db_config.get("enabled_categories", [])
@@ -676,7 +712,7 @@ async def update_enabled_categories(
         
         # Update enabled categories in database
         from core.database import BusinessConfigDB
-        from core.rag_manager import clear_retriever_cache
+        from core.rag import clear_retriever_cache
         db_manager = BusinessConfigDB()
         
         # Get all current config values

@@ -1,13 +1,11 @@
 """
 CRM Tools Package
-Provides CRM function implementations and per-tenant CRM management.
+Per-tenant CRM management. Each business defines CRMTools in businesses/<id>/crm.py.
 """
 
-from .crm_functions import CRMTools
 from .crm_manager import crm_manager, CRMManager
 
 __all__ = [
-    "CRMTools",
     "crm_manager",
     "CRMManager",
 ]

@@ -13,13 +13,15 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-# Database initialization (optional - will use file storage if database not available)
+# Database initialization and schema sync
 try:
-    from core.database import init_db
-    # Initialize database tables on startup
+    from core.database import init_db, sync_schema
+    # Initialize database tables on startup (creates tables if missing)
     try:
         init_db()
-        print("✅ Database initialized successfully!")
+        # Auto-sync schema: adds missing columns if model changed
+        sync_schema()
+        print("✅ Database initialized and schema synced!")
     except Exception as e:
         print(f"[WARNING] Database initialization failed: {e}")
         print("[INFO] Using file-based storage as fallback.")
@@ -27,7 +29,7 @@ except ImportError:
     print("[INFO] Database module not available. Using file-based storage.")
 
 # Initialize RAG retriever
-from core.rag_manager import initialize_default_retriever
+from core.rag import initialize_default_retriever
 
 # Import route modules
 from api.routes import public, admin, business, chat, cta, analytics, voice
@@ -47,15 +49,15 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # Using GEMINI_MODEL from .env or defaulting to gemini-2.5-flash
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Port configuration (for deployment platforms like Render)
-PORT = int(os.getenv("PORT", "8000")) 
+# Port configuration - BACKEND_PORT is primary, PORT is legacy fallback
+PORT = int(os.getenv("BACKEND_PORT") or os.getenv("PORT", "8000")) 
 
 # Clamp how many history turns we send to Gemini to control token use
 MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "20"))
 
 # Initialize FastAPI App
 app = FastAPI(
-    title="GoAccel Concierge Bot API",
+    title="Chatbot API",
     description="API for managing chatbot businesses, scraping websites, and handling conversations",
     version="1.0.0",
     docs_url="/docs",

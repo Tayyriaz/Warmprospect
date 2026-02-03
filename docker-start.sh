@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🚀 Starting GoAccel Chatbot Platform with Docker Compose..."
+echo "🚀 Starting Chatbot Platform with Docker Compose..."
 
 # Check if .env file exists
 if [ ! -f .env ]; then

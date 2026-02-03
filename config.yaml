@@ -17,6 +17,14 @@ scraping:
   
   # Maximum queue size to prevent memory issues
   max_queue_size: 1000
+  
+  # SSL verification for website scraping
+  # Set to false to disable SSL verification (useful for sites with self-signed certs)
+  verify_ssl: false
+
+  # Use Playwright (real browser) instead of requests when sites block or need JavaScript.
+  # Enable if scraping fails with "No pages fetched" or connection/SSL errors.
+  use_playwright: true
 
 rag:
   # Size of text chunks for RAG indexing

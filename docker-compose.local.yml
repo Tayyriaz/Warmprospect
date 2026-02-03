@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: goaccel_postgres
+    container_name: chatbot_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: goaccel_db
+      POSTGRES_DB: chatbot_db
     ports:
       - "5432:5432"
     volumes:
@@ -18,7 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: goaccel_redis
+    container_name: chatbot_redis
     ports:
       - "6379:6379"
     volumes:
@@ -33,11 +33,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: goaccel_app
+    container_name: chatbot_app
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/goaccel_db
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chatbot_db
       - REDIS_URL=redis://redis:6379/0
       - PORT=8000
       - GEMINI_API_KEY=${GEMINI_API_KEY}

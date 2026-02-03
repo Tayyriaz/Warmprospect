@@ -4,46 +4,35 @@ RAG (Retrieval Augmented Generation) retriever management.
 
 import os
 from typing import Dict, Any, Optional, List
-from core.rag.retriever import GoAccelRetriever
+from core.rag.retriever import ChatbotRetriever
 from core.config.business_config import config_manager
 
 # Optional RAG retriever(s)
 # NOTE: In multi-tenant mode, each business should have its own index under:
 #   data/{business_id}/index.faiss and data/{business_id}/meta.jsonl
-# The legacy default index (data/index.faiss) is only used when business_id is not provided.
-retriever: Optional[GoAccelRetriever] = None
-_retriever_cache: Dict[str, GoAccelRetriever] = {}
+# No default/root-level index - all businesses must have their own KB.
+_retriever_cache: Dict[str, ChatbotRetriever] = {}
 
 
-def initialize_default_retriever() -> Optional[GoAccelRetriever]:
-    """Initialize the default RAG retriever."""
-    global retriever
-    try:
-        retriever = GoAccelRetriever(
-            api_key=os.getenv("GEMINI_API_KEY", ""),
-            index_path="data/index.faiss",
-            meta_path="data/meta.jsonl",
-            model="text-embedding-004",
-            top_k=5,
-        )
-        print("Default RAG retriever loaded (data/index.faiss).")
-        return retriever
-    except Exception as e:
-        print(f"Default RAG retriever not loaded: {e}")
-        return None
+def initialize_default_retriever() -> Optional[ChatbotRetriever]:
+    """Initialize the default RAG retriever (deprecated - no longer used)."""
+    # No default retriever - all businesses must have their own KB
+    print("Default RAG retriever initialization skipped (using per-business KBs only).")
+    return None
 
 
-def get_retriever_for_business(business_id: Optional[str], force_reload: bool = False) -> Optional[GoAccelRetriever]:
+def get_retriever_for_business(business_id: Optional[str], force_reload: bool = False) -> Optional[ChatbotRetriever]:
     """
     Returns a retriever for the given business_id if a business-specific index exists.
-    - If business_id is None -> returns the default retriever (if loaded)
-    - If business_id is set -> returns a cached business retriever only if its index exists
+    - business_id is required - no default retriever exists
+    - Returns a cached business retriever only if its index exists
     - enabled_categories are loaded from business config and used to filter results
     """
-    global retriever, _retriever_cache
+    global _retriever_cache
     
     if not business_id:
-        return retriever
+        print("[RAG] business_id is required - no default retriever available")
+        return None
 
     # Get enabled categories from business config
     enabled_categories: Optional[List[str]] = None
@@ -85,7 +74,7 @@ def get_retriever_for_business(business_id: Optional[str], force_reload: bool = 
 
     try:
         print(f"[RAG] Loading retriever for business_id={business_id}...")
-        biz_ret = GoAccelRetriever(
+        biz_ret = ChatbotRetriever(
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
             meta_path=meta_path,
@@ -115,6 +104,7 @@ def clear_retriever_cache(business_id: Optional[str] = None):
         print("[RAG] Cleared all retriever caches")
 
 
-def get_default_retriever() -> Optional[GoAccelRetriever]:
-    """Get the default retriever."""
-    return retriever
+def get_default_retriever() -> Optional[ChatbotRetriever]:
+    """Get the default retriever (deprecated - always returns None)."""
+    # No default retriever - all businesses must have their own KB
+    return None

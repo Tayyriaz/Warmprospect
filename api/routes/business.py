@@ -2,6 +2,7 @@
 Business configuration API routes (public widget endpoints).
 """
 
+import os
 from fastapi import APIRouter, HTTPException
 from core.config.business_config import config_manager
 
@@ -37,4 +38,5 @@ async def get_business_config_for_widget(business_id: str):
         "voiceEnabled": config.get("voice_enabled", False),
         "chatbotButtonText": config.get("chatbot_button_text"),
         "businessLogo": config.get("business_logo"),
+        "footerBrand": (os.getenv("BRAND_NAME") or "").strip(),
     }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GoAccel - Business Configuration</title>
+  <title>Chatbot - Business Configuration</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -391,7 +391,7 @@
           ⚙️
         </button>
       </div>
-      <h1>🤖 GoAccel Configuration</h1>
+      <h1>🤖 Chatbot Configuration</h1>
       <p>Configure your business chatbot settings</p>
     </div>
     
@@ -577,7 +577,6 @@
         
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
-          <button type="button" class="btn btn-secondary" onclick="loadGoAccelTemplate()">🚀 Load GoAccel Template</button>
           <button type="button" class="btn btn-secondary" onclick="clearForm()">🔄 Clear Form</button>
         </div>
             </form>
@@ -844,42 +843,6 @@
       document.getElementById('businessForm').reset();
       document.getElementById('themeColor').value = '#2563eb';
       clearLogo();
-    }
-    
-    function loadGoAccelTemplate() {
-      // Fill all fields with GoAccel default values
-      document.getElementById('businessId').value = 'goaccel-website';
-      document.getElementById('businessName').value = 'GoAccel';
-      document.getElementById('systemPrompt').value = `GoAccel is an all-in-one growth and operations system built specifically for home services and skilled trade businesses. We combine customer acquisition, automation, CRM, scheduling, and operational systems into a single platform designed to help owners scale predictably and build long-term enterprise value.
-
-Our services include:
-- Digital Agency Solutions: Full-service digital agency/lead gen services including websites, paid ads, and conversion tracking
-- CRM Software: Customer relationship management, deal pipeline management, business management software
-- Marketing Automation: Automated appointment booking, lead nurturing, marketing campaign management
-- Business Listing Management: Customer review management, data enhancement, database reactivation
-
-We serve industries including HVAC, plumbing, electrical, window cleaning, appliance repair, carpet cleaning, handyman, cleaning & janitorial, garage door, lawn care, pest control, custom home building, pool & spa service, fireplace & chimney, custom remodeling, locksmith, landscaping, painting contractors, junk removal, property maintenance, roofing, and mechanic services.
-
-Your role is to help potential customers understand how GoAccel can help their home services business grow. Be friendly, knowledgeable, and focus on how we can help them achieve predictable growth and build business value.`;
-      
-      document.getElementById('primaryGoal').value = 'Help home services businesses scale predictably and build long-term enterprise value';
-      document.getElementById('personality').value = 'Friendly, knowledgeable, and growth-focused';
-      document.getElementById('greetingMessage').value = 'Hi! Welcome to GoAccel. I\'m here to help you understand how we can accelerate your home services business growth. What would you like to know?';
-      // appointmentLink removed - use CTA tree with redirect action instead
-      document.getElementById('privacyStatement').value = 'We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.';
-      document.getElementById('websiteUrl').value = 'https://warmprospect.com/goaccel-website/';
-      document.getElementById('contactEmail').value = 'info@goaccel.com';
-      document.getElementById('contactPhone').value = '855.915.0747';
-      document.getElementById('chatbotButtonText').value = 'Chat with us';
-      clearLogo();
-      document.getElementById('themeColor').value = '#667eea';
-      document.getElementById('widgetPosition').value = 'center';
-      
-      
-      // Update integration code
-      updateIntegrationCode('goaccel-website');
-      
-      showAlert('✅ GoAccel template loaded! Review and customize the fields, then click "Save Configuration".', 'success');
     }
     
     async function loadBusinesses() {
@@ -1328,7 +1291,7 @@ Your role is to help potential customers understand how GoAccel can help their h
                 </div>
                 <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
                   <strong>💡 Troubleshooting:</strong><br>
-                  • Check server logs: <code>sudo journalctl -u goaccel.service -f</code><br>
+                  • Check server logs: <code>sudo journalctl -u chatbot.service -f</code><br>
                   • The process may be waiting for a slow website response<br>
                   • Try refreshing the knowledge base if it continues to be stuck
                 </div>
@@ -1511,7 +1474,7 @@ Your role is to help potential customers understand how GoAccel can help their h
               <strong>💡 Check server status:</strong><br>
               • Check if the server is running<br>
               • Verify API key is correct<br>
-              • Check server logs: <code>sudo journalctl -u goaccel.service -f</code>
+              • Check server logs: <code>sudo journalctl -u chatbot.service -f</code>
             </div>
           `;
         });

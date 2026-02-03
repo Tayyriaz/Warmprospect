@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: goaccel_postgres
+    container_name: chatbot_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-goaccel_db}
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot_db}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -18,11 +18,11 @@ services:
       start_period: 10s
     restart: unless-stopped
     networks:
-      - goaccel_network
+      - chatbot_network
 
   redis:
     image: redis:7-alpine
-    container_name: goaccel_redis
+    container_name: chatbot_redis
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -36,19 +36,19 @@ services:
       start_period: 5s
     restart: unless-stopped
     networks:
-      - goaccel_network
+      - chatbot_network
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: goaccel_app
+    container_name: chatbot_app
     ports:
       - "${PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-goaccel_db}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-chatbot_db}
       - REDIS_URL=redis://redis:6379/0
       - PORT=8000
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -78,11 +78,11 @@ services:
       start_period: 40s
     restart: unless-stopped
     networks:
-      - goaccel_network
+      - chatbot_network
     command: >
       sh -c "
         echo 'Waiting for database to be ready...' &&
-        until python -c 'import psycopg2; psycopg2.connect(\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-goaccel_db}\")' 2>/dev/null; do
+        until python -c 'import psycopg2; psycopg2.connect(\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-chatbot_db}\")' 2>/dev/null; do
           echo 'Waiting for postgres...'
           sleep 2
         done &&
@@ -99,5 +99,5 @@ volumes:
     driver: local
 
 networks:
-  goaccel_network:
+  chatbot_network:
     driver: bridge

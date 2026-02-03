@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GoAccel Concierge</title>
+  <title>Chatbot</title>
   <style>
     :root {
       --bg: #f5f7fb;
@@ -215,7 +215,7 @@
     <div class="header">
       <div class="avatar" id="businessAvatar">GA</div>
       <div>
-        <p class="title" id="businessTitle">GoAccel Concierge</p>
+        <p class="title" id="businessTitle">Chatbot</p>
         <p class="subtitle" id="businessSubtitle">Ask about services, pricing or booking – 24/7</p>
       </div>
     </div>
@@ -252,7 +252,7 @@
       </div>
     </div>
 
-    <div class="footer" id="businessFooter">Powered by GoAccel • AI assistant demo</div>
+    <div class="footer" id="businessFooter">Powered by Chatbot Platform • AI assistant demo</div>
   </div>
 
   <script>
@@ -269,6 +269,7 @@
     let CHATBOT_CONFIG = {
       businessId: businessId,
       businessName: null,
+      footerBrand: null,
       businessPrimaryGoal: "Generate more leads.",
       personalityPrompt: "Gentle, collaborative and to the point.",
       greetingMessage: "Hi - How can we help you today?",
@@ -303,9 +304,12 @@
         // Update subtitle
         const subtitleEl = document.getElementById('businessSubtitle');
         if (subtitleEl) subtitleEl.textContent = "Ask about services, pricing or booking – 24/7";
-        // Update footer
+        // Update footer (from .env CHATBOT_FOOTER_BRAND if set, else business name)
         const footerEl = document.getElementById('businessFooter');
-        if (footerEl) footerEl.textContent = `Powered by ${businessName} • AI assistant`;
+        if (footerEl) {
+          const brand = (CHATBOT_CONFIG.footerBrand && CHATBOT_CONFIG.footerBrand.trim()) ? CHATBOT_CONFIG.footerBrand.trim() : businessName;
+          footerEl.textContent = brand ? `Powered by ${brand} • AI assistant` : "Powered by Chatbot Platform • AI assistant";
+        }
         // Update page title
         document.title = `${businessName} - Chat Assistant`;
       }
@@ -346,6 +350,7 @@
         CHATBOT_CONFIG = {
           businessId: config.businessId || businessId,
           businessName: config.businessName || CHATBOT_CONFIG.businessName,
+          footerBrand: config.footerBrand != null ? config.footerBrand : CHATBOT_CONFIG.footerBrand,
           businessPrimaryGoal: config.businessPrimaryGoal || CHATBOT_CONFIG.businessPrimaryGoal,
           personalityPrompt: config.personalityPrompt || CHATBOT_CONFIG.personalityPrompt,
           greetingMessage: config.greetingMessage || CHATBOT_CONFIG.greetingMessage,
@@ -691,8 +696,16 @@
         btn.type = "button";
         btn.textContent = icon ? `${icon} ${label}` : label;
         btn.addEventListener("click", () => {
-          // Legacy show_secondary action removed - use CTA tree instead
-          sendMessage(message);
+          if (action === "show_children") {
+            // For CTAs with show_children, send message with cta_id
+            sendMessageWithCta(message, option.id);
+          } else if (action === "link" && option.url) {
+            // For link CTAs, open URL
+            window.open(option.url, '_blank');
+          } else {
+            // For send CTAs, just send the message
+            sendMessage(message);
+          }
         });
         row.appendChild(btn);
       });
@@ -723,7 +736,12 @@
       return parts.join("\n");
     }
 
-    async function sendMessage(messageOverride) {
+    async function sendMessageWithCta(message, ctaId) {
+      // Send message with explicit cta_id for backend to handle CTA navigation
+      await sendMessage(message, ctaId);
+    }
+
+    async function sendMessage(messageOverride, ctaIdOverride) {
       const message = (messageOverride ?? inputEl.value).trim();
       const userId = userIdEl.value.trim() || "default_user";
       if (!message) return;
@@ -745,16 +763,22 @@
 
       try {
         const chatUrl = getApiUrl('/chat');
+        const requestBody = {
+          message,
+          user_id: userId,
+          business_id: CHATBOT_CONFIG.businessId,
+          system_prompt: buildBusinessSystemPrompt(),
+        };
+        
+        // Add cta_id if provided (for CTA navigation)
+        if (ctaIdOverride) {
+          requestBody.cta_id = ctaIdOverride;
+        }
+        
         const res = await fetch(chatUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            user_id: userId,
-            business_id: CHATBOT_CONFIG.businessId,
-            system_prompt: buildBusinessSystemPrompt(),
-            // appointment_link removed - use CTA tree with redirect action instead
-          }),
+          body: JSON.stringify(requestBody),
         });
         
         // Check if response is OK

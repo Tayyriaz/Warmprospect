@@ -10,13 +10,13 @@ from typing import Dict, Any, Optional, List
 from google.genai import types
 from core.rag.retriever import format_context
 from core.session import get_session, save_session, get_or_create_chat_session, save_chat_history_to_session, analytics
-from core.hard_guards import check_hard_guards
+from core.guards import check_hard_guards
 from core.cta import get_entry_point_ctas, should_attach_ctas, detect_intent_from_message
-from core.system_instruction import build_system_instruction
+from core.prompts import build_system_instruction
 from core.config.business_config import config_manager
-from core.rag_manager import get_retriever_for_business
-from core.sentiment_analysis import sentiment_analyzer
-from core.integrations.crm import CRMTools, crm_manager
+from core.rag import get_retriever_for_business
+from core.features import sentiment_analyzer
+from core.integrations.crm import crm_manager
 
 router = APIRouter()
 
@@ -24,8 +24,6 @@ router = APIRouter()
 # The @limiter.limit decorator accesses app.state.limiter automatically
 limiter = Limiter(key_func=get_remote_address)
 
-# Initialize CRM Tool Handler
-crm_tools = CRMTools()
 
 # Base guardrails that apply to every business
 BASE_SYSTEM_INSTRUCTION = """
@@ -108,9 +106,10 @@ async def _handle_chat_request(request: Request):
         user_input = data.get("message", "")
         user_id = data.get("user_id", "default_user")
         business_id = data.get("business_id")
+        cta_id = data.get("cta_id")  # Optional: explicit CTA ID for API consumers
         # appointment_link removed - use CTA tree with redirect action instead
 
-        print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...'")
+        print(f"[DEBUG] Processing: user_id={user_id}, business_id={business_id}, message='{user_input[:50]}...', cta_id={cta_id}")
 
     except Exception as e:
         print(f"[ERROR] Failed to parse request: {e}")
@@ -185,7 +184,8 @@ async def _handle_chat_request(request: Request):
         system_instruction,
         _client,
         _model_name,
-        stored_history
+        stored_history,
+        business_id=business_id
     )
     
     # 5. RAG Context Retrieval
@@ -217,6 +217,12 @@ async def _handle_chat_request(request: Request):
                 try:
                     # Get CRM tools for this business (per-tenant)
                     crm_tools = crm_manager.get_crm_tools(business_id)
+                    if crm_tools is None:
+                        tool_responses.append(types.Part.from_function_response(
+                            name=function_name,
+                            response={"error": "CRM not available for this business", "status": "CRM not configured"}
+                        ))
+                        continue
                     func_to_call = getattr(crm_tools, function_name)
                     tool_output = func_to_call(**function_args)
                     
@@ -251,12 +257,17 @@ async def _handle_chat_request(request: Request):
         # Get CRM tools for this business (per-tenant)
         crm_tools = crm_manager.get_crm_tools(business_id)
         
+        # Only pass CRM tools to Gemini if this business has CRM configured
+        tools_config = None
+        if crm_tools is not None:
+            tools_config = [crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal]
+        
         gemini_response = _client.models.generate_content(
             model=_model_name,
             contents=current_contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                tools=[crm_tools.search_contact, crm_tools.create_new_contact, crm_tools.create_deal],
+                tools=tools_config,
             )
         )
         
@@ -321,9 +332,6 @@ async def _handle_chat_request(request: Request):
     # 9. Save chat history to session
     save_chat_history_to_session(chat, session, _max_history_turns)
     
-    # 10. Save session state
-    save_session(session_key, session)
-    
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
     print(f"[ANALYTICS] Intent: {intent_result.get('intent', 'unknown')}, Sentiment: {sentiment_result.get('sentiment', 'unknown')}, State: {session.get('conversation_state', 'unknown')}")
 
@@ -336,9 +344,25 @@ async def _handle_chat_request(request: Request):
     if business_id:
         config = config_manager.get_business(business_id)
         if config and config.get("cta_tree"):
-            entry_ctas = get_entry_point_ctas(business_id, user_input)
-            if entry_ctas and (should_attach_ctas(final_response_text) or intent_result.get("intent") != "general_inquiry"):
-                cta_payload = {"cta": entry_ctas}
+            cta_tree = config.get("cta_tree", {})
+            from core.cta.cta_tree import get_cta_children
+            
+            # If explicit cta_id provided (for API-only consumers), return its children
+            if cta_id:
+                matched_cta = cta_tree.get(cta_id)
+                if matched_cta and matched_cta.get("action") == "show_children":
+                    children_ctas = get_cta_children(cta_tree, cta_id)
+                    if children_ctas:
+                        cta_payload = {"cta": children_ctas}
+            
+            # If no explicit CTA or no children, return entry point CTAs only when response suggests options (not every message)
+            if not cta_payload:
+                entry_ctas = get_entry_point_ctas(business_id, user_input)
+                if entry_ctas and should_attach_ctas(final_response_text):
+                    cta_payload = {"cta": entry_ctas}
+    
+    # 10. Save session state (after updating CTA context)
+    save_session(session_key, session)
     
     # Return response and CTA separately - CTAs are NEVER in the response object
     if cta_payload:
