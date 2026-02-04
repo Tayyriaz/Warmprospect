@@ -208,18 +208,61 @@ def extract(url: str, html: str) -> Page:
     return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time())
 
 
-def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None) -> List[str]:
-    """Fetch URLs from sitemap.xml."""
+def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_depth: int = 2) -> List[str]:
+    """
+    Fetch URLs from sitemap.xml.
+    Handles both regular sitemaps and sitemap index files (which reference other sitemaps).
+    """
     urls: List[str] = []
-    try:
-        xml = fetch(sitemap_url, fetcher)
-    except Exception:
-        return urls
-    for loc in re.findall(r"<loc>(.*?)</loc>", xml):
-        loc = loc.strip()
-        if is_allowed(loc, base_domain):
-            urls.append(loc)
-    return urls
+    seen_sitemaps: Set[str] = set()
+    
+    def _fetch_sitemap(url: str, depth: int) -> List[str]:
+        """Recursively fetch sitemap URLs."""
+        if depth > max_depth or url in seen_sitemaps:
+            return []
+        seen_sitemaps.add(url)
+        
+        found_urls: List[str] = []
+        try:
+            xml = fetch(url, fetcher)
+        except Exception as e:
+            print(f"  ⚠ Could not fetch sitemap {url}: {e}")
+            return []
+        
+        # Check if this is a sitemap index (contains <sitemap> tags)
+        sitemap_refs = re.findall(r"<sitemap>.*?<loc>(.*?)</loc>.*?</sitemap>", xml, re.DOTALL)
+        if sitemap_refs:
+            # This is a sitemap index - fetch nested sitemaps
+            print(f"  Found sitemap index with {len(sitemap_refs)} nested sitemaps")
+            for nested_sitemap in sitemap_refs:
+                nested_sitemap = nested_sitemap.strip()
+                if is_allowed(nested_sitemap, base_domain):
+                    found_urls.extend(_fetch_sitemap(nested_sitemap, depth + 1))
+        else:
+            # Regular sitemap - extract URLs
+            # Handle both with and without XML namespaces
+            url_patterns = [
+                r"<loc>(.*?)</loc>",  # Standard format
+                r"<loc[^>]*>(.*?)</loc>",  # With attributes
+            ]
+            for pattern in url_patterns:
+                for loc in re.findall(pattern, xml):
+                    loc = loc.strip()
+                    if loc and is_allowed(loc, base_domain):
+                        found_urls.append(loc)
+        
+        return found_urls
+    
+    urls = _fetch_sitemap(sitemap_url, 0)
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_urls = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+    
+    return unique_urls
 
 
 def update_status(business_id: str, status: str, message: str = "", progress: int = 0):
@@ -426,7 +469,12 @@ def build_kb_for_business(business_id: str, website_url: str):
     index_path_tmp = os.path.join(output_dir, "index.faiss.tmp")
     
     update_status(business_id, "scraping", "Finding website pages...", 10)
-    sitemap_url = f"{root_url}/sitemap.xml"
+    # Try multiple sitemap locations
+    sitemap_urls = [
+        f"{root_url}/sitemap.xml",
+        f"{root_url}/sitemap_index.xml",
+        f"{root_url}/sitemaps/sitemap.xml",
+    ]
     use_playwright = _scraping_config.get("use_playwright", False)
     pw_ctx = None
     if use_playwright:
@@ -438,12 +486,20 @@ def build_kb_for_business(business_id: str, website_url: str):
             use_playwright = False
 
     def _do_crawl(fetcher):
-        seeds = fetch_sitemap_urls(sitemap_url, base_domain, fetcher)
+        seeds = []
+        # Try each sitemap location until we find one that works
+        for sitemap_url in sitemap_urls:
+            found = fetch_sitemap_urls(sitemap_url, base_domain, fetcher)
+            if found:
+                seeds.extend(found)
+                print(f"Found sitemap at {sitemap_url} with {len(found)} URLs")
+                break  # Use first successful sitemap
+        
         if not seeds:
             seeds = [root_url]
-            print(f"No sitemap found, crawling from root: {root_url}")
+            print(f"No sitemap found at any location, crawling from root: {root_url}")
         else:
-            print(f"Using sitemap URLs ({len(seeds)}) as seeds.")
+            print(f"Using sitemap URLs ({len(seeds)} total) as seeds.")
         print(f"Building KB for business: {business_id}")
         print(f"Website: {website_url}")
         print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
