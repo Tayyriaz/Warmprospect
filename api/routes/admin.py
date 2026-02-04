@@ -315,6 +315,7 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
         
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
+        index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
         
         response = {
             "success": True,
@@ -330,7 +331,6 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
                     os.remove(status_file)
                     print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
                 meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
-                index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
                 for path in (meta_path, index_path):
                     if os.path.exists(path):
                         os.remove(path)
@@ -338,30 +338,43 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
             except Exception as e:
                 print(f"[WARN] Failed to clear old files for re-scrape: {e}")
         
-        # If scraping was already completed and NOT forcing re-scrape, return existing categories from DB
+        # If scraping was already completed and NOT forcing re-scrape, check if KB files actually exist
+        # If KB files are missing, treat as stale status and start scraping anyway
         if not force_rescrape:
             try:
                 if os.path.exists(status_file):
                     with open(status_file, "r", encoding="utf-8") as f:
                         status_data = json.load(f)
                         if status_data.get("status") == "completed":
-                            # Load categories from database
-                            db_config = config_manager.get_business(business_id)
-                            if db_config and db_config.get("categories"):
-                                categories_data = db_config["categories"]
-                                enabled_categories = db_config.get("enabled_categories", [])
-                                
-                                # Update category enabled status
-                                categories = categories_data.get("categories", [])
-                                for cat in categories:
-                                    cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
-                                
-                                response["categories"] = categories
-                                response["total_pages"] = categories_data.get("total_pages", 0)
-                                response["message"] = "Scraping already completed. Categories included."
-                                return response
+                            # Only return early if KB files actually exist
+                            # If KB files were deleted, status is stale - start scraping
+                            if os.path.exists(index_path):
+                                # KB files exist, so scraping is truly completed - return existing categories
+                                db_config = config_manager.get_business(business_id)
+                                if db_config and db_config.get("categories"):
+                                    categories_data = db_config["categories"]
+                                    enabled_categories = db_config.get("enabled_categories", [])
+                                    
+                                    # Update category enabled status
+                                    categories = categories_data.get("categories", [])
+                                    for cat in categories:
+                                        cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                                    
+                                    response["categories"] = categories
+                                    response["total_pages"] = categories_data.get("total_pages", 0)
+                                    response["message"] = "Scraping already completed. Categories included."
+                                    return response
+                            else:
+                                # Status says "completed" but KB files are missing - stale status, start scraping
+                                print(f"[INFO] Status file says 'completed' but KB files missing for {business_id}. Starting fresh scrape.")
+                                # Delete stale status file so scraping can proceed
+                                try:
+                                    os.remove(status_file)
+                                    print(f"[INFO] Deleted stale status file for {business_id}")
+                                except Exception as e:
+                                    print(f"[WARN] Failed to delete stale status file: {e}")
             except Exception as e:
-                print(f"[WARN] Failed to load existing categories: {e}")
+                print(f"[WARN] Failed to check existing status: {e}")
         
         # Set initial status immediately (before background task starts)
         update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
