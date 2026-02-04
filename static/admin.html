@@ -1642,10 +1642,10 @@
       document.getElementById('modalStatus').textContent = 'Loading...';
       document.getElementById('modalMessage').textContent = 'Starting scraping process...';
       
-      // Create EventSource for SSE
-      const apiKey = localStorage.getItem('adminApiKey');
+      // Create EventSource for SSE (use same API key source as other admin requests)
+      const apiKey = getApiKeyFromInput();
       if (!apiKey) {
-        showAlert('API key required', 'error');
+        showAlert('Please enter your Admin API Key in the field above.', 'error');
         return;
       }
       
