@@ -29,7 +29,8 @@ scraping:
   
   # Delay between requests (in seconds) to avoid rate limiting
   # Increase if you see "429 Too Many Requests" errors
-  request_delay: 2
+  # Reduced to 1 second to scrape more pages faster (with retry queue handling rate limits)
+  request_delay: 1
 
 rag:
   # Size of text chunks for RAG indexing

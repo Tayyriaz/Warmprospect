@@ -1324,7 +1324,7 @@
           if (status.updated_at) {
             const updatedTime = new Date(status.updated_at * 1000);
             const timeAgo = Math.floor((now - updatedTime.getTime()) / 1000);
-            let timeAgoText = '';
+            let timeAgoText;
             if (timeAgo < 60) {
               timeAgoText = `${timeAgo} seconds ago`;
             } else if (timeAgo < 3600) {
@@ -1650,15 +1650,16 @@
       }
       
       const sseUrl = `${API_BASE}/admin/business/${businessId}/scraping-status?stream=true&api_key=${encodeURIComponent(apiKey)}`;
-      console.log('Starting SSE connection to:', sseUrl);
+      console.log('[SSE] Starting SSE connection to:', sseUrl);
       scrapingEventSource = new EventSource(sseUrl);
       
       // Log connection state changes
       scrapingEventSource.addEventListener('open', () => {
-        console.log('SSE connection opened successfully');
+        console.log('[SSE] Connection opened successfully, readyState:', scrapingEventSource.readyState);
       });
       
       scrapingEventSource.onmessage = function(event) {
+        console.log('[SSE] Received message:', event.data.substring(0, 100));
         try {
           const status = JSON.parse(event.data);
           
@@ -1722,19 +1723,27 @@
       };
       
       scrapingEventSource.onerror = function(event) {
-        console.error('SSE error:', event, 'readyState:', scrapingEventSource?.readyState);
-        // EventSource will automatically reconnect, but we can handle errors here
+        console.error('[SSE] Error event:', event);
+        console.error('[SSE] ReadyState:', scrapingEventSource?.readyState);
+        console.error('[SSE] URL:', scrapingEventSource?.url);
+        
+        // EventSource states: 0=CONNECTING, 1=OPEN, 2=CLOSED
         if (scrapingEventSource && scrapingEventSource.readyState === EventSource.CLOSED) {
-          console.error('SSE connection closed. Falling back to polling...');
+          console.error('[SSE] Connection closed. Falling back to polling...');
           // Fallback to polling if SSE fails
           scrapingEventSource = null;
+          let pollCount = 0;
           const pollInterval = setInterval(() => {
-            if (!scrapingEventSource) {
+            pollCount++;
+            if (!scrapingEventSource && pollCount < 100) { // Poll for up to 5 minutes (100 * 3s)
+              console.log('[POLL] Polling status (attempt', pollCount, ')...');
               updateScrapingStatus(businessId);
             } else {
               clearInterval(pollInterval);
             }
           }, 3000);
+        } else if (scrapingEventSource && scrapingEventSource.readyState === EventSource.CONNECTING) {
+          console.log('[SSE] Still connecting...');
         }
       };
     }
@@ -1774,7 +1783,11 @@
           
           // Start new scraping process
           showScrapingModal(businessId);
-          startScrapingPoll(businessId);
+          // showScrapingModal already calls startScrapingSSE, so we don't need to call it again
+          // But keep this for backward compatibility
+          if (!scrapingEventSource) {
+            startScrapingPoll(businessId);
+          }
           showAlert('🌐 Knowledge base scraping started!', 'success');
         }
       } catch (err) {

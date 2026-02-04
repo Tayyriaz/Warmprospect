@@ -71,32 +71,29 @@ CATEGORIZATION_MODEL = os.getenv("GEMINI_CATEGORIZATION_MODEL", _models_config.g
 
 
 def normalize_url(url: str, root_url: str) -> str:
-    """Normalize URL relative to root."""
+    """Normalize URL relative to root and remove non-content query params."""
+    # Handle protocol-relative URLs
     if url.startswith("//"):
         url = "https:" + url
-    if url.startswith("/"):
+    elif url.startswith("/"):
         url = root_url.rstrip("/") + url
     
     # Remove fragment
-    url = url.split("#")[0].strip()
+    url = url.split("#", 1)[0].strip()
     
-    # Remove common query parameters that don't affect content
-    # (like preview, cache-busting, etc.)
+    # Parse and clean query parameters
     parsed = urlparse(url)
     if parsed.query:
-        # Keep only meaningful query params, remove preview/cache params
-        query_params = []
-        for param in parsed.query.split("&"):
-            key = param.split("=")[0].lower()
-            # Skip common non-content params
-            if key not in ["preview", "elementor-preview", "ver", "cache", "nocache", "utm_source", "utm_medium", "utm_campaign"]:
-                query_params.append(param)
+        # Filter out non-content query params
+        skip_params = {"preview", "elementor-preview", "ver", "cache", "nocache", 
+                      "utm_source", "utm_medium", "utm_campaign"}
+        query_params = [p for p in parsed.query.split("&") 
+                       if p.split("=", 1)[0].lower() not in skip_params]
+        url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
         if query_params:
-            url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{'&'.join(query_params)}"
-        else:
-            url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            url += "?" + "&".join(query_params)
     
-    # Normalize trailing slash (remove it for consistency)
+    # Normalize trailing slash (remove for consistency, except root)
     if url.endswith("/") and len(url) > len(root_url):
         url = url.rstrip("/")
     
@@ -114,7 +111,7 @@ def is_allowed(url: str, base_domain: str) -> bool:
 
 
 def _fetch_requests(url: str, retry_count: int = 0) -> str:
-    """Fetch HTML using requests (default)."""
+    """Fetch HTML using requests with rate limit retry logic."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -126,24 +123,26 @@ def _fetch_requests(url: str, retry_count: int = 0) -> str:
     verify_ssl = _scraping_config.get("verify_ssl", True)
     resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
     
-    # Handle rate limiting (429) with retry
+    # Handle rate limiting (429) with exponential backoff retry
     if resp.status_code == 429:
         if retry_count < 3:
-            wait_time = (2 ** retry_count) * 5  # Exponential backoff: 5s, 10s, 20s
+            wait_time = (2 ** retry_count) * 5  # 5s, 10s, 20s
             print(f"  ⚠ Rate limited (429) for {url}, retrying in {wait_time}s...")
             time.sleep(wait_time)
             return _fetch_requests(url, retry_count + 1)
-        else:
-            raise ValueError(f"Rate limited (429) after {retry_count} retries for {url}")
+        raise ValueError(f"Rate limited (429) after {retry_count} retries for {url}")
+    
     resp.raise_for_status()
-    raw = resp.content
+    
+    # Handle gzip-compressed content
     text = resp.text
     if _looks_like_binary(text):
         try:
-            raw = gzip.decompress(raw)
-            text = raw.decode("utf-8", errors="replace")
+            text = gzip.decompress(resp.content).decode("utf-8", errors="replace")
         except Exception:
             pass
+    
+    # Validate HTML content
     if _looks_like_binary(text) or "<" not in text or ">" not in text:
         raise ValueError(
             f"Response from {url} does not look like HTML (possibly binary or wrong encoding). "
@@ -153,33 +152,32 @@ def _fetch_requests(url: str, retry_count: int = 0) -> str:
 
 
 def _fetch_playwright(browser, url: str) -> str:
-    """Fetch HTML using a Playwright browser (real Chromium). Use when site blocks requests or needs JS."""
+    """Fetch HTML using Playwright browser. Handles JS-heavy pages and validates content."""
     ignore_https = not _scraping_config.get("verify_ssl", True)
     context = browser.new_context(ignore_https_errors=ignore_https)
     try:
         page = context.new_page()
         try:
-            # Wait for network to be idle (all resources loaded) or timeout after 30s
+            # Wait for network idle + extra time for lazy-loaded content
             page.goto(url, wait_until="networkidle", timeout=30000)
-            # Additional wait for JavaScript-heavy pages
-            page.wait_for_timeout(2000)  # Wait 2 seconds for any lazy-loaded content
+            page.wait_for_timeout(2000)  # Wait for lazy-loaded content
             text = page.content()
         finally:
             page.close()
     finally:
         context.close()
+    
+    # Validate HTML content
     if not text or "<" not in text or ">" not in text:
         raise ValueError(f"Response from {url} does not look like HTML.")
     
-    # Check for error pages
+    # Check for error/loading pages
     text_lower = text.lower()
     if "429 too many requests" in text_lower or "too many requests" in text_lower:
         raise ValueError(f"Rate limited (429) for {url}")
-    if "loading" in text_lower and text_lower.count("loading") > 3:
-        # If page has multiple "loading" mentions, it might not have loaded properly
-        # But allow it if there's substantial content
-        if len(text) < 5000:  # If page is small and has "loading", it's probably not loaded
-            raise ValueError(f"Page appears to still be loading for {url}")
+    # If page is small and has many "loading" mentions, it's probably not loaded
+    if "loading" in text_lower and text_lower.count("loading") > 3 and len(text) < 5000:
+        raise ValueError(f"Page appears to still be loading for {url}")
     
     return text
 
@@ -211,43 +209,44 @@ def _looks_like_binary(s: str) -> bool:
 
 
 def extract(url: str, html: str) -> Page:
-    """Extract text content from HTML."""
+    """Extract text content from HTML with fallback strategies."""
     soup = BeautifulSoup(html, "html.parser")
     title = (soup.title.string or "").strip() if soup.title else ""
 
+    # Remove non-content elements
     for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
         tag.decompose()
     
+    # Try to find main content area
     main_content = None
     for selector in ["main", "article", "[role='main']", ".content", "#content", ".main-content"]:
         main_content = soup.select_one(selector)
         if main_content:
             break
     
-    source = main_content if main_content else soup.find("body")
-    if not source:
-        source = soup
-    
+    source = main_content or soup.find("body") or soup
     text = " ".join(source.get_text(separator=" ", strip=True).split())
     
+    # Fallback strategies if text is too short
     if len(text) < 100:
-        paragraphs = soup.find_all("p")
-        para_text = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+        # Try paragraphs
+        para_text = " ".join(p.get_text(strip=True) for p in soup.find_all("p") if p.get_text(strip=True))
         if len(para_text) > len(text):
             text = para_text
         
+        # Try headings
         if len(text) < 100:
-            headings = soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
-            heading_text = " ".join([h.get_text(strip=True) for h in headings if h.get_text(strip=True)])
+            heading_text = " ".join(h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]) if h.get_text(strip=True))
             if len(heading_text) > len(text):
                 text = heading_text
         
+        # Try content divs
         if len(text) < 100:
-            content_divs = soup.find_all("div", class_=re.compile(r"content|text|description|body|main", re.I))
-            div_text = " ".join([d.get_text(strip=True) for d in content_divs if d.get_text(strip=True)])
+            div_text = " ".join(d.get_text(strip=True) for d in soup.find_all("div", class_=re.compile(r"content|text|description|body|main", re.I)) if d.get_text(strip=True))
             if len(div_text) > len(text):
                 text = div_text
     
+    # Final fallback: entire body
     if len(text) < 50:
         body = soup.find("body")
         if body:
@@ -259,11 +258,11 @@ def extract(url: str, html: str) -> Page:
 
 def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_depth: int = 2) -> List[str]:
     """
-    Fetch URLs from sitemap.xml.
-    Handles both regular sitemaps and sitemap index files (which reference other sitemaps).
+    Fetch URLs from sitemap.xml. Handles sitemap index files and nested sitemaps.
+    Returns deduplicated list of URLs.
     """
-    urls: List[str] = []
     seen_sitemaps: Set[str] = set()
+    all_urls: List[str] = []
     
     def _fetch_sitemap(url: str, depth: int) -> List[str]:
         """Recursively fetch sitemap URLs."""
@@ -271,47 +270,35 @@ def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_dep
             return []
         seen_sitemaps.add(url)
         
-        found_urls: List[str] = []
         try:
             xml = fetch(url, fetcher)
         except Exception as e:
             print(f"  ⚠ Could not fetch sitemap {url}: {e}")
             return []
         
-        # Check if this is a sitemap index (contains <sitemap> tags)
+        # Check if this is a sitemap index
         sitemap_refs = re.findall(r"<sitemap>.*?<loc>(.*?)</loc>.*?</sitemap>", xml, re.DOTALL)
         if sitemap_refs:
-            # This is a sitemap index - fetch nested sitemaps
             print(f"  Found sitemap index with {len(sitemap_refs)} nested sitemaps")
+            urls = []
             for nested_sitemap in sitemap_refs:
                 nested_sitemap = nested_sitemap.strip()
-                if is_allowed(nested_sitemap, base_domain):
-                    found_urls.extend(_fetch_sitemap(nested_sitemap, depth + 1))
-        else:
-            # Regular sitemap - extract URLs
-            # Handle both with and without XML namespaces
-            url_patterns = [
-                r"<loc>(.*?)</loc>",  # Standard format
-                r"<loc[^>]*>(.*?)</loc>",  # With attributes
-            ]
-            for pattern in url_patterns:
-                for loc in re.findall(pattern, xml):
-                    loc = loc.strip()
-                    if loc and is_allowed(loc, base_domain):
-                        found_urls.append(loc)
+                if nested_sitemap and is_allowed(nested_sitemap, base_domain):
+                    urls.extend(_fetch_sitemap(nested_sitemap, depth + 1))
+            return urls
         
-        return found_urls
+        # Regular sitemap - extract URLs (handle with/without XML namespaces)
+        urls = []
+        for match in re.finditer(r"<loc[^>]*>(.*?)</loc>", xml):
+            loc = match.group(1).strip()
+            if loc and is_allowed(loc, base_domain):
+                urls.append(loc)
+        return urls
     
-    urls = _fetch_sitemap(sitemap_url, 0)
+    all_urls = _fetch_sitemap(sitemap_url, 0)
     # Remove duplicates while preserving order
     seen = set()
-    unique_urls = []
-    for url in urls:
-        if url not in seen:
-            seen.add(url)
-            unique_urls.append(url)
-    
-    return unique_urls
+    return [url for url in all_urls if url not in seen and not seen.add(url)]
 
 
 def update_status(business_id: str, status: str, message: str = "", progress: int = 0):
@@ -330,6 +317,15 @@ def update_status(business_id: str, status: str, message: str = "", progress: in
         pass  # Don't fail scraping if status update fails
 
 
+def _calculate_progress(started: float, pages_count: int, queue_size: int) -> int:
+    """Calculate scraping progress percentage (20-40% range)."""
+    elapsed = time.time() - started
+    time_progress = min(int((elapsed / MAX_SECONDS) * 15), 15)
+    pages_progress = min(int((pages_count / MAX_PAGES) * 20), 20)
+    queue_progress = min(int((queue_size / MAX_QUEUE_SIZE) * 5), 5)
+    return min(20 + time_progress + pages_progress + queue_progress, 40)
+
+
 def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id: Optional[str] = None, fetcher=None) -> Tuple[List[Page], List[str]]:
     """Crawl website starting from seed URLs. Returns (pages, fetch_errors). Optional fetcher uses e.g. Playwright."""
     seen: Set[str] = set()
@@ -339,6 +335,9 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
     last_status_update = started
     fetch_errors = []
     rate_limited_count = 0
+    skipped_loading = 0
+    skipped_too_little = 0
+    skipped_duplicate = 0
     
     for s in seed_urls:
         q.put((s, 0))
@@ -347,40 +346,52 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
     while (not q.empty() or not retry_queue.empty()) and len(pages) < MAX_PAGES:
         elapsed = time.time() - started
         if elapsed > MAX_SECONDS:
-            print(f"\n[WARN] Timeout reached ({MAX_SECONDS}s). Processed {len(pages)} pages, {q.qsize()} URLs remaining in queue, {retry_queue.qsize()} in retry queue.")
+            print(f"\n[WARN] Timeout reached ({MAX_SECONDS}s). Processed {len(pages)} pages.")
+            print(f"  - Main queue: {q.qsize()}, Retry queue: {retry_queue.qsize()}, Rate-limited: {rate_limited_count}")
+            # Give extra time for retry queue if we have retries
+            if retry_queue.qsize() > 0 and elapsed < MAX_SECONDS + 60:
+                print(f"  - Processing retry queue (extra 60s)...")
+                moved = min(retry_queue.qsize(), 100, MAX_QUEUE_SIZE - q.qsize())
+                for _ in range(moved):
+                    q.put(retry_queue.get())
+                if moved > 0:
+                    print(f"  - Moved {moved} URLs from retry queue, continuing...")
+                    continue
             break
         
         if q.qsize() > MAX_QUEUE_SIZE:
             break
         
-        # If main queue is empty but we have retries, move retries back to main queue
+        # Process retry queue when main queue is empty
         if q.empty() and not retry_queue.empty():
-            print(f"  ↻ Moving {retry_queue.qsize()} rate-limited URLs back to queue for retry...")
-            while not retry_queue.empty() and q.qsize() < MAX_QUEUE_SIZE:
+            retry_size = retry_queue.qsize()
+            print(f"  ↻ Moving {retry_size} rate-limited URLs back to queue for retry...")
+            moved = min(retry_size, MAX_QUEUE_SIZE - q.qsize())
+            for _ in range(moved):
                 q.put(retry_queue.get())
-            # Add a longer delay before retrying rate-limited pages
+            # Brief delay before retrying (max 10s)
             if retry_queue.qsize() > 0:
-                wait_time = min(30, retry_queue.qsize() * 2)  # Wait up to 30 seconds
-                print(f"  ⏳ Waiting {wait_time}s before retrying rate-limited pages...")
+                wait_time = min(10, retry_queue.qsize())
+                print(f"  ⏳ Waiting {wait_time}s before retrying remaining {retry_queue.qsize()} pages...")
                 time.sleep(wait_time)
+            if moved > 0:
+                print(f"  ✓ Moved {moved} URLs back to main queue")
                 continue
         
-        if business_id and (time.time() - last_status_update) > 3:  # Update every 3 seconds
-            # Calculate progress based on pages fetched, time elapsed, and queue size
-            elapsed = time.time() - started
-            time_progress = min(int((elapsed / MAX_SECONDS) * 15), 15)  # Up to 15% based on time
-            pages_progress = min(int((len(pages) / MAX_PAGES) * 20), 20)  # Up to 20% based on pages
-            queue_progress = min(int((q.qsize() / MAX_QUEUE_SIZE) * 5), 5)  # Up to 5% based on queue
-            progress = min(20 + time_progress + pages_progress + queue_progress, 40)
+        # Update status periodically
+        if business_id and (time.time() - last_status_update) > 3:
+            progress = _calculate_progress(started, len(pages), q.qsize())
             
-            error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
+            # Build status message
+            msg_parts = [f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"]
             if retry_queue.qsize() > 0:
-                error_msg += f". Retry queue: {retry_queue.qsize()}"
+                msg_parts.append(f"Retry queue: {retry_queue.qsize()}")
             if rate_limited_count > 0:
-                error_msg += f". Rate limited: {rate_limited_count}"
+                msg_parts.append(f"Rate limited: {rate_limited_count}")
             if fetch_errors:
-                error_msg += f". Errors: {len(fetch_errors)}"
-            update_status(business_id, "scraping", error_msg, progress)
+                msg_parts.append(f"Errors: {len(fetch_errors)}")
+            
+            update_status(business_id, "scraping", ". ".join(msg_parts), progress)
             last_status_update = time.time()
         
         # Prefer main queue, but use retry queue if main is empty
@@ -389,7 +400,10 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         else:
             url, depth = retry_queue.get()
         
-        if url in seen or depth > MAX_DEPTH:
+        if url in seen:
+            skipped_duplicate += 1
+            continue
+        if depth > MAX_DEPTH:
             continue
         seen.add(url)
         
@@ -399,48 +413,51 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             page = extract(url, html)
             
             # Filter out error pages and loading pages
-            page_text_lower = page.text.lower() if page.text else ""
-            if "429 too many requests" in page_text_lower or "too many requests" in page_text_lower:
-                rate_limited_count += 1
-                print(f"  ⚠ Rate limited (429): {url} - adding to retry queue")
-                # Add to retry queue instead of skipping completely
-                if retry_queue.qsize() < MAX_QUEUE_SIZE:
-                    retry_queue.put((url, depth))
-                # If we're getting too many rate limits, increase delay
-                if rate_limited_count % 10 == 0:
-                    print(f"  ⚠ {rate_limited_count} rate-limited pages. Increasing delay...")
-                    time.sleep(5)  # Extra delay every 10 rate limits
-                continue
-            if "loading" in page_text_lower and page_text_lower.count("loading") > 3 and len(page.text) < 5000:
-                print(f"  ⚠ Skipped (page still loading): {url}")
-                continue
+            if page.text:
+                page_text_lower = page.text.lower()
+                # Check for rate limit errors
+                if "429 too many requests" in page_text_lower or "too many requests" in page_text_lower:
+                    rate_limited_count += 1
+                    print(f"  ⚠ Rate limited (429): {url} - adding to retry queue")
+                    if retry_queue.qsize() < MAX_QUEUE_SIZE:
+                        retry_queue.put((url, depth))
+                    # Brief delay every 20 rate limits
+                    if rate_limited_count % 20 == 0:
+                        print(f"  ⚠ {rate_limited_count} rate-limited pages. Adding brief delay...")
+                        time.sleep(3)
+                    continue
+                # Check for loading pages (small pages with many "loading" mentions)
+                if "loading" in page_text_lower and page_text_lower.count("loading") > 3 and len(page.text) < 5000:
+                    skipped_loading += 1
+                    print(f"  ⚠ Skipped (page still loading): {url}")
+                    continue
             
             if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
                 pages.append(page)
                 print(f"  ✓ Fetched: {url} ({len(page.text)} chars)")
                 
-                # Update progress after each successful page fetch
-                if business_id:
-                    elapsed = time.time() - started
-                    time_progress = min(int((elapsed / MAX_SECONDS) * 15), 15)
-                    pages_progress = min(int((len(pages) / MAX_PAGES) * 20), 20)
-                    queue_progress = min(int((q.qsize() / MAX_QUEUE_SIZE) * 5), 5)
-                    progress = min(20 + time_progress + pages_progress + queue_progress, 40)
-                    error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
+                # Update progress after each successful page fetch (throttled)
+                if business_id and (time.time() - last_status_update) > 2:
+                    progress = _calculate_progress(started, len(pages), q.qsize())
+                    
+                    msg_parts = [f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"]
                     if retry_queue.qsize() > 0:
-                        error_msg += f". Retry queue: {retry_queue.qsize()}"
+                        msg_parts.append(f"Retry queue: {retry_queue.qsize()}")
                     if rate_limited_count > 0:
-                        error_msg += f". Rate limited: {rate_limited_count}"
+                        msg_parts.append(f"Rate limited: {rate_limited_count}")
                     if fetch_errors:
-                        error_msg += f". Errors: {len(fetch_errors)}"
-                    update_status(business_id, "scraping", error_msg, progress)
+                        msg_parts.append(f"Errors: {len(fetch_errors)}")
+                    
+                    update_status(business_id, "scraping", ". ".join(msg_parts), progress)
+                    last_status_update = time.time()
             else:
+                skipped_too_little += 1
                 print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
             
-            # Adaptive delay: increase if we're getting rate limited
+            # Adaptive delay: increase if actively getting rate limited
             delay = REQUEST_DELAY
-            if rate_limited_count > 0 and rate_limited_count % 5 == 0:
-                delay = min(REQUEST_DELAY * 2, 5)  # Double delay, max 5 seconds
+            if rate_limited_count > 0 and (rate_limited_count % 20) >= 5:
+                delay = min(REQUEST_DELAY * 1.5, 3)  # Increase by 50%, max 3s
             time.sleep(delay)
         except Exception as e:
             error_msg = f"{url}: {str(e)[:100]}"
@@ -449,6 +466,7 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
                 print(f"  ✗ Error fetching {url}: {e}")
             continue
 
+        # Extract links from HTML if queue has space
         if html and q.qsize() < MAX_QUEUE_SIZE:
             try:
                 soup = BeautifulSoup(html, "html.parser")
@@ -464,12 +482,28 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
                 pass
     
     if business_id:
+        remaining_in_queue = q.qsize()
+        remaining_in_retry = retry_queue.qsize()
+        
+        # Build status message
         status_msg = f"Finished scraping. Fetched {len(pages)} pages."
-        if rate_limited_count > 0:
-            status_msg += f" ({rate_limited_count} pages rate-limited, {retry_queue.qsize()} in retry queue)"
+        if rate_limited_count > 0 or remaining_in_queue > 0 or remaining_in_retry > 0:
+            status_msg += f" (Rate-limited: {rate_limited_count}, Queue: {remaining_in_queue}, Retry queue: {remaining_in_retry})"
         if fetch_errors and len(pages) == 0:
             status_msg += f" Errors encountered: {fetch_errors[0] if fetch_errors else 'Unknown error'}"
         update_status(business_id, "scraping", status_msg, 40)
+        
+        # Log detailed summary
+        print(f"\n[SUMMARY] Scraping completed:")
+        print(f"  - Pages fetched: {len(pages)}")
+        print(f"  - Rate-limited: {rate_limited_count}")
+        print(f"  - Skipped (loading): {skipped_loading}")
+        print(f"  - Skipped (too little text): {skipped_too_little}")
+        print(f"  - Skipped (duplicate URLs): {skipped_duplicate}")
+        print(f"  - Remaining in queue: {remaining_in_queue}")
+        print(f"  - Remaining in retry queue: {remaining_in_retry}")
+        print(f"  - Errors: {len(fetch_errors)}")
+        print(f"  - Total URLs processed: {len(seen)}")
     
     if len(pages) == 0 and fetch_errors:
         print(f"\n[ERROR] Failed to fetch any pages. Sample errors:")
@@ -606,20 +640,21 @@ def build_kb_for_business(business_id: str, website_url: str):
             use_playwright = False
 
     def _do_crawl(fetcher):
+        # Try sitemap locations until we find one that works
         seeds = []
-        # Try each sitemap location until we find one that works
         for sitemap_url in sitemap_urls:
             found = fetch_sitemap_urls(sitemap_url, base_domain, fetcher)
             if found:
-                seeds.extend(found)
+                seeds = found
                 print(f"Found sitemap at {sitemap_url} with {len(found)} URLs")
-                break  # Use first successful sitemap
+                break
         
         if not seeds:
             seeds = [root_url]
-            print(f"No sitemap found at any location, crawling from root: {root_url}")
+            print(f"No sitemap found, crawling from root: {root_url}")
         else:
             print(f"Using sitemap URLs ({len(seeds)} total) as seeds.")
+        
         print(f"Building KB for business: {business_id}")
         print(f"Website: {website_url}")
         print(f"Crawling (max {MAX_PAGES} pages, {MAX_SECONDS}s timeout)...")
@@ -714,40 +749,47 @@ def build_kb_for_business(business_id: str, website_url: str):
     
     meta_records = []
     all_vectors = []
-    total_pages = len(pages)
-    processed = 0
     seen_urls = set()  # Track URLs to avoid duplicates
     
+    # Filter pages: deduplicate and skip unchanged content
+    pages_to_process = []
     for page in pages:
-        # Skip if URL already processed (deduplicate)
         if page.url in seen_urls:
             continue
         seen_urls.add(page.url)
-        
-        # Skip if content hasn't changed (checksum match)
-        if previous_checksums.get(page.url) == page.checksum:
-            continue
-        
+        if previous_checksums.get(page.url) != page.checksum:
+            pages_to_process.append(page)
+    
+    total_pages = len(pages_to_process)
+    processed = 0
+    
+    for page in pages_to_process:
         chunks = chunk_text(page.text)
         if not chunks:
             continue
+        
         vectors = embed_chunks(client, chunks)
+        clean_title = _sanitize_text_for_meta(page.title)
+        category = page.category or "General"
+        
+        # Create meta records for all chunks
         for i, ch in enumerate(chunks):
             clean_chunk = _sanitize_text_for_meta(ch).strip() or " "
             meta_records.append({
                 "url": page.url,
-                "title": _sanitize_text_for_meta(page.title),
+                "title": clean_title,
                 "text": clean_chunk,
                 "checksum": page.checksum,
                 "fetched_at": page.fetched_at,
                 "chunk_id": f"{page.url}#chunk-{i}",
-                "category": page.category or "General",
+                "category": category,
             })
         all_vectors.append(vectors)
         
         processed += 1
-        progress = 50 + int((processed / total_pages) * 40)
-        update_status(business_id, "indexing", f"Processing page {processed}/{total_pages}...", progress)
+        if business_id and processed % 5 == 0:  # Update every 5 pages instead of every page
+            progress = 50 + int((processed / total_pages) * 40)
+            update_status(business_id, "indexing", f"Processing page {processed}/{total_pages}...", progress)
     
     if not meta_records and os.path.exists(index_path) and os.path.exists(meta_path):
         update_status(business_id, "completed", "Knowledge base is up to date!", 100)

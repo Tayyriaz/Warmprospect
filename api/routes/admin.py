@@ -535,23 +535,21 @@ async def get_scraping_status(
                             print(f"[ERROR] Failed to read categories from DB in SSE: {e}")
                     
                     # Add timestamp for "updated X seconds ago" display
-                    updated_at = status_data.get("updated_at", time.time())
-                    status_data["updated_at"] = updated_at
                     current_time = time.time()
+                    updated_at = status_data.get("updated_at", current_time)
+                    status_data["updated_at"] = updated_at
                     status_data["updated_ago"] = int(current_time - updated_at)
                     
-                    # Send update if status or progress changed, OR send heartbeat every 2 seconds
+                    # Send update if status/progress changed OR heartbeat every 2s
                     current_status_key = (status_data.get("status"), status_data.get("progress"))
                     should_send = (
-                        current_status_key != last_status or  # Status/progress changed
-                        (current_time - last_sent_time) >= 2  # Heartbeat every 2s
+                        current_status_key != last_status or
+                        (current_time - last_sent_time) >= 2
                     )
                     
                     if should_send:
                         last_status = current_status_key
                         last_sent_time = current_time
-                        # Remove internal tracking field before sending
-                        status_data.pop("_last_sent", None)
                         yield f"data: {json.dumps(status_data)}\n\n"
                         
                         # Stop streaming if completed or failed
@@ -567,7 +565,15 @@ async def get_scraping_status(
                     yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                     await asyncio.sleep(1)
         
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(), 
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"  # Disable nginx buffering
+            }
+        )
     
     # Regular JSON response (existing logic)
     # Use absolute paths to avoid issues with working directory
