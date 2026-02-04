@@ -896,7 +896,7 @@
             </div>
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.businessId}')">Edit</button>
-              ${business.websiteUrl ? `<button class="btn btn-info btn-small" onclick="triggerScraping('${business.businessId}')" title="Build Knowledge Base from ${business.websiteUrl}">🌐 Build KB</button>` : ''}
+              ${business.websiteUrl ? `<button class="btn btn-info btn-small" onclick="triggerScraping('${business.businessId}', true)" title="Build/Re-build Knowledge Base from ${business.websiteUrl}">🌐 Build KB</button>` : ''}
               <a href="${API_BASE}/bot?business_id=${business.businessId}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
               <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.businessId}')">Delete</button>
             </div>
@@ -1781,14 +1781,21 @@
           // Reset modal completely before starting new scrape
           resetScrapingModal();
           
-          // Start new scraping process
-          showScrapingModal(businessId);
-          // showScrapingModal already calls startScrapingSSE, so we don't need to call it again
-          // But keep this for backward compatibility
-          if (!scrapingEventSource) {
-            startScrapingPoll(businessId);
+          // Check if scraping was already completed (shouldn't happen with force=true, but handle gracefully)
+          if (result.message && result.message.includes("already completed")) {
+            // Show modal with existing categories
+            showScrapingModal(businessId);
+            showAlert('ℹ️ Knowledge base already exists. Click "Re-scrape" to rebuild.', 'info');
+          } else {
+            // Start new scraping process
+            showScrapingModal(businessId);
+            // showScrapingModal already calls startScrapingSSE, so we don't need to call it again
+            // But keep this for backward compatibility
+            if (!scrapingEventSource) {
+              startScrapingPoll(businessId);
+            }
+            showAlert('🌐 Knowledge base scraping started!', 'success');
           }
-          showAlert('🌐 Knowledge base scraping started!', 'success');
         }
       } catch (err) {
         console.error('Error triggering scraping:', err);
