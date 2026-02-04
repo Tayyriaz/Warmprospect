@@ -306,15 +306,20 @@ def update_status(business_id: str, status: str, message: str = "", progress: in
     try:
         status_file = os.path.join("data", business_id, "scraping_status.json")
         os.makedirs(os.path.dirname(status_file), exist_ok=True)
+        status_data = {
+            "status": status,
+            "message": message,
+            "progress": progress,
+            "updated_at": time.time()
+        }
         with open(status_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "status": status,
-                "message": message,
-                "progress": progress,
-                "updated_at": time.time()
-            }, f)
-    except Exception:
-        pass  # Don't fail scraping if status update fails
+            json.dump(status_data, f)
+            f.flush()  # Ensure data is written immediately
+            os.fsync(f.fileno())  # Force write to disk
+        print(f"[STATUS] {business_id}: {status} - {message} ({progress}%)")
+    except Exception as e:
+        print(f"[ERROR] Failed to update status for {business_id}: {e}")
+        # Don't fail scraping if status update fails
 
 
 def _calculate_progress(started: float, pages_count: int, queue_size: int) -> int:

@@ -61,7 +61,9 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
         try:
             with open(status_file, "w", encoding="utf-8") as f:
                 json.dump(status_data, f)
-            print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message}")
+                f.flush()  # Ensure data is written immediately
+                os.fsync(f.fileno())  # Force write to disk
+            print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message} ({progress}%)")
         except PermissionError as pe:
             print(f"[ERROR] Cannot write status file {status_file}: Permission denied.")
             print(f"[ERROR] Run 'sudo chown -R www-data:www-data {base_dir}/data/' to fix permissions.")
@@ -379,10 +381,12 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
         # Set initial status immediately (before background task starts)
         update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
         print(f"[INFO] Setting initial status for business: {business_id} (force={force_rescrape})")
+        print(f"[INFO] Status file should be at: {os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', business_id, 'scraping_status.json')}")
         
         # Trigger knowledge base build in background
+        print(f"[INFO] Adding background task for KB build: business_id={business_id}, url={website_url.strip()}")
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
-        print(f"[INFO] Manually triggered KB build for business: {business_id}, URL: {website_url}")
+        print(f"[INFO] Background task added. Manually triggered KB build for business: {business_id}, URL: {website_url}")
         
         return response
     except HTTPException:
@@ -487,74 +491,91 @@ async def get_scraping_status(
             last_status = None
             last_sent_time = 0
             
+            # Helper function to read and process status
+            def read_status():
+                status_data = {
+                    "status": "not_started",
+                    "message": "No scraping in progress",
+                    "progress": 0
+                }
+                
+                db_config = config_manager.get_business(business_id)
+                categories_exist = db_config and db_config.get("categories") is not None
+                index_exists = os.path.exists(index_file)
+                
+                if os.path.exists(status_file):
+                    try:
+                        with open(status_file, "r", encoding="utf-8") as f:
+                            file_status = json.load(f)
+                            status_data.update(file_status)
+                            
+                            # Stale: status says "completed" but KB files were deleted
+                            if file_status.get("status") == "completed" and not index_exists:
+                                status_data["status"] = "not_started"
+                                status_data["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
+                                status_data["progress"] = 0
+                                for key in ["categories", "total_pages"]:
+                                    status_data.pop(key, None)
+                            # Auto-fix: stuck status when index exists
+                            elif index_exists:
+                                status_age = time.time() - file_status.get("updated_at", 0)
+                                is_recent_pending = file_status.get("status") == "pending" and status_age < 60
+                                status_message = file_status.get("message", "").lower()
+                                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+                                if categories_exist and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                                    categories_data = db_config.get("categories")
+                                    status_data["status"] = "completed"
+                                    status_data["message"] = "Knowledge base built successfully!"
+                                    status_data["progress"] = 100
+                                    status_data["categories"] = categories_data.get("categories", [])
+                                    status_data["total_pages"] = categories_data.get("total_pages", 0)
+                    except Exception as e:
+                        print(f"[ERROR] Failed to read status file in SSE: {e}")
+                
+                # Add categories from database if available
+                if categories_exist:
+                    try:
+                        categories_data = db_config.get("categories")
+                        enabled_categories = db_config.get("enabled_categories", [])
+                        
+                        categories = categories_data.get("categories", [])
+                        for cat in categories:
+                            cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
+                        
+                        status_data["categories"] = categories
+                        status_data["total_pages"] = categories_data.get("total_pages", 0)
+                    except Exception as e:
+                        print(f"[ERROR] Failed to read categories from DB in SSE: {e}")
+                
+                # Add timestamp for "updated X seconds ago" display
+                current_time = time.time()
+                updated_at = status_data.get("updated_at", current_time)
+                status_data["updated_at"] = updated_at
+                status_data["updated_ago"] = int(current_time - updated_at)
+                
+                return status_data
+            
             # Send initial connection message
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to status stream'})}\n\n"
             
+            # Send initial status immediately (don't wait for loop)
+            initial_status = read_status()
+            last_status = (initial_status.get("status"), initial_status.get("progress"))
+            last_sent_time = time.time()
+            yield f"data: {json.dumps(initial_status)}\n\n"
+            
+            # Stop streaming if already completed or failed
+            if initial_status.get("status") in ["completed", "failed"]:
+                return
+            
             while True:
                 try:
-                    # Read status (reuse logic from regular endpoint)
-                    status_data = {
-                        "status": "not_started",
-                        "message": "No scraping in progress",
-                        "progress": 0
-                    }
-                    
-                    db_config = config_manager.get_business(business_id)
-                    categories_exist = db_config and db_config.get("categories") is not None
-                    index_exists = os.path.exists(index_file)
-                    
-                    if os.path.exists(status_file):
-                        try:
-                            with open(status_file, "r", encoding="utf-8") as f:
-                                file_status = json.load(f)
-                                status_data.update(file_status)
-                                
-                                # Stale: status says "completed" but KB files were deleted
-                                if file_status.get("status") == "completed" and not index_exists:
-                                    status_data["status"] = "not_started"
-                                    status_data["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
-                                    status_data["progress"] = 0
-                                    for key in ["categories", "total_pages"]:
-                                        status_data.pop(key, None)
-                                # Auto-fix: stuck status when index exists
-                                elif index_exists:
-                                    status_age = time.time() - file_status.get("updated_at", 0)
-                                    is_recent_pending = file_status.get("status") == "pending" and status_age < 60
-                                    status_message = file_status.get("message", "").lower()
-                                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                                    if categories_exist and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                                        categories_data = db_config.get("categories")
-                                        status_data["status"] = "completed"
-                                        status_data["message"] = "Knowledge base built successfully!"
-                                        status_data["progress"] = 100
-                                        status_data["categories"] = categories_data.get("categories", [])
-                                        status_data["total_pages"] = categories_data.get("total_pages", 0)
-                        except Exception as e:
-                            print(f"[ERROR] Failed to read status file in SSE: {e}")
-                    
-                    # Add categories from database if available
-                    if categories_exist:
-                        try:
-                            categories_data = db_config.get("categories")
-                            enabled_categories = db_config.get("enabled_categories", [])
-                            
-                            categories = categories_data.get("categories", [])
-                            for cat in categories:
-                                cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
-                            
-                            status_data["categories"] = categories
-                            status_data["total_pages"] = categories_data.get("total_pages", 0)
-                        except Exception as e:
-                            print(f"[ERROR] Failed to read categories from DB in SSE: {e}")
-                    
-                    # Add timestamp for "updated X seconds ago" display
-                    current_time = time.time()
-                    updated_at = status_data.get("updated_at", current_time)
-                    status_data["updated_at"] = updated_at
-                    status_data["updated_ago"] = int(current_time - updated_at)
+                    # Read status
+                    status_data = read_status()
                     
                     # Send update if status/progress changed OR heartbeat every 2s
                     current_status_key = (status_data.get("status"), status_data.get("progress"))
+                    current_time = time.time()
                     should_send = (
                         current_status_key != last_status or
                         (current_time - last_sent_time) >= 2
