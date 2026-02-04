@@ -1257,6 +1257,208 @@
     let lastStatus = null;
     let stuckWarningShown = false;
     
+    // Function to update UI directly from a status object (used by SSE)
+    function updateScrapingStatusUI(status) {
+      console.log('[UI] Updating UI with status:', status.status, 'progress:', status.progress);
+      
+      const statusEl = document.getElementById('modalStatus');
+      const messageEl = document.getElementById('modalMessage');
+      const progressEl = document.getElementById('progressFill');
+      const categoriesSection = document.getElementById('categoriesSection');
+      const categoriesGrid = document.getElementById('categoriesGrid');
+      const categoriesSummary = document.getElementById('categoriesSummary');
+      
+      if (!statusEl || !messageEl || !progressEl) {
+        console.error('[UI] Modal elements not found');
+        return;
+      }
+      
+      // Detect if scraping is stuck
+      const currentProgress = status.progress || 0;
+      const currentStatus = status.status;
+      const now = Date.now();
+      
+      // Check if progress hasn't changed in 5 minutes (300000ms)
+      if (lastProgress === currentProgress && lastStatus === currentStatus && 
+          lastProgressTime && (now - lastProgressTime) > 300000 && 
+          currentStatus !== 'completed' && currentStatus !== 'failed') {
+        if (!stuckWarningShown) {
+          stuckWarningShown = true;
+          const stuckMinutes = Math.floor((now - lastProgressTime) / 60000);
+          messageEl.innerHTML = `
+            <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
+              ⚠️ Scraping appears to be stuck (no progress for ${stuckMinutes} minutes)
+            </div>
+            <div style="color: #6b7280; font-size: 13px;">
+              ${status.message || 'The scraping process may have encountered an issue.'}
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
+              <strong>💡 Troubleshooting:</strong><br>
+              • Check server logs: <code>sudo journalctl -u chatbot.service -f</code><br>
+              • The process may be waiting for a slow website response<br>
+              • Try refreshing the knowledge base if it continues to be stuck
+            </div>
+          `;
+          statusEl.style.color = '#dc2626';
+        }
+      } else {
+        // Progress is updating, reset warning
+        if (currentProgress !== lastProgress || currentStatus !== lastStatus) {
+          stuckWarningShown = false;
+          lastProgress = currentProgress;
+          lastStatus = currentStatus;
+          lastProgressTime = now;
+          statusEl.style.color = '';
+        }
+      }
+      
+      // Update last progress time if this is first check
+      if (!lastProgressTime) {
+        lastProgressTime = now;
+      }
+      
+      let statusText = '';
+      let messageText = status.message || '';
+      // Use the actual progress from API, don't override it
+      let progress = status.progress !== undefined ? status.progress : (currentProgress || 0);
+      
+      // Add last updated timestamp if available
+      if (status.updated_at) {
+        const updatedTime = new Date(status.updated_at * 1000);
+        const timeAgo = Math.floor((now - updatedTime.getTime()) / 1000);
+        let timeAgoText;
+        if (timeAgo < 60) {
+          timeAgoText = `${timeAgo} seconds ago`;
+        } else if (timeAgo < 3600) {
+          timeAgoText = `${Math.floor(timeAgo / 60)} minutes ago`;
+        } else {
+          timeAgoText = `${Math.floor(timeAgo / 3600)} hours ago`;
+        }
+        messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${timeAgoText})</span>`;
+      }
+      
+      // Auto-detect completed status: If categories exist but status is still pending/scraping, treat as completed
+      if (status.categories && status.categories.length > 0 && 
+          (status.status === 'pending' || status.status === 'scraping' || 
+           status.status === 'categorizing' || status.status === 'indexing')) {
+        // Categories exist, so scraping must be completed - update status
+        status.status = 'completed';
+        status.progress = 100;
+        if (!status.message || status.message.includes('Preparing') || status.message.includes('Initializing')) {
+          status.message = 'Knowledge base built successfully!';
+        }
+      }
+      
+      switch(status.status) {
+        case 'pending':
+          statusText = '⏳ Preparing...';
+          break;
+        case 'scraping':
+          statusText = '🌐 Scraping Website...';
+          break;
+        case 'categorizing':
+          statusText = '🏷️ Categorizing Pages...';
+          break;
+        case 'indexing':
+          statusText = '📚 Building Knowledge Base...';
+          break;
+        case 'completed':
+          statusText = '✅ Complete!';
+          progress = 100;
+          messageText = status.message || 'Your chatbot is now ready to use with the scraped knowledge base!';
+          
+          // Show categories if available
+          if (status.categories && status.categories.length > 0) {
+            currentCategories = status.categories;
+            window.totalPages = status.total_pages || 0;
+            displayCategories(status.categories, window.totalPages);
+            categoriesSection.style.display = 'block';
+            // Hide default modal actions when categories are shown
+            const defaultActions = document.getElementById('modalActionsDefault');
+            if (defaultActions) defaultActions.style.display = 'none';
+            // Show re-scrape button when completed
+            const rescraperBtn = document.getElementById('rescraperBtn');
+            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+          }
+          
+          // SSE connection will close automatically, but ensure it's closed
+          if (scrapingEventSource) {
+            scrapingEventSource.close();
+            scrapingEventSource = null;
+          }
+          break;
+        case 'failed':
+          statusText = '❌ Failed';
+          messageText = status.message || 'Scraping failed. Please try again.';
+          progress = 0;
+          // Close SSE connection on failure
+          if (scrapingEventSource) {
+            scrapingEventSource.close();
+            scrapingEventSource = null;
+          }
+          break;
+        case 'not_started':
+          statusText = '⏳ Not Started';
+          break;
+        default:
+          statusText = '⏳ ' + (status.status || 'Unknown');
+      }
+      
+      // Show categories if available (even during indexing or if auto-detected as completed)
+      if (status.categories && status.categories.length > 0) {
+        currentCategories = status.categories;
+        window.totalPages = status.total_pages || 0;
+        displayCategories(status.categories, window.totalPages);
+        categoriesSection.style.display = 'block';
+        // Hide default modal actions when categories are shown
+        const defaultActions = document.getElementById('modalActionsDefault');
+        if (defaultActions) defaultActions.style.display = 'none';
+        // Show re-scrape button when categories are shown (scraping completed)
+        const rescraperBtn = document.getElementById('rescraperBtn');
+        if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+      } else {
+        // Show default modal actions when categories are not shown
+        const defaultActions = document.getElementById('modalActionsDefault');
+        if (defaultActions) defaultActions.style.display = 'flex';
+        // Hide re-scrape button when no categories
+        const rescraperBtn = document.getElementById('rescraperBtn');
+        if (rescraperBtn) rescraperBtn.style.display = 'none';
+      }
+      
+      statusEl.textContent = statusText;
+      messageEl.innerHTML = messageText;
+      progressEl.style.width = progress + '%';
+      
+      // Update progress percent
+      const progressPercentEl = document.getElementById('progressPercent');
+      if (progressPercentEl) {
+        progressPercentEl.textContent = progress + '%';
+        progressPercentEl.style.color = progress === 100 ? '#10b981' : '#667eea';
+      }
+      
+      // Update progress details
+      const progressDetailsEl = document.getElementById('progressDetails');
+      if (progressDetailsEl) {
+        let detailsText = '';
+        if (scrapingStartTime) {
+          const elapsed = Math.floor((Date.now() - scrapingStartTime) / 1000);
+          const minutes = Math.floor(elapsed / 60);
+          const seconds = elapsed % 60;
+          detailsText = `Elapsed: ${minutes}m ${seconds}s`;
+        }
+        if (lastProgressTime && lastProgress !== -1) {
+          const timeSinceUpdate = Math.floor((Date.now() - lastProgressTime) / 1000);
+          if (timeSinceUpdate > 30) {
+            detailsText += detailsText ? ' • ' : '';
+            detailsText += `<span style="color: #dc2626;">No update for ${Math.floor(timeSinceUpdate / 60)}m</span>`;
+          }
+        }
+        progressDetailsEl.innerHTML = detailsText;
+      }
+      
+      console.log('[UI] Updated progress bar to', progress + '%', 'status:', statusText);
+    }
+    
     function updateScrapingStatus(businessId) {
       currentBusinessId = businessId;
       fetch(`${API_BASE}/admin/business/${businessId}/scraping-status`, {
