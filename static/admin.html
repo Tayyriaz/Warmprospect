@@ -1176,7 +1176,8 @@
       resetScrapingModal();
       
       modal.classList.add('active');
-      updateScrapingStatus(businessId);
+      // Start SSE immediately when modal opens
+      startScrapingSSE(businessId);
     }
     
     function resetScrapingModal() {
@@ -1316,7 +1317,8 @@
           
           let statusText = '';
           let messageText = status.message || '';
-          let progress = currentProgress;
+          // Use the actual progress from API, don't override it
+          let progress = status.progress !== undefined ? status.progress : (currentProgress || 0);
           
           // Add last updated timestamp if available
           if (status.updated_at) {
@@ -1351,15 +1353,15 @@
               break;
             case 'scraping':
               statusText = '🌐 Scraping Website...';
-              progress = Math.max(progress, 20);
+              // Don't override progress - use what API provides
               break;
             case 'categorizing':
               statusText = '🏷️ Categorizing Pages...';
-              progress = Math.max(progress, 40);
+              // Don't override progress - use what API provides
               break;
             case 'indexing':
               statusText = '📚 Building Knowledge Base...';
-              progress = Math.max(progress, 50);
+              // Don't override progress - use what API provides
               break;
             case 'completed':
               statusText = '✅ Complete!';
@@ -1648,7 +1650,13 @@
       }
       
       const sseUrl = `${API_BASE}/admin/business/${businessId}/scraping-status?stream=true&api_key=${encodeURIComponent(apiKey)}`;
+      console.log('Starting SSE connection to:', sseUrl);
       scrapingEventSource = new EventSource(sseUrl);
+      
+      // Log connection state changes
+      scrapingEventSource.addEventListener('open', () => {
+        console.log('SSE connection opened successfully');
+      });
       
       scrapingEventSource.onmessage = function(event) {
         try {
@@ -1709,11 +1717,24 @@
         }
       };
       
+      scrapingEventSource.onopen = function(event) {
+        console.log('SSE connection opened');
+      };
+      
       scrapingEventSource.onerror = function(event) {
-        console.error('SSE error:', event);
+        console.error('SSE error:', event, 'readyState:', scrapingEventSource?.readyState);
         // EventSource will automatically reconnect, but we can handle errors here
         if (scrapingEventSource && scrapingEventSource.readyState === EventSource.CLOSED) {
-          showAlert('Connection to status stream lost. Please refresh.', 'error');
+          console.error('SSE connection closed. Falling back to polling...');
+          // Fallback to polling if SSE fails
+          scrapingEventSource = null;
+          const pollInterval = setInterval(() => {
+            if (!scrapingEventSource) {
+              updateScrapingStatus(businessId);
+            } else {
+              clearInterval(pollInterval);
+            }
+          }, 3000);
         }
       };
     }
