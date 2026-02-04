@@ -641,33 +641,40 @@ echo "📂 Working directory: $(pwd)"
 echo ""
 echo "📥 Step 1: Pulling latest changes from git..."
     if [ -d ".git" ]; then
-        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-        
-        if [ -z "$CURRENT_BRANCH" ]; then
-            echo "⚠️  Could not detect git branch, trying common branches..."
-            if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
-                echo "✅ Git pull successful"
-            else
-                echo "⚠️  Git pull failed. Continuing with existing code..."
-            fi
+        # Try simple git pull first
+        echo "  Pulling latest changes..."
+        if git pull 2>/dev/null; then
+            echo "✅ Git pull successful"
         else
-            echo "  Current branch: $CURRENT_BRANCH"
+            echo "  Simple git pull failed, trying branch-specific pull..."
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
             
-            if [ -n "$(git status --porcelain)" ]; then
-                echo "⚠️  You have uncommitted changes. Stashing them..."
-                git stash || true
-            fi
-            
-            echo "  Fetching latest changes..."
-            git fetch origin "$CURRENT_BRANCH" 2>/dev/null || git fetch origin 2>/dev/null || true
-            
-            if git pull origin "$CURRENT_BRANCH" 2>/dev/null || \
-               git pull origin main 2>/dev/null || \
-               git pull origin master 2>/dev/null; then
-    echo "✅ Git pull successful"
-else
-                echo "⚠️  Git pull had issues, but continuing with existing code..."
-                echo "   You may want to manually run: git pull origin $CURRENT_BRANCH"
+            if [ -z "$CURRENT_BRANCH" ]; then
+                echo "⚠️  Could not detect git branch, trying common branches..."
+                if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
+                    echo "✅ Git pull successful"
+                else
+                    echo "⚠️  Git pull failed. Continuing with existing code..."
+                fi
+            else
+                echo "  Current branch: $CURRENT_BRANCH"
+                
+                if [ -n "$(git status --porcelain)" ]; then
+                    echo "⚠️  You have uncommitted changes. Stashing them..."
+                    git stash || true
+                fi
+                
+                echo "  Fetching latest changes..."
+                git fetch origin "$CURRENT_BRANCH" 2>/dev/null || git fetch origin 2>/dev/null || true
+                
+                if git pull origin "$CURRENT_BRANCH" 2>/dev/null || \
+                   git pull origin main 2>/dev/null || \
+                   git pull origin master 2>/dev/null; then
+                    echo "✅ Git pull successful"
+                else
+                    echo "⚠️  Git pull had issues, but continuing with existing code..."
+                    echo "   You may want to manually run: git pull origin $CURRENT_BRANCH"
+                fi
             fi
         fi
     else
