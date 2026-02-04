@@ -472,6 +472,7 @@ async def get_scraping_status(
             status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
             index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
             last_status = None
+            last_sent_time = 0
             
             # Send initial connection message
             yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to status stream'})}\n\n"
@@ -533,10 +534,24 @@ async def get_scraping_status(
                         except Exception as e:
                             print(f"[ERROR] Failed to read categories from DB in SSE: {e}")
                     
-                    # Only send update if status or progress changed
+                    # Add timestamp for "updated X seconds ago" display
+                    updated_at = status_data.get("updated_at", time.time())
+                    status_data["updated_at"] = updated_at
+                    current_time = time.time()
+                    status_data["updated_ago"] = int(current_time - updated_at)
+                    
+                    # Send update if status or progress changed, OR send heartbeat every 2 seconds
                     current_status_key = (status_data.get("status"), status_data.get("progress"))
-                    if current_status_key != last_status:
+                    should_send = (
+                        current_status_key != last_status or  # Status/progress changed
+                        (current_time - last_sent_time) >= 2  # Heartbeat every 2s
+                    )
+                    
+                    if should_send:
                         last_status = current_status_key
+                        last_sent_time = current_time
+                        # Remove internal tracking field before sending
+                        status_data.pop("_last_sent", None)
                         yield f"data: {json.dumps(status_data)}\n\n"
                         
                         # Stop streaming if completed or failed

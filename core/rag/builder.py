@@ -63,6 +63,7 @@ MAX_PAGES = int(_scraping_config.get("max_pages", 500))
 MAX_SECONDS = int(_scraping_config.get("max_seconds", 600))
 MAX_LINKS_PER_PAGE = int(_scraping_config.get("max_links_per_page", 30))
 MAX_QUEUE_SIZE = int(_scraping_config.get("max_queue_size", 1000))
+REQUEST_DELAY = float(_scraping_config.get("request_delay", 2))
 CHUNK_SIZE = int(_rag_config.get("chunk_size", 800))
 CHUNK_OVERLAP = int(_rag_config.get("chunk_overlap", 100))
 EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", _models_config.get("embed_model", "text-embedding-004"))
@@ -75,7 +76,31 @@ def normalize_url(url: str, root_url: str) -> str:
         url = "https:" + url
     if url.startswith("/"):
         url = root_url.rstrip("/") + url
-    return url.split("#")[0].strip()
+    
+    # Remove fragment
+    url = url.split("#")[0].strip()
+    
+    # Remove common query parameters that don't affect content
+    # (like preview, cache-busting, etc.)
+    parsed = urlparse(url)
+    if parsed.query:
+        # Keep only meaningful query params, remove preview/cache params
+        query_params = []
+        for param in parsed.query.split("&"):
+            key = param.split("=")[0].lower()
+            # Skip common non-content params
+            if key not in ["preview", "elementor-preview", "ver", "cache", "nocache", "utm_source", "utm_medium", "utm_campaign"]:
+                query_params.append(param)
+        if query_params:
+            url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{'&'.join(query_params)}"
+        else:
+            url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    
+    # Normalize trailing slash (remove it for consistency)
+    if url.endswith("/") and len(url) > len(root_url):
+        url = url.rstrip("/")
+    
+    return url
 
 
 def is_allowed(url: str, base_domain: str) -> bool:
@@ -88,7 +113,7 @@ def is_allowed(url: str, base_domain: str) -> bool:
     return parsed.hostname == base_domain or parsed.hostname.endswith("." + base_domain)
 
 
-def _fetch_requests(url: str) -> str:
+def _fetch_requests(url: str, retry_count: int = 0) -> str:
     """Fetch HTML using requests (default)."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -100,6 +125,16 @@ def _fetch_requests(url: str) -> str:
     }
     verify_ssl = _scraping_config.get("verify_ssl", True)
     resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
+    
+    # Handle rate limiting (429) with retry
+    if resp.status_code == 429:
+        if retry_count < 3:
+            wait_time = (2 ** retry_count) * 5  # Exponential backoff: 5s, 10s, 20s
+            print(f"  ⚠ Rate limited (429) for {url}, retrying in {wait_time}s...")
+            time.sleep(wait_time)
+            return _fetch_requests(url, retry_count + 1)
+        else:
+            raise ValueError(f"Rate limited (429) after {retry_count} retries for {url}")
     resp.raise_for_status()
     raw = resp.content
     text = resp.text
@@ -124,7 +159,10 @@ def _fetch_playwright(browser, url: str) -> str:
     try:
         page = context.new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Wait for network to be idle (all resources loaded) or timeout after 30s
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            # Additional wait for JavaScript-heavy pages
+            page.wait_for_timeout(2000)  # Wait 2 seconds for any lazy-loaded content
             text = page.content()
         finally:
             page.close()
@@ -132,6 +170,17 @@ def _fetch_playwright(browser, url: str) -> str:
         context.close()
     if not text or "<" not in text or ">" not in text:
         raise ValueError(f"Response from {url} does not look like HTML.")
+    
+    # Check for error pages
+    text_lower = text.lower()
+    if "429 too many requests" in text_lower or "too many requests" in text_lower:
+        raise ValueError(f"Rate limited (429) for {url}")
+    if "loading" in text_lower and text_lower.count("loading") > 3:
+        # If page has multiple "loading" mentions, it might not have loaded properly
+        # But allow it if there's substantial content
+        if len(text) < 5000:  # If page is small and has "loading", it's probably not loaded
+            raise ValueError(f"Page appears to still be loading for {url}")
+    
     return text
 
 
@@ -301,7 +350,7 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         if q.qsize() > MAX_QUEUE_SIZE:
             break
         
-        if business_id and (time.time() - last_status_update) > 10:
+        if business_id and (time.time() - last_status_update) > 5:  # Update every 5 seconds instead of 10
             progress = min(20 + int((len(pages) / MAX_PAGES) * 20), 40)
             error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
             if fetch_errors:
@@ -318,12 +367,24 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         try:
             html = fetch(url, fetcher)
             page = extract(url, html)
+            
+            # Filter out error pages and loading pages
+            page_text_lower = page.text.lower() if page.text else ""
+            if "429 too many requests" in page_text_lower or "too many requests" in page_text_lower:
+                print(f"  ⚠ Skipped (rate limited): {url}")
+                continue
+            if "loading" in page_text_lower and page_text_lower.count("loading") > 3 and len(page.text) < 5000:
+                print(f"  ⚠ Skipped (page still loading): {url}")
+                continue
+            
             if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
                 pages.append(page)
                 print(f"  ✓ Fetched: {url} ({len(page.text)} chars)")
             else:
                 print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
-            time.sleep(0.1)
+            
+            # Delay between requests to avoid rate limiting
+            time.sleep(REQUEST_DELAY)
         except Exception as e:
             error_msg = f"{url}: {str(e)[:100]}"
             fetch_errors.append(error_msg)
@@ -596,8 +657,15 @@ def build_kb_for_business(business_id: str, website_url: str):
     all_vectors = []
     total_pages = len(pages)
     processed = 0
+    seen_urls = set()  # Track URLs to avoid duplicates
     
     for page in pages:
+        # Skip if URL already processed (deduplicate)
+        if page.url in seen_urls:
+            continue
+        seen_urls.add(page.url)
+        
+        # Skip if content hasn't changed (checksum match)
         if previous_checksums.get(page.url) == page.checksum:
             continue
         

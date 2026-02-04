@@ -25,6 +25,10 @@ scraping:
   # Use Playwright (real browser) instead of requests when sites block or need JavaScript.
   # Enable if scraping fails with "No pages fetched" or connection/SSL errors.
   use_playwright: true
+  
+  # Delay between requests (in seconds) to avoid rate limiting
+  # Increase if you see "429 Too Many Requests" errors
+  request_delay: 2
 
 rag:
   # Size of text chunks for RAG indexing
