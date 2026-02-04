@@ -10,7 +10,8 @@ scraping:
   max_pages: 500
   
   # Maximum time to spend scraping (in seconds)
-  max_seconds: 600  # 10 minutes
+  # Increase if you have many pages or slow rate limits
+  max_seconds: 1800  # 30 minutes (increased to handle large sites with rate limiting)
   
   # Maximum number of links to queue per page
   max_links_per_page: 30

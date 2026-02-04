@@ -334,31 +334,61 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
     """Crawl website starting from seed URLs. Returns (pages, fetch_errors). Optional fetcher uses e.g. Playwright."""
     seen: Set[str] = set()
     q: queue.Queue = queue.Queue()
+    retry_queue: queue.Queue = queue.Queue()  # Queue for rate-limited pages to retry later
     started = time.time()
     last_status_update = started
     fetch_errors = []
+    rate_limited_count = 0
     
     for s in seed_urls:
         q.put((s, 0))
     pages: List[Page] = []
 
-    while not q.empty() and len(pages) < MAX_PAGES:
+    while (not q.empty() or not retry_queue.empty()) and len(pages) < MAX_PAGES:
         elapsed = time.time() - started
         if elapsed > MAX_SECONDS:
+            print(f"\n[WARN] Timeout reached ({MAX_SECONDS}s). Processed {len(pages)} pages, {q.qsize()} URLs remaining in queue, {retry_queue.qsize()} in retry queue.")
             break
         
         if q.qsize() > MAX_QUEUE_SIZE:
             break
         
-        if business_id and (time.time() - last_status_update) > 5:  # Update every 5 seconds instead of 10
-            progress = min(20 + int((len(pages) / MAX_PAGES) * 20), 40)
+        # If main queue is empty but we have retries, move retries back to main queue
+        if q.empty() and not retry_queue.empty():
+            print(f"  ↻ Moving {retry_queue.qsize()} rate-limited URLs back to queue for retry...")
+            while not retry_queue.empty() and q.qsize() < MAX_QUEUE_SIZE:
+                q.put(retry_queue.get())
+            # Add a longer delay before retrying rate-limited pages
+            if retry_queue.qsize() > 0:
+                wait_time = min(30, retry_queue.qsize() * 2)  # Wait up to 30 seconds
+                print(f"  ⏳ Waiting {wait_time}s before retrying rate-limited pages...")
+                time.sleep(wait_time)
+                continue
+        
+        if business_id and (time.time() - last_status_update) > 3:  # Update every 3 seconds
+            # Calculate progress based on pages fetched, time elapsed, and queue size
+            elapsed = time.time() - started
+            time_progress = min(int((elapsed / MAX_SECONDS) * 15), 15)  # Up to 15% based on time
+            pages_progress = min(int((len(pages) / MAX_PAGES) * 20), 20)  # Up to 20% based on pages
+            queue_progress = min(int((q.qsize() / MAX_QUEUE_SIZE) * 5), 5)  # Up to 5% based on queue
+            progress = min(20 + time_progress + pages_progress + queue_progress, 40)
+            
             error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
+            if retry_queue.qsize() > 0:
+                error_msg += f". Retry queue: {retry_queue.qsize()}"
+            if rate_limited_count > 0:
+                error_msg += f". Rate limited: {rate_limited_count}"
             if fetch_errors:
                 error_msg += f". Errors: {len(fetch_errors)}"
             update_status(business_id, "scraping", error_msg, progress)
             last_status_update = time.time()
         
-        url, depth = q.get()
+        # Prefer main queue, but use retry queue if main is empty
+        if not q.empty():
+            url, depth = q.get()
+        else:
+            url, depth = retry_queue.get()
+        
         if url in seen or depth > MAX_DEPTH:
             continue
         seen.add(url)
@@ -371,7 +401,15 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             # Filter out error pages and loading pages
             page_text_lower = page.text.lower() if page.text else ""
             if "429 too many requests" in page_text_lower or "too many requests" in page_text_lower:
-                print(f"  ⚠ Skipped (rate limited): {url}")
+                rate_limited_count += 1
+                print(f"  ⚠ Rate limited (429): {url} - adding to retry queue")
+                # Add to retry queue instead of skipping completely
+                if retry_queue.qsize() < MAX_QUEUE_SIZE:
+                    retry_queue.put((url, depth))
+                # If we're getting too many rate limits, increase delay
+                if rate_limited_count % 10 == 0:
+                    print(f"  ⚠ {rate_limited_count} rate-limited pages. Increasing delay...")
+                    time.sleep(5)  # Extra delay every 10 rate limits
                 continue
             if "loading" in page_text_lower and page_text_lower.count("loading") > 3 and len(page.text) < 5000:
                 print(f"  ⚠ Skipped (page still loading): {url}")
@@ -380,11 +418,30 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
                 pages.append(page)
                 print(f"  ✓ Fetched: {url} ({len(page.text)} chars)")
+                
+                # Update progress after each successful page fetch
+                if business_id:
+                    elapsed = time.time() - started
+                    time_progress = min(int((elapsed / MAX_SECONDS) * 15), 15)
+                    pages_progress = min(int((len(pages) / MAX_PAGES) * 20), 20)
+                    queue_progress = min(int((q.qsize() / MAX_QUEUE_SIZE) * 5), 5)
+                    progress = min(20 + time_progress + pages_progress + queue_progress, 40)
+                    error_msg = f"Scraping... Fetched {len(pages)} pages. Queue: {q.qsize()}"
+                    if retry_queue.qsize() > 0:
+                        error_msg += f". Retry queue: {retry_queue.qsize()}"
+                    if rate_limited_count > 0:
+                        error_msg += f". Rate limited: {rate_limited_count}"
+                    if fetch_errors:
+                        error_msg += f". Errors: {len(fetch_errors)}"
+                    update_status(business_id, "scraping", error_msg, progress)
             else:
                 print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
             
-            # Delay between requests to avoid rate limiting
-            time.sleep(REQUEST_DELAY)
+            # Adaptive delay: increase if we're getting rate limited
+            delay = REQUEST_DELAY
+            if rate_limited_count > 0 and rate_limited_count % 5 == 0:
+                delay = min(REQUEST_DELAY * 2, 5)  # Double delay, max 5 seconds
+            time.sleep(delay)
         except Exception as e:
             error_msg = f"{url}: {str(e)[:100]}"
             fetch_errors.append(error_msg)
@@ -408,6 +465,8 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
     
     if business_id:
         status_msg = f"Finished scraping. Fetched {len(pages)} pages."
+        if rate_limited_count > 0:
+            status_msg += f" ({rate_limited_count} pages rate-limited, {retry_queue.qsize()} in retry queue)"
         if fetch_errors and len(pages) == 0:
             status_msg += f" Errors encountered: {fetch_errors[0] if fetch_errors else 'Unknown error'}"
         update_status(business_id, "scraping", status_msg, 40)
