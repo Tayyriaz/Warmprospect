@@ -25,6 +25,7 @@ class BusinessConfigManager:
         business_name: str = None,
         system_prompt: str = None,
         greeting_message: str = None,
+        secondary_greeting_message: str = None,
         # appointment_link removed - use CTA tree with redirect action instead
         primary_goal: str = None,
         personality: str = None,
@@ -71,6 +72,7 @@ class BusinessConfigManager:
             business_name=business_name,
             system_prompt=system_prompt,
             greeting_message=greeting_message,
+            secondary_greeting_message=secondary_greeting_message,
             # appointment_link removed - use CTA tree instead
             primary_goal=primary_goal,
             personality=personality,

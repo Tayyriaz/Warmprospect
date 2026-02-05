@@ -19,6 +19,7 @@ class BusinessConfig(Base):
     business_name = Column(String(255), nullable=False)
     system_prompt = Column(Text, nullable=False)
     greeting_message = Column(Text)
+    secondary_greeting_message = Column(Text)
     primary_goal = Column(Text)
     personality = Column(Text)
     privacy_statement = Column(Text)
@@ -43,6 +44,7 @@ class BusinessConfig(Base):
             "business_name": self.business_name,
             "system_prompt": self.system_prompt,
             "greeting_message": self.greeting_message,
+            "secondary_greeting_message": self.secondary_greeting_message if hasattr(self, 'secondary_greeting_message') else None,
             "primary_goal": self.primary_goal,
             "personality": self.personality,
             "privacy_statement": self.privacy_statement,

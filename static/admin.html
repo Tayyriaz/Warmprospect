@@ -495,6 +495,13 @@
             <div class="help-text">Initial message shown when chat opens</div>
           </div>
           
+          <div class="form-group">
+            <label>Secondary Greeting Message</label>
+            <input type="text" id="secondaryGreetingMessage" name="secondaryGreetingMessage" 
+                   placeholder="e.g., Welcome back! How can I assist you today?" />
+            <div class="help-text">Optional secondary greeting message (e.g., for returning users)</div>
+          </div>
+          
           <div class="form-row">
             <div class="form-group">
               <label>Primary Goal</label>
@@ -944,6 +951,7 @@
         document.getElementById('primaryGoal').value = config.primaryGoal || '';
         document.getElementById('personality').value = config.personality || '';
         document.getElementById('greetingMessage').value = config.greetingMessage || '';
+        document.getElementById('secondaryGreetingMessage').value = config.secondaryGreetingMessage || '';
         // appointmentLink removed - use CTA tree with redirect action instead
         document.getElementById('privacyStatement').value = config.privacyStatement || '';
         document.getElementById('themeColor').value = config.themeColor || '#2563eb';

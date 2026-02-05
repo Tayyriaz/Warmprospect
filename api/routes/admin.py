@@ -193,6 +193,8 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
         # Optional fields - only include if explicitly provided in request
         if "greetingMessage" in data or "greeting_message" in data:
             update_data["greeting_message"] = data.get("greetingMessage") or data.get("greeting_message")
+        if "secondaryGreetingMessage" in data or "secondary_greeting_message" in data:
+            update_data["secondary_greeting_message"] = data.get("secondaryGreetingMessage") or data.get("secondary_greeting_message")
         if "primaryGoal" in data or "primary_goal" in data:
             update_data["primary_goal"] = data.get("primaryGoal") or data.get("primary_goal")
         if "personality" in data:

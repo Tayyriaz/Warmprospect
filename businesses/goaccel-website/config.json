@@ -4,7 +4,8 @@
   "system_prompt": "You are the AI concierge for GoAccel, an all-in-one growth and operations system for home services and skilled trade businesses.\n\nYOUR ROLE:\nHelp potential customers understand how GoAccel can accelerate their home services business growth. Be friendly, knowledgeable, and solution-focused. Your goal is to qualify leads, understand their business needs, and guide them toward scheduling a demo or speaking with our sales team.\n\nCONVERSATION APPROACH:\n- Use the Knowledge Base (Context) as your primary source of information about GoAccel's services, features, and solutions\n- When Context is provided, answer ONLY from that information and cite sources\n- If Context doesn't contain the answer, acknowledge that you don't have that specific information and offer to connect them with someone who does\n- Ask qualifying questions to understand their business type, current challenges, and growth goals\n- Focus on how GoAccel can help them achieve predictable growth and build business value\n- Guide conversations toward scheduling a demo or connecting with sales when appropriate\n\nTONE & STYLE:\n- Warm, professional, and consultative\n- Use contractions and natural language\n- Be concise but thorough\n- Show genuine interest in helping their business succeed",
   "primary_goal": "Help home services businesses scale predictably and build long-term enterprise value",
   "personality": "Friendly, knowledgeable, and growth-focused",
-  "greeting_message": "Hi! Welcome to GoAccel. I'm here to help you understand how we can accelerate your home services business growth. How can I assist you today?",
+  "greeting_message": "Hi, Welcome to GoAccel. I'm your AI Chatbot ready to help you today.",
+  "secondary_greeting_message": "Ask me anything or select an option below.",
   "privacy_statement": "We collect your information only to provide better service and connect you with the right solutions for your business. Your data is secure and will not be shared with third parties.",
   "theme_color": "#667eea",
   "widget_position": "center",
@@ -16,111 +17,67 @@
   "cta_tree": {
     "main_menu": {
       "id": "main_menu",
-      "label": "What can I help you with?",
+      "label": "Ask me anything or select an option below.",
       "action": "show_children",
-      "children": ["book_appointment", "learn_services", "pricing_info", "contact_sales"]
+      "children": ["sales_team", "support_team", "general_question"]
+    },
+    "sales_team": {
+      "id": "sales_team",
+      "label": "Sales Team",
+      "action": "show_children",
+      "children": ["customer_acquisition_only", "growth_platform_only", "both_options"],
+      "message": "Thanks for your interest in our Growth business options. What are you most interested in?"
+    },
+    "customer_acquisition_only": {
+      "id": "customer_acquisition_only",
+      "label": "Customer Acquisition System Only",
+      "action": "show_children",
+      "children": ["book_appointment", "speak_human", "free_blueprint"],
+      "message": "What's best for you?"
+    },
+    "growth_platform_only": {
+      "id": "growth_platform_only",
+      "label": "GoAccel Growth Platform Only",
+      "action": "show_children",
+      "children": ["book_appointment", "speak_human", "free_blueprint"],
+      "message": "What's best for you?"
+    },
+    "both_options": {
+      "id": "both_options",
+      "label": "I'm Interested in Both Options",
+      "action": "show_children",
+      "children": ["book_appointment", "speak_human", "free_blueprint"],
+      "message": "What's best for you?"
     },
     "book_appointment": {
       "id": "book_appointment",
-      "label": "📅 Book a Free Consultation",
+      "label": "Book an Appointment",
       "action": "link",
       "url": "https://calendly.com/goaccel/growth-call"
     },
-    "learn_services": {
-      "id": "learn_services",
-      "label": "Learn About Our Services",
-      "action": "show_children",
-      "children": ["agency_services", "software_solutions", "marketing_services"]
-    },
-    "agency_services": {
-      "id": "agency_services",
-      "label": "Digital Agency Services",
-      "action": "show_children",
-      "children": ["wordpress_design", "appointment_booking", "gbp_optimization", "lead_generation"]
-    },
-    "wordpress_design": {
-      "id": "wordpress_design",
-      "label": "WordPress Website Design",
+    "speak_human": {
+      "id": "speak_human",
+      "label": "Speak to a Human",
       "action": "send",
-      "message": "Tell me about your WordPress website design services"
+      "message": "I'd like to speak with a human"
     },
-    "appointment_booking": {
-      "id": "appointment_booking",
-      "label": "Managed Appointment Booking",
+    "free_blueprint": {
+      "id": "free_blueprint",
+      "label": "Get Free Growth Blueprint",
       "action": "send",
-      "message": "How does your managed appointment booking service work?"
+      "message": "I'd like to get a free growth blueprint"
     },
-    "gbp_optimization": {
-      "id": "gbp_optimization",
-      "label": "Google Business Profile Optimization",
+    "support_team": {
+      "id": "support_team",
+      "label": "Support Team",
       "action": "send",
-      "message": "I want to learn about Google Business Profile optimization"
+      "message": "I need support. Please collect my information: First Name, Last Name, Company Name, Email, Phone, and my message or question."
     },
-    "lead_generation": {
-      "id": "lead_generation",
-      "label": "Custom Lead Generation",
+    "general_question": {
+      "id": "general_question",
+      "label": "I Have a General Question",
       "action": "send",
-      "message": "Tell me about your lead generation services"
-    },
-    "software_solutions": {
-      "id": "software_solutions",
-      "label": "Software Solutions",
-      "action": "show_children",
-      "children": ["crm_software", "marketing_automation", "business_management"]
-    },
-    "crm_software": {
-      "id": "crm_software",
-      "label": "CRM & Pipeline Management",
-      "action": "send",
-      "message": "I want to learn about your CRM software and deal pipeline management"
-    },
-    "marketing_automation": {
-      "id": "marketing_automation",
-      "label": "Marketing Automation",
-      "action": "send",
-      "message": "How does your marketing automation platform work?"
-    },
-    "business_management": {
-      "id": "business_management",
-      "label": "Business Management Software",
-      "action": "send",
-      "message": "Tell me about your business management software features"
-    },
-    "marketing_services": {
-      "id": "marketing_services",
-      "label": "Marketing & Growth Services",
-      "action": "show_children",
-      "children": ["review_management", "data_enhancement", "listing_management"]
-    },
-    "review_management": {
-      "id": "review_management",
-      "label": "Customer Review Management",
-      "action": "send",
-      "message": "How do you help manage customer reviews?"
-    },
-    "data_enhancement": {
-      "id": "data_enhancement",
-      "label": "Data Enhancement & Reactivation",
-      "action": "send",
-      "message": "Tell me about your data enhancement and database reactivation services"
-    },
-    "listing_management": {
-      "id": "listing_management",
-      "label": "Business Listing Management",
-      "action": "send",
-      "message": "I want to learn about business listing management"
-    },
-    "pricing_info": {
-      "id": "pricing_info",
-      "label": "Pricing & Plans",
-      "action": "send",
-      "message": "What are your pricing options and plans?"
-    },
-    "contact_sales": {
-      "id": "contact_sales",
-      "label": "📞 Contact Sales Team",
-      "action": "send",
-      "message": "I'd like to speak with your sales team"
+      "message": "I have a general question. Please collect my information: First Name, Last Name, Company Name, Email, Phone, and my message or question."
     }
   }
 }

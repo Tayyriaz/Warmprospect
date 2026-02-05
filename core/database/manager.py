@@ -28,6 +28,7 @@ class BusinessConfigDB:
         business_name: str = None,
         system_prompt: str = None,
         greeting_message: str = None,
+        secondary_greeting_message: str = None,
         primary_goal: str = None,
         personality: str = None,
         privacy_statement: str = None,
@@ -74,6 +75,8 @@ class BusinessConfigDB:
                     existing.system_prompt = system_prompt
                 if greeting_message is not None:
                     existing.greeting_message = greeting_message
+                if secondary_greeting_message is not None:
+                    existing.secondary_greeting_message = secondary_greeting_message
                 if primary_goal is not None:
                     existing.primary_goal = primary_goal
                 if personality is not None:
@@ -118,6 +121,7 @@ class BusinessConfigDB:
                     business_name=business_name,
                     system_prompt=system_prompt,
                     greeting_message=greeting_message,
+                    secondary_greeting_message=secondary_greeting_message,
                     primary_goal=primary_goal,
                     personality=personality,
                     privacy_statement=privacy_statement,

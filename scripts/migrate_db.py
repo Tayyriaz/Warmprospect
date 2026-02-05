@@ -123,6 +123,19 @@ def migrate():
         else:
             print("✓ cta_tree already exists.")
 
+        # Check for secondary_greeting_message
+        result = conn.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='business_configs' AND column_name='secondary_greeting_message';
+        """))
+        if not result.fetchone():
+            print("Adding secondary_greeting_message column...")
+            conn.execute(text("ALTER TABLE business_configs ADD COLUMN secondary_greeting_message TEXT"))
+            print("✅ secondary_greeting_message added.")
+        else:
+            print("✓ secondary_greeting_message already exists.")
+
         # Check for scraping_status table
         scraping_status_exists = "scraping_status" in inspector.get_table_names()
         if not scraping_status_exists:

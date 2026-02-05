@@ -27,6 +27,7 @@ async def get_business_config_for_widget(business_id: str):
         "businessPrimaryGoal": config.get("primary_goal"),
         "personalityPrompt": config.get("personality"),
         "greetingMessage": config.get("greeting_message"),
+        "secondaryGreetingMessage": config.get("secondary_greeting_message"),
         "privacyStatement": config.get("privacy_statement"),
         "themeColor": config.get("theme_color", "#2563eb"),
         "widgetPosition": config.get("widget_position", "center"),
