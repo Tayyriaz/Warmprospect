@@ -1490,6 +1490,22 @@
           const categories = categoriesData.data || [];
           const totalPages = categoriesData.total_pages || 0;
           
+          // Apply saved enabledCategories setting to override default enabled state
+          const enabledCategories = result.config.enabledCategories || [];
+          if (enabledCategories.length > 0) {
+            // Create a Set for faster lookup
+            const enabledSet = new Set(enabledCategories);
+            // Update each category's enabled state based on saved setting
+            categories.forEach(cat => {
+              cat.enabled = enabledSet.has(cat.name);
+            });
+          } else {
+            // If no enabledCategories saved, default all to enabled (backward compatibility)
+            categories.forEach(cat => {
+              cat.enabled = cat.enabled !== false; // Keep existing enabled state or default to true
+            });
+          }
+          
           if (categories.length > 0) {
             currentCategories = categories;
             window.totalPages = totalPages;
