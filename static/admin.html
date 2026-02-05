@@ -1371,12 +1371,10 @@
         }
       }
       
-      // Process database timestamp for "Updated X ago"
+      // Process database timestamp for progress tracking (no display)
       let updatedTimeMs = null;
       if (status.updated_at) {
         updatedTimeMs = new Date(status.updated_at * 1000).getTime();
-        const timeAgo = Math.floor((now - updatedTimeMs) / 1000);
-        messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${formatTimeAgo(timeAgo)})</span>`;
       }
       
       // Update progress tracking
@@ -1405,24 +1403,10 @@
         progressPercentEl.style.color = progress === 100 ? '#10b981' : '#667eea';
       }
       
-      // Update progress details (elapsed time + no update warning)
+      // Clear progress details (no time display)
       const progressDetailsEl = document.getElementById('progressDetails');
       if (progressDetailsEl) {
-        let detailsText = '';
-        if (scrapingStartTime) {
-          const elapsed = Math.floor((Date.now() - scrapingStartTime) / 1000);
-          detailsText = `Elapsed: ${formatElapsedTime(elapsed)}`;
-        }
-        // Show "No update" warning if progress hasn't changed for >30 seconds
-        if (lastProgressTime && lastProgress !== -1 && currentProgress === lastProgress && currentStatus === lastStatus) {
-          const timeSinceUpdate = Math.floor((Date.now() - lastProgressTime) / 1000);
-          if (timeSinceUpdate > 30) {
-            detailsText += detailsText ? ' • ' : '';
-            const noUpdateText = formatElapsedTime(timeSinceUpdate);
-            detailsText += `<span style="color: #dc2626;"> • No update for ${noUpdateText}</span>`;
-          }
-        }
-        progressDetailsEl.innerHTML = detailsText;
+        progressDetailsEl.innerHTML = '';
       }
       
       console.log('[UI] Updated progress bar to', progress + '%', 'status:', statusText);
