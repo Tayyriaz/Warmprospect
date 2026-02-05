@@ -305,13 +305,7 @@ def update_status(business_id: str, status: str, message: str = "", progress: in
     """Update status in database for frontend polling."""
     try:
         from core.database import scraping_status_db
-        success = scraping_status_db.update_status(
-            business_id=business_id,
-            status=status,
-            message=message,
-            progress=progress
-        )
-        if success:
+        if scraping_status_db.update_status(business_id, status, message, progress):
             print(f"[STATUS] {business_id}: {status} - {message} ({progress}%)")
         else:
             print(f"[WARN] Failed to update status for {business_id}, but continuing...")

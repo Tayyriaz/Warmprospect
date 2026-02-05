@@ -3,6 +3,7 @@ Database manager for business configurations.
 """
 
 import json
+import traceback
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
@@ -173,6 +174,10 @@ class BusinessConfigDB:
 class ScrapingStatusDB:
     """Database manager for scraping status."""
     
+    # Status constants
+    ACTIVE_STATUSES = {"pending", "scraping", "indexing", "categorizing"}
+    FINAL_STATUSES = {"completed", "failed"}
+    
     def __init__(self):
         self.engine = engine
         self.SessionLocal = SessionLocal
@@ -199,6 +204,8 @@ class ScrapingStatusDB:
             ).first()
             
             now = datetime.now(timezone.utc)
+            is_active = status in self.ACTIVE_STATUSES
+            is_final = status in self.FINAL_STATUSES
             
             if existing:
                 # Update existing status
@@ -208,26 +215,20 @@ class ScrapingStatusDB:
                 existing.updated_at = now
                 
                 # Set started_at if transitioning to active status
-                if status in ["pending", "scraping", "indexing", "categorizing"] and not existing.started_at:
+                if is_active and not existing.started_at:
                     existing.started_at = now
                 
-                # Set completed_at if completed or failed
-                if status in ["completed", "failed"]:
-                    existing.completed_at = now
-                elif status not in ["completed", "failed"]:
-                    existing.completed_at = None
+                # Set completed_at for final statuses
+                existing.completed_at = now if is_final else None
             else:
                 # Create new status
-                started_at = now if status in ["pending", "scraping", "indexing", "categorizing"] else None
-                completed_at = now if status in ["completed", "failed"] else None
-                
                 new_status = ScrapingStatus(
                     business_id=business_id,
                     status=status,
                     message=message,
                     progress=progress,
-                    started_at=started_at,
-                    completed_at=completed_at,
+                    started_at=now if is_active else None,
+                    completed_at=now if is_final else None,
                     created_at=now,
                     updated_at=now
                 )
@@ -238,7 +239,6 @@ class ScrapingStatusDB:
         except Exception as e:
             db.rollback()
             print(f"[ERROR] Failed to update scraping status: {e}")
-            import traceback
             traceback.print_exc()
             return False
         finally:

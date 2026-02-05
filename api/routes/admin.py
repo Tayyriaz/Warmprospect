@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import time
+import traceback
 from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
 from core.security import get_api_key
@@ -21,19 +22,12 @@ def update_scraping_status(business_id: str, status: str, message: str = "", pro
     from core.database import scraping_status_db
     
     try:
-        success = scraping_status_db.update_status(
-            business_id=business_id,
-            status=status,
-            message=message,
-            progress=progress
-        )
-        if success:
+        if scraping_status_db.update_status(business_id, status, message, progress):
             print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message} ({progress}%)")
         else:
             print(f"[WARN] Failed to update scraping status for {business_id}, but continuing...")
     except Exception as e:
         print(f"[ERROR] Failed to update scraping status: {e}")
-        import traceback
         traceback.print_exc()
         # Don't raise - allow scraping to continue even if status update fails
 
@@ -149,7 +143,6 @@ def trigger_kb_build(business_id: str, website_url: str):
     except Exception as e:
         error_msg = f"Failed to build knowledge base: {str(e)}"
         print(f"[ERROR] Failed to trigger KB build for business {business_id}: {e}")
-        import traceback
         traceback.print_exc()
         update_scraping_status(business_id, "failed", error_msg, 0)
 
@@ -300,7 +293,6 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
         raise
     except Exception as e:
         print(f"[ERROR] Failed to start scraping: {e}")
-        import traceback
         traceback.print_exc()
         # Update status to failed
         try:
@@ -346,7 +338,6 @@ async def get_scraping_status(
     except Exception as e:
         # Any other error - return default status
         print(f"[ERROR] Failed to get scraping status: {e}")
-        import traceback
         traceback.print_exc()
         return response
     
@@ -416,7 +407,6 @@ async def get_business_config(business_id: str, api_key: str = Depends(get_api_k
         raise
     except Exception as e:
         print(f"[ERROR] Failed to get business config for {business_id}: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to retrieve business configuration: {str(e)}")
 
@@ -439,7 +429,6 @@ async def list_all_businesses(api_key: str = Depends(get_api_key)):
         return {"success": True, "businesses": camel_businesses}
     except Exception as e:
         print(f"[ERROR] list_all_businesses failed: {e}")
-        import traceback
         traceback.print_exc()
         return {"success": False, "businesses": {}, "error": str(e)}
 
