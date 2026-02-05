@@ -8,10 +8,11 @@ import subprocess
 import sys
 import time
 import asyncio
-from typing import Dict, Any
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends, Security
 from fastapi.responses import StreamingResponse
 from core.security import get_api_key, get_api_key_header_or_query
+from core.security.security import api_key_header, api_key_query, _validate_api_key
 from core.config.business_config import config_manager
 from core.utils.helpers import convert_config_to_camel
 
@@ -457,18 +458,34 @@ async def get_scraping_status(
     business_id: str, 
     request: Request,
     stream: bool = False,
-    api_key: str = Depends(get_api_key_header_or_query)
+    api_key_header: Optional[str] = Security(api_key_header),
+    api_key_query: Optional[str] = Security(api_key_query)
 ):
     """
-    Get current scraping status for a business, including categories if available.
+    Get current scraping status for a business.
     
     Supports both JSON response and Server-Sent Events (SSE) streaming:
-    - Default: Returns JSON response
+    - Default: Returns JSON response (use X-Admin-API-Key header)
     - Set ?stream=true or Accept: text/event-stream header for SSE streaming
+      (SSE requires api_key query parameter since EventSource cannot send custom headers)
+    
+    Authentication:
+    - Preferred: X-Admin-API-Key header (for regular requests)
+    - Fallback: api_key query parameter (required for SSE/EventSource)
     """
     # Check if SSE is requested (via query param or Accept header)
     accept_header = request.headers.get("accept", "")
     use_sse = stream or "text/event-stream" in accept_header
+    
+    # For SSE, query parameter is required (EventSource limitation)
+    # For regular requests, prefer header for security
+    if use_sse:
+        api_key = api_key_query or api_key_header
+    else:
+        api_key = api_key_header or api_key_query
+    
+    # Validate API key
+    _validate_api_key(api_key)
     
     if use_sse:
         # Return SSE stream
