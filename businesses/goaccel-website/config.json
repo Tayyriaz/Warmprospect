@@ -59,7 +59,7 @@
       "id": "speak_human",
       "label": "Speak to a Human",
       "action": "send",
-      "message": "I'd like to speak with a human"
+      "message": "I'd like to speak with a human. Please call us at 855.915.0747"
     },
     "free_blueprint": {
       "id": "free_blueprint",
