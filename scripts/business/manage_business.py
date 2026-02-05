@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Keys accepted by config_manager.create_or_update_business (do not pass others)
 CONFIG_KEYS = {
     "business_id", "business_name", "system_prompt", "greeting_message",
-    "primary_goal", "personality", "privacy_statement", "theme_color",
+    "secondary_greeting_message", "primary_goal", "personality", "privacy_statement", "theme_color",
     "widget_position", "website_url", "contact_email", "contact_phone",
     "cta_tree", "rules", "custom_routes", "available_services", "topic_ctas",
     "experiments", "voice_enabled", "chatbot_button_text", "business_logo",
