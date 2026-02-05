@@ -5,7 +5,8 @@ Database models.
 import json
 from typing import Dict, Any
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, Integer, Boolean
+from sqlalchemy import Column, String, Text, DateTime, Integer, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 from .connection import Base
 
 
@@ -18,6 +19,7 @@ class BusinessConfig(Base):
     business_name = Column(String(255), nullable=False)
     system_prompt = Column(Text, nullable=False)
     greeting_message = Column(Text)
+    secondary_greeting_message = Column(Text)
     primary_goal = Column(Text)
     personality = Column(Text)
     privacy_statement = Column(Text)
@@ -42,6 +44,7 @@ class BusinessConfig(Base):
             "business_name": self.business_name,
             "system_prompt": self.system_prompt,
             "greeting_message": self.greeting_message,
+            "secondary_greeting_message": self.secondary_greeting_message if hasattr(self, 'secondary_greeting_message') else None,
             "primary_goal": self.primary_goal,
             "personality": self.personality,
             "privacy_statement": self.privacy_statement,
@@ -58,4 +61,31 @@ class BusinessConfig(Base):
             "categories": json.loads(self.categories) if hasattr(self, 'categories') and self.categories else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ScrapingStatus(Base):
+    """Database model for scraping status tracking."""
+    __tablename__ = "scraping_status"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    business_id = Column(String(255), ForeignKey("business_configs.business_id"), nullable=False, index=True, unique=True)
+    status = Column(String(50), nullable=False)  # pending, scraping, indexing, categorizing, completed, failed
+    message = Column(Text, default="")
+    progress = Column(Integer, default=0)  # 0-100
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            "business_id": self.business_id,
+            "status": self.status,
+            "message": self.message or "",
+            "progress": self.progress,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "updated_at": self.updated_at.timestamp() if self.updated_at else None,
         }

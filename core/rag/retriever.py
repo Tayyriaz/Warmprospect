@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import List, Dict, Any, Optional
 
 import faiss
@@ -86,17 +87,32 @@ class ChatbotRetriever:
 
 def format_context(hits: List[Dict[str, Any]]) -> Optional[str]:
     """
-    Builds a concise context block without source citations.
-    Sources are not included to prevent the AI from mentioning URLs or sources.
+    Builds a concise context block without source citations or URLs.
+    URLs are stripped from text to prevent AI from citing sources.
     """
     if not hits:
         return None
+    
+    # Pattern to match URLs (http/https, www, or domain patterns)
+    url_pattern = re.compile(
+        r'https?://[^\s<>"{}|\\^`\[\]]+|www\.[^\s<>"{}|\\^`\[\]]+|'
+        r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+/[^\s<>"{}|\\^`\[\]]*'
+    )
+    
     lines = []
     for h in hits:
         snippet = h.get("text", "").strip()
-        if len(snippet) > 500:
-            snippet = snippet[:500] + "..."
-        # Only include the text snippet, no source/URL information
-        lines.append(f"- {snippet}")
-    return "Context:\n" + "\n".join(lines)
+        if not snippet:
+            continue
+        
+        # Remove URLs and clean up whitespace
+        snippet = url_pattern.sub('', snippet)
+        snippet = re.sub(r'\s+', ' ', snippet).strip()
+        
+        if snippet:
+            if len(snippet) > 500:
+                snippet = snippet[:500] + "..."
+            lines.append(f"- {snippet}")
+    
+    return "Context:\n" + "\n".join(lines) if lines else None
 

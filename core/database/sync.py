@@ -4,7 +4,7 @@ Database schema synchronization - auto-syncs models with database.
 
 from sqlalchemy import inspect as sqlalchemy_inspect, text
 from .connection import engine
-from .models import BusinessConfig, Base
+from .models import BusinessConfig, ScrapingStatus, Base
 
 
 def init_db():

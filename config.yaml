@@ -10,7 +10,8 @@ scraping:
   max_pages: 500
   
   # Maximum time to spend scraping (in seconds)
-  max_seconds: 600  # 10 minutes
+  # Increase if you have many pages or slow rate limits
+  max_seconds: 1800  # 30 minutes (increased to handle large sites with rate limiting)
   
   # Maximum number of links to queue per page
   max_links_per_page: 30
@@ -26,6 +27,7 @@ scraping:
   # Enable if scraping fails with "No pages fetched" or connection/SSL errors.
   use_playwright: true
   
+<<<<<<< HEAD
   # Delay between requests (in seconds) to respect rate limits
   delay_between_requests: 0.2
   
@@ -37,6 +39,12 @@ scraping:
   
   # Playwright wait strategy: "domcontentloaded" (fast), "load" (medium), "networkidle" (slow but best for dynamic content)
   playwright_wait_for: "domcontentloaded"
+=======
+  # Delay between requests (in seconds) to avoid rate limiting
+  # Increase if you see "429 Too Many Requests" errors
+  # Reduced to 1 second to scrape more pages faster (with retry queue handling rate limits)
+  request_delay: 1
+>>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
 
 rag:
   # Size of text chunks for RAG indexing

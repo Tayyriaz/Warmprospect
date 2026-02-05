@@ -35,8 +35,21 @@ def get_entry_point_ctas(
     
     # Get entry point CTAs based on intent
     # Return ALL entry point CTAs (CTAs with action="show_children" at root level)
+    # Skip "main_menu" as it's just a container - return its children instead
     entry_ctas = []
+    main_menu_cta = None
+    
     for cta_id, cta in cta_tree.items():
+        # Skip if cta is not a dict (e.g. corrupted data, string, etc.)
+        if not isinstance(cta, dict):
+            print(f"[WARN] Skipping invalid CTA entry '{cta_id}': expected dict, got {type(cta).__name__}")
+            continue
+        
+        # Special handling for main_menu - get its children instead
+        if cta_id == "main_menu" and cta.get("action") == "show_children":
+            main_menu_cta = cta
+            continue
+            
         if cta.get("action") == "show_children":
             cta_obj = {
                 "id": cta.get("id", cta_id),
@@ -48,6 +61,13 @@ def get_entry_point_ctas(
             if cta.get("message"):
                 cta_obj["message"] = cta["message"]
             entry_ctas.append(cta_obj)
+    
+    # If main_menu exists, return its children as entry points instead
+    if main_menu_cta and main_menu_cta.get("children"):
+        from core.cta.cta_tree import get_cta_children
+        children_ctas = get_cta_children(cta_tree, "main_menu")
+        if children_ctas:
+            return children_ctas
     
     # If no entry points found, try to get one using intent detection
     if not entry_ctas:
