@@ -612,7 +612,7 @@
       <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px 32px; color: white;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <h2 style="margin: 0 0 4px 0; font-size: 24px; font-weight: 700;">🌐 Building Knowledge Base</h2>
+            <h2 style="margin: 0 0 4px 0; font-size: 24px; font-weight: 700; color: #ffffff;">🌐 Building Knowledge Base</h2>
             <div style="font-size: 14px; opacity: 0.9;" id="modalStatus">Loading...</div>
           </div>
           <button onclick="closeScrapingModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">×</button>
@@ -667,7 +667,10 @@
         </div>
         
         <!-- Default Actions (when no categories) -->
-        <div id="modalActionsDefault" style="margin-top: 24px; display: flex; justify-content: flex-end;">
+        <div id="modalActionsDefault" style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="startScraping()" id="startScrapeBtnDefault" style="padding: 10px 24px; font-size: 14px; font-weight: 600;">
+            🌐 Start Scraping
+          </button>
           <button class="btn btn-secondary" onclick="closeScrapingModal()" style="padding: 10px 20px;">Close</button>
         </div>
       </div>
@@ -1201,8 +1204,14 @@
       document.getElementById('categoriesSection').style.display = 'none';
       document.getElementById('saveCategoriesBtn').style.display = 'none';
       
-      // Show start scrape button
-      document.getElementById('startScrapeBtn').style.display = 'inline-block';
+      // Show default actions with start scrape button
+      document.getElementById('modalActionsDefault').style.display = 'flex';
+      
+      // Show start scrape buttons (both in categories section and default)
+      const startBtn = document.getElementById('startScrapeBtn');
+      const startBtnDefault = document.getElementById('startScrapeBtnDefault');
+      if (startBtn) startBtn.style.display = 'inline-block';
+      if (startBtnDefault) startBtnDefault.style.display = 'inline-block';
       
       // Reset tracking variables
       lastProgress = -1;
@@ -1336,13 +1345,16 @@
       
       // Note: Categories are no longer in status - check business config if needed
       
-      // Hide start scrape button when scraping is in progress
+      // Hide start scrape buttons when scraping is in progress
       const startScrapeBtn = document.getElementById('startScrapeBtn');
+      const startScrapeBtnDefault = document.getElementById('startScrapeBtnDefault');
       if (status.status === 'pending' || status.status === 'scraping' || status.status === 'indexing' || status.status === 'categorizing') {
         if (startScrapeBtn) startScrapeBtn.style.display = 'none';
+        if (startScrapeBtnDefault) startScrapeBtnDefault.style.display = 'none';
       } else {
-        // Show start scrape button when completed, failed, or not started
+        // Show start scrape buttons when completed, failed, or not started
         if (startScrapeBtn) startScrapeBtn.style.display = 'inline-block';
+        if (startScrapeBtnDefault) startScrapeBtnDefault.style.display = 'inline-block';
       }
       
       switch(status.status) {
@@ -1548,13 +1560,16 @@
           
           // Note: Categories are no longer in status - check business config if needed
           
-          // Hide start scrape button when scraping is in progress
+          // Hide start scrape buttons when scraping is in progress
           const startScrapeBtn = document.getElementById('startScrapeBtn');
+          const startScrapeBtnDefault = document.getElementById('startScrapeBtnDefault');
           if (status.status === 'pending' || status.status === 'scraping' || status.status === 'indexing' || status.status === 'categorizing') {
             if (startScrapeBtn) startScrapeBtn.style.display = 'none';
+            if (startScrapeBtnDefault) startScrapeBtnDefault.style.display = 'none';
           } else {
-            // Show start scrape button when completed, failed, or not started
+            // Show start scrape buttons when completed, failed, or not started
             if (startScrapeBtn) startScrapeBtn.style.display = 'inline-block';
+            if (startScrapeBtnDefault) startScrapeBtnDefault.style.display = 'inline-block';
           }
           
           switch(status.status) {
@@ -1679,8 +1694,12 @@
             // Hide default modal actions when categories are shown
             const defaultActions = document.getElementById('modalActionsDefault');
             if (defaultActions) defaultActions.style.display = 'none';
-            // Show start scrape button when completed (allows re-scraping)
-            document.getElementById('startScrapeBtn').style.display = 'inline-block';
+            // Show start scrape button in categories section (allows re-scraping)
+            const startBtn = document.getElementById('startScrapeBtn');
+            if (startBtn) startBtn.style.display = 'inline-block';
+          } else {
+            // No categories - show default actions with start button
+            document.getElementById('modalActionsDefault').style.display = 'flex';
           }
         }
       } catch (err) {
@@ -1885,8 +1904,11 @@
           // Reset modal completely before starting new scrape
           resetScrapingModal();
           
-          // Hide the start button and show progress
-          document.getElementById('startScrapeBtn').style.display = 'none';
+          // Hide the start buttons and show progress
+          const startBtn = document.getElementById('startScrapeBtn');
+          const startBtnDefault = document.getElementById('startScrapeBtnDefault');
+          if (startBtn) startBtn.style.display = 'none';
+          if (startBtnDefault) startBtnDefault.style.display = 'none';
           
           // Polling is already started by showScrapingModal, but ensure it's running
           startScrapingPoll(currentBusinessId);
