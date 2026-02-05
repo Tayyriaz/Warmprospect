@@ -36,18 +36,27 @@ def check_hard_guards(
         # Save to Redis immediately
         save_session(session_key, session)
         
-        # Use business greeting_message if available, otherwise return None to let AI handle it
+        # Use business greeting messages if available
         from core.config.business_config import config_manager
         greeting_message = None
+        secondary_greeting_message = None
         if business_id:
             config = config_manager.get_business(business_id)
             if config:
                 greeting_message = config.get("greeting_message")
+                secondary_greeting_message = config.get("secondary_greeting_message")
         
-        # Return greeting message if available, otherwise return None to let AI generate natural response
+        # Combine both greetings if available
+        combined_greeting = None
         if greeting_message:
+            combined_greeting = greeting_message
+            if secondary_greeting_message:
+                combined_greeting = f"{greeting_message}\n\n{secondary_greeting_message}"
+        
+        # Return greeting message(s) if available, otherwise return None to let AI generate natural response
+        if combined_greeting:
             return {
-                "response": greeting_message,
+                "response": combined_greeting,
                 "cta_mode": "primary",
             }
         # Return None - session is reset, but let normal chat flow generate the greeting naturally

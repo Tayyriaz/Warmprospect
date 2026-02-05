@@ -135,6 +135,9 @@ async def _handle_chat_request(request: Request):
     if session.get("history"):
         chat_history = session["history"]
     
+    # Check if this is the first message (conversation start)
+    is_first_message = len(chat_history) == 0
+    
     intent_result = detect_intent_from_message(user_input, chat_history)
     session["detected_intent"] = intent_result.get("intent")
     
@@ -142,21 +145,31 @@ async def _handle_chat_request(request: Request):
     sentiment_result = sentiment_analyzer.analyze(user_input)
     session["sentiment"] = sentiment_result.get("sentiment")
     
-    # 2. Hard Guard Check (Priority 1)
+    # 2. Hard Guard Check (Priority 1) OR First Message Handling
     hard_guard_response = check_hard_guards(user_input, session, session_key, user_id, business_id)
-    if hard_guard_response:
-        # Use business greeting_message if available, otherwise let AI handle it naturally
-        payload = {}
-        if hard_guard_response.get("response"):
-            payload["response"] = hard_guard_response["response"]
-        # Use cta_tree entry points instead of legacy primary/secondary CTAs
-        # CTAs are ALWAYS separate, never in response
-        if business_id and hard_guard_response.get("cta_mode") == "primary":
-            entry_ctas = get_entry_point_ctas(business_id, user_input)
-            if entry_ctas:
-                payload["cta"] = entry_ctas  # Separate CTA field
-        # Only return if we have a response or CTAs to show
-        if payload:
+    
+    # Handle first message or hard guard triggers
+    if hard_guard_response or is_first_message:
+        business_config = config_manager.get_business(business_id) if business_id else None
+        greeting_message = business_config.get("greeting_message") if business_config else None
+        secondary_greeting_message = business_config.get("secondary_greeting_message") if business_config else None
+        
+        # Build combined greeting response
+        combined_response = None
+        if hard_guard_response and hard_guard_response.get("response"):
+            combined_response = hard_guard_response["response"]
+        elif greeting_message:
+            combined_response = greeting_message
+            if secondary_greeting_message:
+                combined_response = f"{greeting_message}\n\n{secondary_greeting_message}"
+        
+        if combined_response:
+            payload = {"response": combined_response}
+            # Always attach CTAs for first message or hard guard triggers
+            if business_id:
+                entry_ctas = get_entry_point_ctas(business_id, user_input)
+                if entry_ctas:
+                    payload["cta"] = entry_ctas
             return payload
 
     # 3. Build System Instruction

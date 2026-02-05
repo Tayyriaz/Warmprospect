@@ -791,15 +791,25 @@
         const data = await res.json();
         const text = data.response || JSON.stringify(data);
 
-        // If the bot lists options in text, keep only the first line for display
-        let displayText = text;
-        if (text.toLowerCase().includes("please choose one of the options below")) {
-          const parts = text.split(/<br>|\\n/).map(p => p.trim()).filter(Boolean);
-          if (parts.length) displayText = parts[0];
+        // Handle combined greeting messages (primary + secondary separated by \n\n)
+        // Split into separate messages for better display
+        if (text.includes("\n\n")) {
+          const parts = text.split("\n\n").map(p => p.trim()).filter(Boolean);
+          parts.forEach((part, index) => {
+            // Add each part as a separate message
+            addMessage(part, "bot");
+          });
+        } else {
+          // If the bot lists options in text, keep only the first line for display
+          let displayText = text;
+          if (text.toLowerCase().includes("please choose one of the options below")) {
+            const parts = text.split(/<br>|\\n/).map(p => p.trim()).filter(Boolean);
+            if (parts.length) displayText = parts[0];
+          }
+          addMessage(displayText, "bot");
         }
 
         hideTyping();
-        addMessage(displayText, "bot");
 
         // Render CTAs from the backend if provided
         if (data.cta && Array.isArray(data.cta)) {
@@ -857,27 +867,18 @@
     }
 
     // Show privacy + greeting based on config so each client feels customized
-    // Wait for config to load, then show initial messages
+    // Wait for config to load
     async function initializeChat() {
       await loadBusinessConfig(); // Ensure config is loaded
       updateBusinessBranding(); // Update branding from config
       
-      // Update CTA config after loading business config
-      
+      // Privacy statement shown on load
       if (CHATBOT_CONFIG.privacyStatement) {
         addMessage(CHATBOT_CONFIG.privacyStatement, "meta");
       }
-      const initialGreeting =
-        CHATBOT_CONFIG.greetingMessage ||
-        "Hi! I'm your AI assistant. Ask anything about services, pricing or booking and I'll guide you.";
-      addMessage(initialGreeting, "bot");
       
-      // Display secondary greeting as text if available
-      if (CHATBOT_CONFIG.secondaryGreetingMessage) {
-        addMessage(CHATBOT_CONFIG.secondaryGreetingMessage, "bot");
-      }
-      
-      // CTAs are now handled dynamically via the CTA tree system from backend
+      // Greetings and CTAs are now sent by the API when the first message is received
+      // No need to show greetings on page load - wait for user's first message
     }
     
     // Initialize chat after page loads
