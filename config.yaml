@@ -25,6 +25,18 @@ scraping:
   # Use Playwright (real browser) instead of requests when sites block or need JavaScript.
   # Enable if scraping fails with "No pages fetched" or connection/SSL errors.
   use_playwright: true
+  
+  # Delay between requests (in seconds) to respect rate limits
+  delay_between_requests: 0.2
+  
+  # Maximum retry attempts for failed requests
+  max_retries: 3
+  
+  # Base delay for exponential backoff on retries (in seconds)
+  retry_delay_base: 1.0
+  
+  # Playwright wait strategy: "domcontentloaded" (fast), "load" (medium), "networkidle" (slow but best for dynamic content)
+  playwright_wait_for: "domcontentloaded"
 
 rag:
   # Size of text chunks for RAG indexing

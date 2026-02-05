@@ -63,6 +63,10 @@ MAX_PAGES = int(_scraping_config.get("max_pages", 500))
 MAX_SECONDS = int(_scraping_config.get("max_seconds", 600))
 MAX_LINKS_PER_PAGE = int(_scraping_config.get("max_links_per_page", 30))
 MAX_QUEUE_SIZE = int(_scraping_config.get("max_queue_size", 1000))
+DELAY_BETWEEN_REQUESTS = float(_scraping_config.get("delay_between_requests", 0.2))  # Configurable delay
+MAX_RETRIES = int(_scraping_config.get("max_retries", 3))  # Retry failed requests
+RETRY_DELAY_BASE = float(_scraping_config.get("retry_delay_base", 1.0))  # Base delay for exponential backoff
+PLAYWRIGHT_WAIT_FOR = _scraping_config.get("playwright_wait_for", "domcontentloaded")  # domcontentloaded, load, networkidle
 CHUNK_SIZE = int(_rag_config.get("chunk_size", 800))
 CHUNK_OVERLAP = int(_rag_config.get("chunk_overlap", 100))
 EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", _models_config.get("embed_model", "text-embedding-004"))
@@ -88,8 +92,8 @@ def is_allowed(url: str, base_domain: str) -> bool:
     return parsed.hostname == base_domain or parsed.hostname.endswith("." + base_domain)
 
 
-def _fetch_requests(url: str) -> str:
-    """Fetch HTML using requests (default)."""
+def _fetch_requests(url: str, retries: int = MAX_RETRIES) -> str:
+    """Fetch HTML using requests (default) with retry logic."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -99,44 +103,83 @@ def _fetch_requests(url: str) -> str:
         "Upgrade-Insecure-Requests": "1",
     }
     verify_ssl = _scraping_config.get("verify_ssl", True)
-    resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
-    resp.raise_for_status()
-    raw = resp.content
-    text = resp.text
-    if _looks_like_binary(text):
+    
+    last_error = None
+    for attempt in range(retries):
         try:
-            raw = gzip.decompress(raw)
-            text = raw.decode("utf-8", errors="replace")
-        except Exception:
-            pass
-    if _looks_like_binary(text) or "<" not in text or ">" not in text:
-        raise ValueError(
-            f"Response from {url} does not look like HTML (possibly binary or wrong encoding). "
-            "Refusing to store to avoid gibberish in knowledge base."
-        )
-    return text
+            resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
+            resp.raise_for_status()
+            raw = resp.content
+            text = resp.text
+            if _looks_like_binary(text):
+                try:
+                    raw = gzip.decompress(raw)
+                    text = raw.decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+            if _looks_like_binary(text) or "<" not in text or ">" not in text:
+                raise ValueError(
+                    f"Response from {url} does not look like HTML (possibly binary or wrong encoding). "
+                    "Refusing to store to avoid gibberish in knowledge base."
+                )
+            return text
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                delay = RETRY_DELAY_BASE * (2 ** attempt)  # Exponential backoff
+                print(f"  ⚠ Retry {attempt + 1}/{retries} for {url} after {delay:.1f}s: {str(e)[:80]}")
+                time.sleep(delay)
+            else:
+                raise last_error
+    raise last_error
 
 
-def _fetch_playwright(browser, url: str) -> str:
-    """Fetch HTML using a Playwright browser (real Chromium). Use when site blocks requests or needs JS."""
+def _fetch_playwright(browser, context, url: str, retries: int = MAX_RETRIES) -> str:
+    """Fetch HTML using a Playwright browser (real Chromium). Use when site blocks requests or needs JS.
+    
+    Args:
+        browser: Playwright browser instance (reused)
+        context: Playwright context instance (reused for better performance)
+        url: URL to fetch
+        retries: Number of retry attempts
+    """
     ignore_https = not _scraping_config.get("verify_ssl", True)
-    context = browser.new_context(ignore_https_errors=ignore_https)
-    try:
-        page = context.new_page()
+    wait_for = PLAYWRIGHT_WAIT_FOR if PLAYWRIGHT_WAIT_FOR in ["domcontentloaded", "load", "networkidle"] else "domcontentloaded"
+    
+    last_error = None
+    for attempt in range(retries):
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            text = page.content()
-        finally:
-            page.close()
-    finally:
-        context.close()
-    if not text or "<" not in text or ">" not in text:
-        raise ValueError(f"Response from {url} does not look like HTML.")
-    return text
+            page = context.new_page()
+            try:
+                # Wait for page to load - networkidle is better for dynamic content but slower
+                page.goto(url, wait_until=wait_for, timeout=30000)
+                # Additional wait for dynamic content (if networkidle not used)
+                if wait_for != "networkidle":
+                    page.wait_for_timeout(500)  # Small wait for JS to execute
+                text = page.content()
+            finally:
+                page.close()
+            
+            if not text or "<" not in text or ">" not in text:
+                raise ValueError(f"Response from {url} does not look like HTML.")
+            return text
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                delay = RETRY_DELAY_BASE * (2 ** attempt)
+                print(f"  ⚠ Retry {attempt + 1}/{retries} for {url} after {delay:.1f}s: {str(e)[:80]}")
+                time.sleep(delay)
+            else:
+                raise last_error
+    raise last_error
 
 
 def fetch(url: str, fetcher=None) -> str:
-    """Fetch HTML from URL. Uses fetcher if provided, else requests (or Playwright when configured)."""
+    """Fetch HTML from URL. Uses fetcher if provided, else requests (or Playwright when configured).
+    
+    Note: When fetcher is provided (e.g., from build_kb_for_business), it should handle context reuse.
+    This function is mainly for standalone fetches (like sitemap).
+    """
     if fetcher is not None:
         return fetcher(url)
     if _scraping_config.get("use_playwright", False):
@@ -146,9 +189,12 @@ def fetch(url: str, fetcher=None) -> str:
             return _fetch_requests(url)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            ignore_https = not _scraping_config.get("verify_ssl", True)
+            context = browser.new_context(ignore_https_errors=ignore_https)
             try:
-                return _fetch_playwright(browser, url)
+                return _fetch_playwright(browser, context, url)
             finally:
+                context.close()
                 browser.close()
     return _fetch_requests(url)
 
@@ -162,63 +208,117 @@ def _looks_like_binary(s: str) -> bool:
 
 
 def extract(url: str, html: str) -> Page:
-    """Extract text content from HTML."""
+    """Extract text content from HTML with improved content detection."""
     soup = BeautifulSoup(html, "html.parser")
     title = (soup.title.string or "").strip() if soup.title else ""
 
-    for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
+    # Remove unwanted elements
+    for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header", "aside", "form"]):
         tag.decompose()
     
+    # Try to find main content area (prioritized selectors)
     main_content = None
-    for selector in ["main", "article", "[role='main']", ".content", "#content", ".main-content"]:
+    selectors = [
+        "main",
+        "article", 
+        "[role='main']",
+        ".content",
+        "#content",
+        ".main-content",
+        ".post-content",
+        ".entry-content",
+        ".article-content",
+        "[class*='content']",
+        "[id*='content']"
+    ]
+    for selector in selectors:
         main_content = soup.select_one(selector)
         if main_content:
             break
     
+    # If no main content found, try body
     source = main_content if main_content else soup.find("body")
     if not source:
         source = soup
     
+    # Extract text with better formatting
     text = " ".join(source.get_text(separator=" ", strip=True).split())
     
+    # Fallback strategies if text is too short
     if len(text) < 100:
+        # Try paragraphs
         paragraphs = soup.find_all("p")
         para_text = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
         if len(para_text) > len(text):
             text = para_text
         
+        # Try headings
         if len(text) < 100:
             headings = soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
             heading_text = " ".join([h.get_text(strip=True) for h in headings if h.get_text(strip=True)])
             if len(heading_text) > len(text):
                 text = heading_text
         
+        # Try content divs with broader search
         if len(text) < 100:
-            content_divs = soup.find_all("div", class_=re.compile(r"content|text|description|body|main", re.I))
+            content_divs = soup.find_all("div", class_=re.compile(r"content|text|description|body|main|article|post|entry", re.I))
             div_text = " ".join([d.get_text(strip=True) for d in content_divs if d.get_text(strip=True)])
             if len(div_text) > len(text):
                 text = div_text
+        
+        # Try list items (for FAQ pages, etc.)
+        if len(text) < 100:
+            list_items = soup.find_all(["li", "dd", "dt"])
+            list_text = " ".join([li.get_text(strip=True) for li in list_items if li.get_text(strip=True)])
+            if len(list_text) > len(text):
+                text = list_text
     
+    # Final fallback to entire body
     if len(text) < 50:
         body = soup.find("body")
         if body:
             text = " ".join(body.get_text(separator=" ", strip=True).split())
     
+    # Clean up excessive whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
     checksum = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time())
 
 
-def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None) -> List[str]:
-    """Fetch URLs from sitemap.xml."""
+def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_depth: int = 3, visited: Set[str] = None) -> List[str]:
+    """Fetch URLs from sitemap.xml. Recursively handles sitemap index files (WordPress, etc.)."""
+    if visited is None:
+        visited = set()
+    
+    if sitemap_url in visited or max_depth <= 0:
+        return []
+    
+    visited.add(sitemap_url)
     urls: List[str] = []
+    
     try:
         xml = fetch(sitemap_url, fetcher)
     except Exception:
         return urls
+    
+    # Check if this is a sitemap index (contains <sitemap> tags) or a regular sitemap (contains <url> tags)
+    is_sitemap_index = "<sitemap>" in xml or "sitemapindex" in xml.lower()
+    
     for loc in re.findall(r"<loc>(.*?)</loc>", xml):
         loc = loc.strip()
-        if is_allowed(loc, base_domain):
+        if not is_allowed(loc, base_domain):
+            continue
+        
+        # If this is a sitemap index and the URL looks like another sitemap file, recurse
+        if is_sitemap_index and (loc.endswith(".xml") or "/sitemap" in loc.lower() or "wp-sitemap" in loc.lower()):
+            # Recursively fetch URLs from nested sitemap
+            nested_urls = fetch_sitemap_urls(loc, base_domain, fetcher, max_depth - 1, visited)
+            urls.extend(nested_urls)
+        else:
+            # This is an actual page URL, add it
             urls.append(loc)
+    
     return urls
 
 
@@ -273,6 +373,10 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
         
         html = None
         try:
+            # Skip sitemap XML files - they're not actual pages
+            if url.endswith(".xml") and ("sitemap" in url.lower() or "wp-sitemap" in url.lower()):
+                continue
+            
             html = fetch(url, fetcher)
             page = extract(url, html)
             if page.text and len(page.text.strip()) >= 50:  # Require at least 50 chars
@@ -280,12 +384,15 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
                 print(f"  ✓ Fetched: {url} ({len(page.text)} chars)")
             else:
                 print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
-            time.sleep(0.1)
+            # Configurable delay between requests to respect rate limits
+            time.sleep(DELAY_BETWEEN_REQUESTS)
         except Exception as e:
             error_msg = f"{url}: {str(e)[:100]}"
             fetch_errors.append(error_msg)
-            if len(fetch_errors) <= 5:  # Only log first 5 errors
+            if len(fetch_errors) <= 10:  # Log first 10 errors for better debugging
                 print(f"  ✗ Error fetching {url}: {e}")
+            # Still add delay even on error to avoid hammering the server
+            time.sleep(DELAY_BETWEEN_REQUESTS)
             continue
 
         if html and q.qsize() < MAX_QUEUE_SIZE:
@@ -453,9 +560,15 @@ def build_kb_for_business(business_id: str, website_url: str):
     if use_playwright and pw_ctx is not None:
         with pw_ctx as p:
             browser = p.chromium.launch(headless=True)
-            fetcher = lambda url: _fetch_playwright(browser, url)
-            print(f"Using Playwright (browser) to scrape.")
-            pages, fetch_errors = _do_crawl(fetcher)
+            ignore_https = not _scraping_config.get("verify_ssl", True)
+            # Reuse context for better performance (don't create new context per page)
+            context = browser.new_context(ignore_https_errors=ignore_https)
+            try:
+                fetcher = lambda url: _fetch_playwright(browser, context, url)
+                print(f"Using Playwright (browser) to scrape with wait_for='{PLAYWRIGHT_WAIT_FOR}'.")
+                pages, fetch_errors = _do_crawl(fetcher)
+            finally:
+                context.close()
     else:
         pages, fetch_errors = _do_crawl(None)
     print(f"\n[SUCCESS] Fetched {len(pages)} pages")

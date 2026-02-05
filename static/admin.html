@@ -1641,7 +1641,7 @@
       document.getElementById('modalMessage').textContent = 'Starting scraping process...';
       
       // Create EventSource for SSE
-      const apiKey = localStorage.getItem('adminApiKey');
+      const apiKey = getApiKeyFromInput();
       if (!apiKey) {
         showAlert('API key required', 'error');
         return;

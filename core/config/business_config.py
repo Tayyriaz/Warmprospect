@@ -44,6 +44,7 @@ class BusinessConfigManager:
         chatbot_button_text: str = None,
         business_logo: str = None,
         enabled_categories: List[str] = None,
+        categories: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """
         Create or update a business configuration.
@@ -90,7 +91,9 @@ class BusinessConfigManager:
             chatbot_button_text=chatbot_button_text,
             business_logo=business_logo,
             enabled_categories=enabled_categories,
+            categories=categories,
         )
+    
     
     def get_business(self, business_id: str) -> Optional[Dict[str, Any]]:
         """Get business configuration by ID."""
