@@ -652,8 +652,8 @@
           </div>
           
           <div style="padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
-            <button class="btn btn-secondary" onclick="rescraperWebsite()" id="rescraperBtn" style="display: none; padding: 10px 20px; font-size: 14px;">
-              🔄 Re-scrape Website
+            <button class="btn btn-primary" onclick="startScraping()" id="startScrapeBtn" style="padding: 10px 24px; font-size: 14px; font-weight: 600;">
+              🌐 Start Scraping
             </button>
             <div style="display: flex; gap: 12px; margin-left: auto;">
               <button class="btn btn-secondary" onclick="closeScrapingModal()" style="padding: 10px 20px; font-size: 14px;">
@@ -896,7 +896,7 @@
             </div>
             <div class="business-actions">
               <button class="btn btn-secondary btn-small" onclick="loadBusiness('${business.businessId}')">Edit</button>
-              ${business.websiteUrl ? `<button class="btn btn-info btn-small" onclick="triggerScraping('${business.businessId}', true)" title="Build/Re-build Knowledge Base from ${business.websiteUrl}">🌐 Build KB</button>` : ''}
+              ${business.websiteUrl ? `<button class="btn btn-info btn-small" onclick="showScrapingModal('${business.businessId}')" title="Build/Re-build Knowledge Base from ${business.websiteUrl}">🌐 Build KB</button>` : ''}
               <a href="${API_BASE}/bot?business_id=${business.businessId}" target="_blank" class="btn btn-primary btn-small" style="text-decoration: none; display: inline-block;">💬 Test Chatbot</a>
               <button class="btn btn-danger btn-small" onclick="showDeleteModal('${business.businessId}')">Delete</button>
             </div>
@@ -1199,11 +1199,10 @@
       
       // Hide categories section
       document.getElementById('categoriesSection').style.display = 'none';
-      document.getElementById('rescraperBtn').style.display = 'none';
       document.getElementById('saveCategoriesBtn').style.display = 'none';
       
-      // Show default actions
-      document.getElementById('modalActionsDefault').style.display = 'flex';
+      // Show start scrape button
+      document.getElementById('startScrapeBtn').style.display = 'inline-block';
       
       // Reset tracking variables
       lastProgress = -1;
@@ -1230,13 +1229,8 @@
         categoriesSection.style.display = 'none';
       }
       
-      // Hide re-scrape button
-      const rescraperBtn = document.getElementById('rescraperBtn');
-      if (rescraperBtn) rescraperBtn.style.display = 'none';
-      
-      // Show default modal actions
-      const defaultActions = document.getElementById('modalActionsDefault');
-      if (defaultActions) defaultActions.style.display = 'flex';
+      // Show start scrape button
+      document.getElementById('startScrapeBtn').style.display = 'inline-block';
       
       // Stop polling if active
       if (scrapingPollInterval) {
@@ -1342,6 +1336,15 @@
       
       // Note: Categories are no longer in status - check business config if needed
       
+      // Hide start scrape button when scraping is in progress
+      const startScrapeBtn = document.getElementById('startScrapeBtn');
+      if (status.status === 'pending' || status.status === 'scraping' || status.status === 'indexing' || status.status === 'categorizing') {
+        if (startScrapeBtn) startScrapeBtn.style.display = 'none';
+      } else {
+        // Show start scrape button when completed, failed, or not started
+        if (startScrapeBtn) startScrapeBtn.style.display = 'inline-block';
+      }
+      
       switch(status.status) {
         case 'pending':
           statusText = '⏳ Preparing...';
@@ -1391,11 +1394,8 @@
         fetchCategoriesFromConfig(businessId);
       } else {
         // Show default modal actions when categories are not shown
-        const defaultActions = document.getElementById('modalActionsDefault');
-        if (defaultActions) defaultActions.style.display = 'flex';
-        // Hide re-scrape button when no categories
-        const rescraperBtn = document.getElementById('rescraperBtn');
-        if (rescraperBtn) rescraperBtn.style.display = 'none';
+        // Default actions are now in the main action area
+        // Start scrape button is always visible when no categories
       }
       
       statusEl.textContent = statusText;
@@ -1548,6 +1548,15 @@
           
           // Note: Categories are no longer in status - check business config if needed
           
+          // Hide start scrape button when scraping is in progress
+          const startScrapeBtn = document.getElementById('startScrapeBtn');
+          if (status.status === 'pending' || status.status === 'scraping' || status.status === 'indexing' || status.status === 'categorizing') {
+            if (startScrapeBtn) startScrapeBtn.style.display = 'none';
+          } else {
+            // Show start scrape button when completed, failed, or not started
+            if (startScrapeBtn) startScrapeBtn.style.display = 'inline-block';
+          }
+          
           switch(status.status) {
             case 'pending':
               statusText = '⏳ Preparing...';
@@ -1569,19 +1578,8 @@
               progress = 100;
               messageText = status.message || 'Your chatbot is now ready to use with the scraped knowledge base!';
               
-              // Show categories if available
-              if (status.categories && status.categories.length > 0) {
-                currentCategories = status.categories;
-                window.totalPages = status.total_pages || 0;
-                displayCategories(status.categories, window.totalPages);
-                categoriesSection.style.display = 'block';
-                // Hide default modal actions when categories are shown
-                const defaultActions = document.getElementById('modalActionsDefault');
-                if (defaultActions) defaultActions.style.display = 'none';
-                // Show re-scrape button when completed
-                const rescraperBtn = document.getElementById('rescraperBtn');
-                if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
-              }
+              // Fetch categories from business config endpoint
+              fetchCategoriesFromConfig(businessId);
               break;
             case 'failed':
               statusText = '❌ Failed';
@@ -1593,18 +1591,6 @@
               break;
             default:
               statusText = '⏳ ' + (status.status || 'Unknown');
-          }
-          
-          // Categories are no longer in status - fetch from business config if status is completed
-          if (status.status === 'completed') {
-            fetchCategoriesFromConfig(businessId);
-          } else {
-            // Show default modal actions when categories are not shown
-            const defaultActions = document.getElementById('modalActionsDefault');
-            if (defaultActions) defaultActions.style.display = 'flex';
-            // Hide re-scrape button when no categories
-            const rescraperBtn = document.getElementById('rescraperBtn');
-            if (rescraperBtn) rescraperBtn.style.display = 'none';
           }
           
           statusEl.textContent = statusText;
@@ -1693,9 +1679,8 @@
             // Hide default modal actions when categories are shown
             const defaultActions = document.getElementById('modalActionsDefault');
             if (defaultActions) defaultActions.style.display = 'none';
-            // Show re-scrape button when completed
-            const rescraperBtn = document.getElementById('rescraperBtn');
-            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+            // Show start scrape button when completed (allows re-scraping)
+            document.getElementById('startScrapeBtn').style.display = 'inline-block';
           }
         }
       } catch (err) {
@@ -1803,14 +1788,15 @@
       const enabledCategories = currentCategories.filter(c => c.enabled).map(c => c.name);
       
       try {
-        const res = await fetch(`${API_BASE}/admin/business/${currentBusinessId}/categories`, {
+        const res = await fetch(`${API_BASE}/admin/business`, {
           method: 'POST',
           headers: {
             ...getAdminHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            enabled_categories: enabledCategories
+            businessId: currentBusinessId,
+            enabledCategories: enabledCategories
           })
         });
         
@@ -1874,23 +1860,20 @@
       console.log('[POLL] Started polling for business:', businessId);
     }
     
-    async function triggerScraping(businessId, forceRescrape = false) {
+    async function startScraping() {
+      if (!currentBusinessId) {
+        console.error('[Scrape] currentBusinessId is not set');
+        showAlert('❌ Error: Business ID not found. Please close and reopen the modal.', 'error');
+        return;
+      }
       if (!requireApiKey()) return;
       
       try {
-        const url = `${API_BASE}/admin/business/${businessId}/scrape`;
-        const options = {
+        const url = `${API_BASE}/admin/business/${currentBusinessId}/scrape`;
+        const res = await fetch(url, {
           method: 'POST',
           headers: getAdminHeaders()
-        };
-        
-        // Add force parameter if re-scraping
-        if (forceRescrape) {
-          options.headers['Content-Type'] = 'application/json';
-          options.body = JSON.stringify({ force: true });
-        }
-        
-        const res = await fetch(url, options);
+        });
         
         if (!res.ok) {
           const errorData = await res.json();
@@ -1902,39 +1885,18 @@
           // Reset modal completely before starting new scrape
           resetScrapingModal();
           
-          // Check if scraping was already completed (shouldn't happen with force=true, but handle gracefully)
-          if (result.message && result.message.includes("already completed")) {
-            // Show modal with existing categories
-            showScrapingModal(businessId);
-            showAlert('ℹ️ Knowledge base already exists. Click "Re-scrape" to rebuild.', 'info');
-          } else {
-            // Start new scraping process
-            showScrapingModal(businessId);
-            // showScrapingModal already calls startScrapingPoll
-            showAlert('🌐 Knowledge base scraping started!', 'success');
-          }
+          // Hide the start button and show progress
+          document.getElementById('startScrapeBtn').style.display = 'none';
+          
+          // Polling is already started by showScrapingModal, but ensure it's running
+          startScrapingPoll(currentBusinessId);
+          
+          showAlert('🌐 Knowledge base scraping started!', 'success');
         }
       } catch (err) {
-        console.error('Error triggering scraping:', err);
+        console.error('Error starting scraping:', err);
         showAlert('❌ Failed to start scraping: ' + err.message, 'error');
       }
-    }
-    
-    async function rescraperWebsite() {
-      if (!currentBusinessId) {
-        console.error('[Re-scrape] currentBusinessId is not set');
-        showAlert('❌ Error: Business ID not found. Please close and reopen the modal.', 'error');
-        return;
-      }
-      if (!requireApiKey()) return;
-      
-      console.log('[Re-scrape] Starting re-scrape for business:', currentBusinessId);
-      
-      // Reset modal immediately for visual feedback
-      resetScrapingModal();
-      
-      // Trigger new scraping with force=true
-      await triggerScraping(currentBusinessId, true);
     }
     
     // Toggle form modal visibility

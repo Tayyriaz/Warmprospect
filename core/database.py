@@ -11,10 +11,13 @@ import os
 import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
+
+# Import models to ensure they're registered with Base
+from core.database.models import BusinessConfig, ScrapingStatus
 
 # Ensure `.env` variables (DATABASE_URL, etc.) are loaded before we read them.
 load_dotenv()
@@ -359,6 +362,129 @@ class BusinessConfigDB:
         return "\n\n".join(parts) if parts else None
 
 
-# Global instance
+class ScrapingStatusDB:
+    """Database manager for scraping status."""
+    
+    def __init__(self):
+        self.engine = engine
+        self.SessionLocal = SessionLocal
+    
+    def _get_session(self) -> Session:
+        """Get a new database session."""
+        return self.SessionLocal()
+    
+    def update_status(
+        self,
+        business_id: str,
+        status: str,
+        message: str = "",
+        progress: int = 0
+    ) -> bool:
+        """
+        Update or create scraping status for a business.
+        Returns True if successful, False otherwise.
+        """
+        from core.database.models import ScrapingStatus
+        from datetime import datetime, timezone
+        
+        db = self._get_session()
+        try:
+            existing = db.query(ScrapingStatus).filter(
+                ScrapingStatus.business_id == business_id
+            ).first()
+            
+            now = datetime.now(timezone.utc)
+            
+            if existing:
+                # Update existing status
+                existing.status = status
+                existing.message = message
+                existing.progress = progress
+                existing.updated_at = now
+                
+                # Set started_at if transitioning to active status
+                if status in ["pending", "scraping", "indexing", "categorizing"] and not existing.started_at:
+                    existing.started_at = now
+                
+                # Set completed_at if completed or failed
+                if status in ["completed", "failed"]:
+                    existing.completed_at = now
+                elif status not in ["completed", "failed"]:
+                    existing.completed_at = None
+            else:
+                # Create new status
+                started_at = now if status in ["pending", "scraping", "indexing", "categorizing"] else None
+                completed_at = now if status in ["completed", "failed"] else None
+                
+                new_status = ScrapingStatus(
+                    business_id=business_id,
+                    status=status,
+                    message=message,
+                    progress=progress,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    created_at=now,
+                    updated_at=now
+                )
+                db.add(new_status)
+            
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            print(f"[ERROR] Failed to update scraping status: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            db.close()
+    
+    def get_status(self, business_id: str) -> Dict[str, Any]:
+        """
+        Get current scraping status for a business.
+        Returns dict with status info or None if not found.
+        """
+        from core.database.models import ScrapingStatus
+        
+        db = self._get_session()
+        try:
+            status = db.query(ScrapingStatus).filter(
+                ScrapingStatus.business_id == business_id
+            ).first()
+            
+            if status:
+                return status.to_dict()
+            return None
+        except Exception as e:
+            print(f"[ERROR] Failed to get scraping status: {e}")
+            return None
+        finally:
+            db.close()
+    
+    def delete_status(self, business_id: str) -> bool:
+        """Delete scraping status for a business."""
+        from core.database.models import ScrapingStatus
+        
+        db = self._get_session()
+        try:
+            status = db.query(ScrapingStatus).filter(
+                ScrapingStatus.business_id == business_id
+            ).first()
+            
+            if status:
+                db.delete(status)
+                db.commit()
+                return True
+            return False
+        except Exception as e:
+            db.rollback()
+            print(f"[ERROR] Failed to delete scraping status: {e}")
+            return False
+        finally:
+            db.close()
+
+
+# Global instances
 db_manager = BusinessConfigDB()
+scraping_status_db = ScrapingStatusDB()
 

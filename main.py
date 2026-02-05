@@ -32,7 +32,7 @@ except ImportError:
 from core.rag import initialize_default_retriever
 
 # Import route modules
-from api.routes import public, admin, business, chat, cta, analytics, voice
+from api.routes import public, admin, business, chat, analytics, voice
 
 # --- SETUP AND CONFIGURATION ---
 
@@ -110,7 +110,6 @@ app.include_router(public.router)
 app.include_router(admin.router)
 app.include_router(business.router)
 app.include_router(chat.router)
-app.include_router(cta.router)
 app.include_router(analytics.router)
 app.include_router(voice.router)
 

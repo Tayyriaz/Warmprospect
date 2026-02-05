@@ -16,46 +16,21 @@ from core.utils.helpers import convert_config_to_camel
 router = APIRouter()
 
 
-def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0, categories_data: Dict[str, Any] = None):
-    """Update scraping status in a JSON file for frontend polling."""
+def update_scraping_status(business_id: str, status: str, message: str = "", progress: int = 0):
+    """Update scraping status in database for frontend polling."""
+    from core.database import scraping_status_db
+    
     try:
-        # Use absolute paths to avoid issues with working directory
-        # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-        status_dir = os.path.dirname(status_file)
-        
-        # Create directory if it doesn't exist
-        try:
-            os.makedirs(status_dir, exist_ok=True)
-        except PermissionError as pe:
-            print(f"[ERROR] Cannot create directory {status_dir}: Permission denied.")
-            print(f"[ERROR] Run 'sudo chown -R www-data:www-data {base_dir}/data/' to fix permissions.")
-            print(f"[ERROR] Status updates will be skipped, but scraping may still work.")
-            return  # Don't raise - allow scraping to continue
-        
-        status_data = {
-            "status": status,  # "pending", "scraping", "indexing", "completed", "failed"
-            "message": message,
-            "progress": progress,  # 0-100
-            "updated_at": time.time()
-        }
-        
-        # Note: Categories are no longer included in status responses
-        # Categories should be fetched from business config endpoint instead
-        
-        # Write status file
-        try:
-            with open(status_file, "w", encoding="utf-8") as f:
-                json.dump(status_data, f)
-                f.flush()  # Ensure data is written immediately
-                os.fsync(f.fileno())  # Force write to disk
+        success = scraping_status_db.update_status(
+            business_id=business_id,
+            status=status,
+            message=message,
+            progress=progress
+        )
+        if success:
             print(f"[DEBUG] Updated scraping status for {business_id}: {status} - {message} ({progress}%)")
-        except PermissionError as pe:
-            print(f"[ERROR] Cannot write status file {status_file}: Permission denied.")
-            print(f"[ERROR] Run 'sudo chown -R www-data:www-data {base_dir}/data/' to fix permissions.")
-            print(f"[ERROR] Status updates will be skipped, but scraping may still work.")
-            return  # Don't raise - allow scraping to continue
+        else:
+            print(f"[WARN] Failed to update scraping status for {business_id}, but continuing...")
     except Exception as e:
         print(f"[ERROR] Failed to update scraping status: {e}")
         import traceback
@@ -145,16 +120,6 @@ def trigger_kb_build(business_id: str, website_url: str):
             success_msg = "Knowledge base built successfully! Your chatbot is now ready to use."
             print(f"[SUCCESS] KB build completed for business: {business_id}")
             print(f"[SUCCESS] Output: {result.stdout[:500]}")
-            
-            # Load categories from database
-            categories_data = None
-            try:
-                config = config_manager.get_business(business_id)
-                if config and config.get("categories"):
-                    categories_data = config["categories"]
-                    print(f"[SUCCESS] Loaded categories from DB: {len(categories_data.get('data', []))} categories")
-            except Exception as e:
-                print(f"[WARN] Failed to load categories from DB: {e}")
             
             # Update status (categories are stored in DB, not in status file)
             update_scraping_status(business_id, "completed", success_msg, 100)
@@ -261,6 +226,9 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             update_data["business_logo"] = data.get("businessLogo") or data.get("business_logo")
         if "enabledCategories" in data or "enabled_categories" in data:
             update_data["enabled_categories"] = data.get("enabledCategories") or data.get("enabled_categories")
+            # Clear retriever cache when enabled categories change
+            from core.rag import clear_retriever_cache
+            clear_retriever_cache(business_id)
         
         # Call with only provided fields - this ensures partial updates don't overwrite with None
         config = config_manager.create_or_update_business(**update_data)
@@ -274,12 +242,12 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
 
 
 @router.post("/admin/business/{business_id}/scrape")
-async def trigger_scraping(business_id: str, request: Request, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
+async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
     """
     Manually trigger knowledge base scraping for a business.
     Requires the business to have a websiteUrl configured.
-    Returns categories when scraping completes (check status endpoint for progress).
-    If force=true in request body, will re-scrape even if already completed.
+    Always clears old files and starts a fresh scrape.
+    Check /scraping-status endpoint for progress.
     """
     try:
         # Get business config to check if website_url exists
@@ -294,87 +262,36 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
                 detail="Business must have a websiteUrl configured to build knowledge base. Please set websiteUrl in the configuration first."
             )
         
-        # Check for force parameter
-        force_rescrape = False
-        try:
-            body = await request.json()
-            force_rescrape = body.get("force", False)
-        except:
-            pass  # No body or invalid JSON, continue normally
-        
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
         index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
+        meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
         
-        response = {
-            "success": True,
-            "message": "Knowledge base scraping started",
-            "business_id": business_id
-        }
+        # Clear old KB files to start fresh (status is now in DB, will be updated)
+        from core.database import scraping_status_db
+        scraping_status_db.delete_status(business_id)  # Clear old status from DB
         
-        # If forcing re-scrape, clear old status and KB files so build runs from scratch
-        if force_rescrape:
-            try:
-                if os.path.exists(status_file):
-                    os.remove(status_file)
-                    print(f"[INFO] Deleted old status file for force re-scrape: {business_id}")
-                meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
-                for path in (meta_path, index_path):
-                    if os.path.exists(path):
-                        os.remove(path)
-                        print(f"[INFO] Deleted {path} for force re-scrape: {business_id}")
-            except Exception as e:
-                print(f"[WARN] Failed to clear old files for re-scrape: {e}")
-        
-        # If scraping was already completed and NOT forcing re-scrape, check if KB files actually exist
-        # If KB files are missing, treat as stale status and start scraping anyway
-        if not force_rescrape:
-            try:
-                if os.path.exists(status_file):
-                    with open(status_file, "r", encoding="utf-8") as f:
-                        status_data = json.load(f)
-                        if status_data.get("status") == "completed":
-                            # Only return early if KB files actually exist
-                            # If KB files were deleted, status is stale - start scraping
-                            if os.path.exists(index_path):
-                                # KB files exist, so scraping is truly completed - return existing categories
-                                db_config = config_manager.get_business(business_id)
-                                if db_config and db_config.get("categories"):
-                                    categories_data = db_config["categories"]
-                                    enabled_categories = db_config.get("enabled_categories", [])
-                                    
-                                    # Update category enabled status
-                                    categories = categories_data.get("data", [])
-                                    for cat in categories:
-                                        cat["enabled"] = cat["name"] in enabled_categories if enabled_categories else True
-                                    
-                                    response["categories"] = categories
-                                    response["total_pages"] = categories_data.get("total_pages", 0)
-                                    response["message"] = "Scraping already completed. Categories included."
-                                    return response
-                            else:
-                                # Status says "completed" but KB files are missing - stale status, start scraping
-                                print(f"[INFO] Status file says 'completed' but KB files missing for {business_id}. Starting fresh scrape.")
-                                # Delete stale status file so scraping can proceed
-                                try:
-                                    os.remove(status_file)
-                                    print(f"[INFO] Deleted stale status file for {business_id}")
-                                except Exception as e:
-                                    print(f"[WARN] Failed to delete stale status file: {e}")
-            except Exception as e:
-                print(f"[WARN] Failed to check existing status: {e}")
+        try:
+            for path in (meta_path, index_path):
+                if os.path.exists(path):
+                    os.remove(path)
+                    print(f"[INFO] Deleted {path} for fresh scrape: {business_id}")
+        except Exception as e:
+            print(f"[WARN] Failed to clear old files: {e}")
         
         # Set initial status immediately (before background task starts)
         update_scraping_status(business_id, "pending", "Starting knowledge base build...", 0)
-        print(f"[INFO] Setting initial status for business: {business_id} (force={force_rescrape})")
-        print(f"[INFO] Status file should be at: {os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', business_id, 'scraping_status.json')}")
+        print(f"[INFO] Setting initial status for business: {business_id}")
         
         # Trigger knowledge base build in background
         print(f"[INFO] Adding background task for KB build: business_id={business_id}, url={website_url.strip()}")
         background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
-        print(f"[INFO] Background task added. Manually triggered KB build for business: {business_id}, URL: {website_url}")
+        print(f"[INFO] Background task added. Triggered KB build for business: {business_id}, URL: {website_url}")
         
-        return response
+        return {
+            "success": True,
+            "message": "Knowledge base scraping started",
+            "business_id": business_id
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -389,67 +306,6 @@ async def trigger_scraping(business_id: str, request: Request, background_tasks:
         raise HTTPException(status_code=500, detail=f"Failed to start scraping: {str(e)}")
 
 
-@router.post("/admin/business/{business_id}/refresh-kb")
-async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
-    """
-    Refresh/rebuild the knowledge base for a business.
-    This will re-scrape the website and rebuild the knowledge base from scratch.
-    Useful when website content has been updated.
-    """
-    try:
-        # Get business config to check if website_url exists
-        config = config_manager.get_business(business_id)
-        if not config:
-            raise HTTPException(status_code=404, detail="Business not found")
-        
-        website_url = config.get("website_url")
-        if not website_url or not website_url.strip():
-            raise HTTPException(
-                status_code=400, 
-                detail="Business must have a websiteUrl configured to refresh knowledge base. Please set websiteUrl in the configuration first."
-            )
-        
-        # Optional: Clear old index files before rebuilding
-        # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        index_path = os.path.join(base_dir, "data", business_id, "index.faiss")
-        meta_path = os.path.join(base_dir, "data", business_id, "meta.jsonl")
-        
-        # Clear old files if they exist
-        if os.path.exists(index_path):
-            try:
-                os.remove(index_path)
-                print(f"[INFO] Removed old index: {index_path}")
-            except Exception as e:
-                print(f"[WARNING] Could not remove old index: {e}")
-        
-        if os.path.exists(meta_path):
-            try:
-                os.remove(meta_path)
-                print(f"[INFO] Removed old metadata: {meta_path}")
-            except Exception as e:
-                print(f"[WARNING] Could not remove old metadata: {e}")
-        
-        # Set initial status immediately (before background task starts)
-        update_scraping_status(business_id, "pending", "Starting knowledge base refresh...", 0)
-        print(f"[INFO] Setting initial status for refresh: {business_id}")
-        
-        # Trigger knowledge base build in background
-        background_tasks.add_task(trigger_kb_build, business_id, website_url.strip())
-        print(f"[INFO] Refreshing KB for business: {business_id}, URL: {website_url}")
-        
-        return {
-            "success": True,
-            "message": "Knowledge base refresh started. Old content has been cleared and will be rebuilt.",
-            "business_id": business_id,
-            "website_url": website_url
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to refresh knowledge base: {str(e)}")
-
-
 @router.get("/admin/business/{business_id}/scraping-status")
 async def get_scraping_status(
     business_id: str, 
@@ -460,84 +316,72 @@ async def get_scraping_status(
     Returns JSON response with status, message, and progress.
     Use X-Admin-API-Key header for authentication.
     """
-    # Use absolute paths to avoid issues with working directory
-    # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-    index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
+    from core.database import scraping_status_db
     
+    # Check if index file exists (for validation)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
+    index_exists = os.path.exists(index_file)
+    
+    # Get status from database
+    status_data = scraping_status_db.get_status(business_id)
+    
+    # Default response if no status found
     response = {
         "status": "not_started",
         "message": "No scraping in progress",
-        "progress": 0
+        "progress": 0,
+        "updated_at": time.time()
     }
     
-    # Check if categories exist in database and index file exists (for auto-fix logic only)
-    db_config = config_manager.get_business(business_id)
-    categories_exist = db_config and db_config.get("categories") is not None
-    index_exists = os.path.exists(index_file)
-    
-    if os.path.exists(status_file):
-        try:
-            with open(status_file, "r", encoding="utf-8") as f:
-                status_data = json.load(f)
-                # Only copy status, message, progress, updated_at - no categories
+    if status_data:
+        response.update({
+            "status": status_data.get("status", "not_started"),
+            "message": status_data.get("message", "No scraping in progress"),
+            "progress": status_data.get("progress", 0),
+            "updated_at": status_data.get("updated_at", time.time())
+        })
+        
+        # If status says "completed" but KB files were deleted, treat as stale
+        if status_data.get("status") == "completed" and not index_exists:
+            response["status"] = "not_started"
+            response["message"] = "Knowledge base was removed. Click Start Scraping to rebuild."
+            response["progress"] = 0
+            # Delete stale status from DB
+            scraping_status_db.delete_status(business_id)
+            print(f"[INFO] Removed stale status (KB files missing): {business_id}")
+        
+        # Auto-fix: If categories exist but status is stuck, update to completed
+        # BUT: Don't auto-fix if status was recently set to "pending" (within last 60 seconds)
+        elif index_exists:
+            db_config = config_manager.get_business(business_id)
+            categories_exist = db_config and db_config.get("categories") is not None
+            
+            updated_at = status_data.get("updated_at", 0)
+            status_age = time.time() - updated_at if updated_at else 0
+            is_recent_pending = status_data.get("status") == "pending" and status_age < 60
+            status_message = status_data.get("message", "").lower()
+            is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
+            
+            # Only auto-fix if:
+            # - Categories and index exist
+            # - Status is not recently set to pending (>= 60 seconds old)
+            # - Message doesn't indicate a fresh start
+            if categories_exist and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
+                print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
+                scraping_status_db.update_status(
+                    business_id=business_id,
+                    status="completed",
+                    message="Knowledge base built successfully!",
+                    progress=100
+                )
                 response.update({
-                    "status": status_data.get("status", "not_started"),
-                    "message": status_data.get("message", "No scraping in progress"),
-                    "progress": status_data.get("progress", 0),
-                    "updated_at": status_data.get("updated_at", time.time())
+                    "status": "completed",
+                    "message": "Knowledge base built successfully!",
+                    "progress": 100,
+                    "updated_at": time.time()
                 })
-                
-                # If status says "completed" but KB files were deleted, treat as stale (don't show Complete!)
-                if status_data.get("status") == "completed" and not index_exists:
-                    response["status"] = "not_started"
-                    response["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
-                    response["progress"] = 0
-                    try:
-                        os.remove(status_file)
-                        print(f"[INFO] Removed stale status file (KB files missing): {business_id}")
-                    except Exception:
-                        pass
-                # Auto-fix: If categories exist but status is stuck, update to completed
-                # BUT: Don't auto-fix if status was recently set to "pending" (within last 60 seconds)
-                # This prevents auto-completing a fresh re-scrape
-                elif index_exists:
-                    status_age = time.time() - status_data.get("updated_at", 0)
-                    is_recent_pending = status_data.get("status") == "pending" and status_age < 60
-                    status_message = status_data.get("message", "").lower()
-                    is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                    # Only auto-fix if:
-                    # - Categories and index exist
-                    # - Status is not recently set to pending (>= 60 seconds old)
-                    # - Message doesn't indicate a fresh start
-                    if categories_exist and status_data.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                        print(f"[INFO] Auto-fixing stuck status for {business_id}: categories and index exist but status is {status_data.get('status')}")
-                        try:
-                            # Update status to completed (no categories in response)
-                            status_data["status"] = "completed"
-                            status_data["message"] = "Knowledge base built successfully!"
-                            status_data["progress"] = 100
-                            status_data["updated_at"] = time.time()
-                            # Remove categories from status file if present
-                            status_data.pop("categories", None)
-                            status_data.pop("total_pages", None)
-                            
-                            # Write updated status
-                            with open(status_file, "w", encoding="utf-8") as f:
-                                json.dump(status_data, f, indent=2)
-                            
-                            response.update({
-                                "status": "completed",
-                                "message": "Knowledge base built successfully!",
-                                "progress": 100,
-                                "updated_at": status_data["updated_at"]
-                            })
-                            print(f"[SUCCESS] Auto-fixed status for {business_id}")
-                        except Exception as e:
-                            print(f"[WARN] Failed to auto-fix status: {e}")
-        except Exception as e:
-            print(f"[ERROR] Failed to read status file: {e}")
+                print(f"[SUCCESS] Auto-fixed status for {business_id}")
     
     return response
 
@@ -592,69 +436,6 @@ async def delete_business_config(business_id: str, api_key: str = Depends(get_ap
         return {"success": True, "message": f"Business {business_id} deleted"}
     else:
         raise HTTPException(status_code=404, detail="Business not found")
-
-
-@router.post("/admin/business/{business_id}/categories")
-async def update_enabled_categories(
-    business_id: str, 
-    request: Request,
-    api_key: str = Depends(get_api_key)
-):
-    """Update enabled categories for a business's knowledge base."""
-    try:
-        data = await request.json()
-        enabled_categories = data.get("enabled_categories", [])
-        
-        if not isinstance(enabled_categories, list):
-            raise HTTPException(status_code=400, detail="enabled_categories must be a list")
-        
-        # Get current config
-        config = config_manager.get_business(business_id)
-        if not config:
-            raise HTTPException(status_code=404, detail="Business not found")
-        
-        # Update enabled categories in database
-        from core.database import BusinessConfigDB
-        from core.rag import clear_retriever_cache
-        db_manager = BusinessConfigDB()
-        
-        # Get all current config values
-        updated_config = db_manager.create_or_update_business(
-            business_id=config["business_id"],
-            business_name=config["business_name"],
-            system_prompt=config["system_prompt"],
-            greeting_message=config.get("greeting_message"),
-            primary_goal=config.get("primary_goal"),
-            personality=config.get("personality"),
-            privacy_statement=config.get("privacy_statement"),
-            theme_color=config.get("theme_color"),
-            widget_position=config.get("widget_position"),
-            website_url=config.get("website_url"),
-            contact_email=config.get("contact_email"),
-            contact_phone=config.get("contact_phone"),
-            cta_tree=config.get("cta_tree"),
-            voice_enabled=config.get("voice_enabled", False),
-            chatbot_button_text=config.get("chatbot_button_text"),
-            business_logo=config.get("business_logo"),
-            enabled_categories=enabled_categories,
-        )
-        
-        # Clear retriever cache so it reloads with new categories
-        clear_retriever_cache(business_id)
-        
-        return {
-            "success": True,
-            "message": "Enabled categories updated",
-            "business_id": business_id,
-            "enabled_categories": enabled_categories
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[ERROR] Failed to update enabled categories: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to update enabled categories: {str(e)}")
 
 
 @router.get("/admin")

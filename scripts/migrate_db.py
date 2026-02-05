@@ -123,6 +123,29 @@ def migrate():
         else:
             print("✓ cta_tree already exists.")
 
+        # Check for scraping_status table
+        scraping_status_exists = "scraping_status" in inspector.get_table_names()
+        if not scraping_status_exists:
+            print("Creating scraping_status table...")
+            conn.execute(text("""
+                CREATE TABLE scraping_status (
+                    id SERIAL PRIMARY KEY,
+                    business_id VARCHAR(255) NOT NULL UNIQUE,
+                    status VARCHAR(50) NOT NULL,
+                    message TEXT DEFAULT '',
+                    progress INTEGER DEFAULT 0,
+                    started_at TIMESTAMP WITH TIME ZONE,
+                    completed_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_business_id FOREIGN KEY (business_id) REFERENCES business_configs(business_id) ON DELETE CASCADE
+                )
+            """))
+            conn.execute(text("CREATE INDEX idx_scraping_status_business_id ON scraping_status(business_id)"))
+            print("✅ scraping_status table created.")
+        else:
+            print("✓ scraping_status table already exists.")
+
         print("✅ Migration complete.")
 
 if __name__ == "__main__":

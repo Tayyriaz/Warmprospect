@@ -302,21 +302,19 @@ def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_dep
 
 
 def update_status(business_id: str, status: str, message: str = "", progress: int = 0):
-    """Update status file for frontend polling."""
+    """Update status in database for frontend polling."""
     try:
-        status_file = os.path.join("data", business_id, "scraping_status.json")
-        os.makedirs(os.path.dirname(status_file), exist_ok=True)
-        status_data = {
-            "status": status,
-            "message": message,
-            "progress": progress,
-            "updated_at": time.time()
-        }
-        with open(status_file, "w", encoding="utf-8") as f:
-            json.dump(status_data, f)
-            f.flush()  # Ensure data is written immediately
-            os.fsync(f.fileno())  # Force write to disk
-        print(f"[STATUS] {business_id}: {status} - {message} ({progress}%)")
+        from core.database import scraping_status_db
+        success = scraping_status_db.update_status(
+            business_id=business_id,
+            status=status,
+            message=message,
+            progress=progress
+        )
+        if success:
+            print(f"[STATUS] {business_id}: {status} - {message} ({progress}%)")
+        else:
+            print(f"[WARN] Failed to update status for {business_id}, but continuing...")
     except Exception as e:
         print(f"[ERROR] Failed to update status for {business_id}: {e}")
         # Don't fail scraping if status update fails
@@ -821,19 +819,5 @@ def build_kb_for_business(business_id: str, website_url: str):
     print(f"[SUCCESS] Metadata written to {meta_path}")
     print(f"[SUCCESS] Knowledge base ready for business: {business_id}")
     
-    try:
-        db_manager = BusinessConfigDB()
-        config = db_manager.get_business(business_id)
-        if config and config.get("categories"):
-            categories_data = config["categories"]
-            status_file = os.path.join(output_dir, "scraping_status.json")
-            status_data = {
-                "status": "completed",
-                "message": f"Knowledge base built! {len(pages)} pages, {len(meta_records)} chunks.",
-                "progress": 100,
-                "updated_at": time.time()
-            }
-            with open(status_file, "w", encoding="utf-8") as f:
-                json.dump(status_data, f, indent=2)
-    except Exception:
-        update_status(business_id, "completed", f"Knowledge base built! {len(pages)} pages, {len(meta_records)} chunks.", 100)
+    # Final status update is handled by update_status() call below
+    update_status(business_id, "completed", f"Knowledge base built! {len(pages)} pages, {len(meta_records)} chunks.", 100)
