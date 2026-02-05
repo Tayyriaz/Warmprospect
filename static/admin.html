@@ -1539,17 +1539,17 @@
                 </div>
               </div>
             </div>
-            <label style="position: relative; display: inline-flex; align-items: center; cursor: pointer; user-select: none;">
+            <label style="position: relative; display: inline-flex; align-items: center; cursor: pointer; user-select: none; gap: 10px;">
               <input type="checkbox" 
                      class="category-checkbox"
                      data-category="${cat.name}"
                      ${cat.enabled ? 'checked' : ''} 
                      onchange="toggleCategory('${cat.name}', this.checked)"
-                     style="opacity: 0; position: absolute; width: 0; height: 0;">
-              <span style="position: relative; display: inline-block; width: 48px; height: 26px; background-color: ${cat.enabled ? '#2563eb' : '#d1d5db'}; border-radius: 26px; transition: all 0.3s ease; box-shadow: ${cat.enabled ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'};">
+                     style="opacity: 0; position: absolute; width: 0; height: 0; pointer-events: none;">
+              <span class="toggle-switch-bg" style="position: relative; display: inline-block; width: 48px; height: 26px; background-color: ${cat.enabled ? '#2563eb' : '#d1d5db'}; border-radius: 26px; transition: all 0.3s ease; box-shadow: ${cat.enabled ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'}; flex-shrink: 0;">
                 <span style="position: absolute; top: 2px; left: ${cat.enabled ? '24px' : '2px'}; width: 22px; height: 22px; background-color: white; border-radius: 50%; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
               </span>
-              <span style="margin-left: 10px; font-size: 13px; color: ${cat.enabled ? '#2563eb' : '#6b7280'}; font-weight: ${cat.enabled ? '600' : '400'};">
+              <span class="toggle-switch-text" style="font-size: 13px; color: ${cat.enabled ? '#2563eb' : '#6b7280'}; font-weight: ${cat.enabled ? '600' : '400'}; white-space: nowrap;">
                 ${cat.enabled ? 'Enabled' : 'Disabled'}
               </span>
             </label>
@@ -1579,15 +1579,19 @@
             card.classList.remove('category-enabled');
           }
           
-          const label = checkbox.nextElementSibling;
+          // Get the label container
+          const label = checkbox.closest('label');
           if (label) {
-            const toggleBg = label.querySelector('span:first-child');
-            const toggleText = label.querySelector('span:last-child');
-            const thumb = toggleBg.querySelector('span');
+            // Use class selectors for more reliable element finding
+            const toggleBg = label.querySelector('.toggle-switch-bg');
+            const toggleText = label.querySelector('.toggle-switch-text');
+            const thumb = toggleBg ? toggleBg.querySelector('span') : null;
             
             if (enabled) {
-              toggleBg.style.backgroundColor = '#2563eb';
-              toggleBg.style.boxShadow = '0 0 0 2px rgba(37, 99, 235, 0.2)';
+              if (toggleBg) {
+                toggleBg.style.backgroundColor = '#2563eb';
+                toggleBg.style.boxShadow = '0 0 0 2px rgba(37, 99, 235, 0.2)';
+              }
               if (toggleText) {
                 toggleText.textContent = 'Enabled';
                 toggleText.style.color = '#2563eb';
@@ -1595,8 +1599,10 @@
               }
               if (thumb) thumb.style.left = '24px';
             } else {
-              toggleBg.style.backgroundColor = '#d1d5db';
-              toggleBg.style.boxShadow = 'none';
+              if (toggleBg) {
+                toggleBg.style.backgroundColor = '#d1d5db';
+                toggleBg.style.boxShadow = 'none';
+              }
               if (toggleText) {
                 toggleText.textContent = 'Disabled';
                 toggleText.style.color = '#6b7280';
