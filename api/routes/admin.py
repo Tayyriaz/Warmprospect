@@ -268,7 +268,11 @@ async def trigger_scraping(business_id: str, background_tasks: BackgroundTasks, 
         
         # Clear old KB files to start fresh (status is now in DB, will be updated)
         from core.database import scraping_status_db
-        scraping_status_db.delete_status(business_id)  # Clear old status from DB
+        try:
+            scraping_status_db.delete_status(business_id)  # Clear old status from DB
+        except Exception as e:
+            # Table might not exist yet - that's okay, will be created on first status update
+            print(f"[INFO] Could not delete status (table may not exist): {e}")
         
         try:
             for path in (meta_path, index_path):
@@ -317,22 +321,34 @@ async def get_scraping_status(
     Use X-Admin-API-Key header for authentication.
     """
     from core.database import scraping_status_db
+    from sqlalchemy.exc import SQLAlchemyError
     
     # Check if index file exists (for validation)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
     index_exists = os.path.exists(index_file)
     
-    # Get status from database
-    status_data = scraping_status_db.get_status(business_id)
-    
-    # Default response if no status found
+    # Default response if no status found or error occurs
     response = {
         "status": "not_started",
         "message": "No scraping in progress",
         "progress": 0,
         "updated_at": time.time()
     }
+    
+    # Get status from database (with error handling)
+    try:
+        status_data = scraping_status_db.get_status(business_id)
+    except SQLAlchemyError as e:
+        # Table might not exist yet - return default status
+        print(f"[WARN] Database error getting scraping status (table may not exist): {e}")
+        return response
+    except Exception as e:
+        # Any other error - return default status
+        print(f"[ERROR] Failed to get scraping status: {e}")
+        import traceback
+        traceback.print_exc()
+        return response
     
     if status_data:
         response.update({

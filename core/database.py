@@ -439,12 +439,14 @@ class ScrapingStatusDB:
         finally:
             db.close()
     
-    def get_status(self, business_id: str) -> Dict[str, Any]:
+    def get_status(self, business_id: str) -> Optional[Dict[str, Any]]:
         """
         Get current scraping status for a business.
         Returns dict with status info or None if not found.
+        Raises exception if database error occurs (e.g., table doesn't exist).
         """
         from core.database.models import ScrapingStatus
+        from sqlalchemy.exc import SQLAlchemyError
         
         db = self._get_session()
         try:
@@ -455,9 +457,14 @@ class ScrapingStatusDB:
             if status:
                 return status.to_dict()
             return None
+        except SQLAlchemyError as e:
+            # Re-raise SQLAlchemy errors so caller can handle them
+            db.rollback()
+            raise
         except Exception as e:
+            db.rollback()
             print(f"[ERROR] Failed to get scraping status: {e}")
-            return None
+            raise
         finally:
             db.close()
     
