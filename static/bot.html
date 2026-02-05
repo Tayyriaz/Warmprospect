@@ -698,8 +698,8 @@
         btn.textContent = icon ? `${icon} ${label}` : label;
         btn.addEventListener("click", () => {
           if (action === "show_children") {
-            // For CTAs with show_children, send message with cta_id
-            sendMessageWithCta(message, option.id);
+            // For CTAs with show_children, send label with cta_id (API will return message + children)
+            sendMessageWithCta(label, option.id);
           } else if (action === "link" && option.url) {
             // For link CTAs, open URL
             window.open(option.url, '_blank');

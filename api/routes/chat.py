@@ -117,8 +117,10 @@ async def _handle_chat_request(request: Request):
         traceback.print_exc()
         raise HTTPException(status_code=400, detail="Invalid request format.")
 
-    # Basic validation
-    if not isinstance(user_input, str) or not user_input.strip():
+    # Basic validation - allow empty message if cta_id is provided (for CTA navigation)
+    if not isinstance(user_input, str):
+        raise HTTPException(status_code=400, detail="Message must be a string.")
+    if not user_input.strip() and not cta_id:
         raise HTTPException(status_code=400, detail="Message is required.")
 
     # 1. Initialize/Retrieve Session State
@@ -145,7 +147,27 @@ async def _handle_chat_request(request: Request):
     sentiment_result = sentiment_analyzer.analyze(user_input)
     session["sentiment"] = sentiment_result.get("sentiment")
     
-    # 2. Hard Guard Check (Priority 1) OR First Message Handling
+    # 2. Handle CTA navigation (if cta_id provided, return children immediately)
+    if cta_id and business_id:
+        config = config_manager.get_business(business_id)
+        if config and config.get("cta_tree"):
+            cta_tree = config.get("cta_tree", {})
+            matched_cta = cta_tree.get(cta_id)
+            if matched_cta and isinstance(matched_cta, dict) and matched_cta.get("action") == "show_children":
+                from core.cta.cta_tree import get_cta_children
+                children_ctas = get_cta_children(cta_tree, cta_id)
+                if children_ctas:
+                    payload = {"cta": children_ctas}
+                    # Use CTA's message if available, otherwise use a default
+                    if matched_cta.get("message"):
+                        payload["response"] = matched_cta["message"]
+                    else:
+                        payload["response"] = "Please select an option:"
+                    # Save session and return early - no AI response needed
+                    save_session(session_key, session)
+                    return payload
+    
+    # 3. Hard Guard Check (Priority 1) OR First Message Handling
     hard_guard_response = check_hard_guards(user_input, session, session_key, user_id, business_id)
     
     # Handle first message or hard guard triggers
@@ -172,7 +194,7 @@ async def _handle_chat_request(request: Request):
                     payload["cta"] = entry_ctas
             return payload
 
-    # 3. Build System Instruction
+    # 4. Build System Instruction
     business_config = config_manager.get_business(business_id) if business_id else None
     business_system_prompt = business_config.get("system_prompt") if business_config else None
     
@@ -184,7 +206,7 @@ async def _handle_chat_request(request: Request):
     # Store effective system instruction in session
     session["system_instruction"] = system_instruction
     
-    # 4. Get or Create Chat Session
+    # 5. Get or Create Chat Session
     # Validate that client and model are initialized
     if _client is None or _model_name is None:
         error_msg = "Chat service not initialized. Please check server logs."
@@ -201,7 +223,7 @@ async def _handle_chat_request(request: Request):
         business_id=business_id
     )
     
-    # 5. RAG Context Retrieval
+    # 6. RAG Context Retrieval
     context_text = None
     biz_retriever = get_retriever_for_business(business_id)
     if biz_retriever:
@@ -213,7 +235,7 @@ async def _handle_chat_request(request: Request):
         except Exception as e:
             print(f"[WARNING] RAG retrieval failed: {e}")
     
-    # 6. Main Conversation Loop using Chat API
+    # 7. Main Conversation Loop using Chat API
     def run_conversation_with_chat(chat_session, message: str) -> str:
         """Uses chat API's send_message which automatically includes full history."""
         response = chat_session.send_message(message)
@@ -311,7 +333,7 @@ async def _handle_chat_request(request: Request):
         
         return gemini_response.text if gemini_response.text else ""
     
-    # 7. Execute the conversation turn using Chat API
+    # 8. Execute the conversation turn using Chat API
     try:
         user_message_with_context = user_input
         if context_text:
@@ -339,10 +361,10 @@ async def _handle_chat_request(request: Request):
         print(f"[ERROR] Returning error message to user: {error_msg}")
         return {"response": error_msg}
     
-    # 8. Track assistant message and update analytics
+    # 9. Track assistant message and update analytics
     session = analytics.track_message(session, "assistant")
     
-    # 9. Save chat history to session
+    # 10. Save chat history to session
     save_chat_history_to_session(chat, session, _max_history_turns)
     
     print(f"[DEBUG] ===== SENDING RESPONSE: '{final_response_text[:100] if final_response_text else 'EMPTY'}...' =====")
@@ -353,26 +375,12 @@ async def _handle_chat_request(request: Request):
     
     # Dynamic CTA approach: CTAs are ALWAYS separate, never in response
     # Get CTAs separately based on context and intent
+    # Note: CTA navigation (cta_id) is handled earlier in step 2, so we only handle entry point CTAs here
     cta_payload = None
-    if business_id:
-        config = config_manager.get_business(business_id)
-        if config and config.get("cta_tree"):
-            cta_tree = config.get("cta_tree", {})
-            from core.cta.cta_tree import get_cta_children
-            
-            # If explicit cta_id provided (for API-only consumers), return its children
-            if cta_id:
-                matched_cta = cta_tree.get(cta_id)
-                if matched_cta and isinstance(matched_cta, dict) and matched_cta.get("action") == "show_children":
-                    children_ctas = get_cta_children(cta_tree, cta_id)
-                    if children_ctas:
-                        cta_payload = {"cta": children_ctas}
-            
-            # If no explicit CTA or no children, return entry point CTAs only when response suggests options (not every message)
-            if not cta_payload:
-                entry_ctas = get_entry_point_ctas(business_id, user_input)
-                if entry_ctas and should_attach_ctas(final_response_text):
-                    cta_payload = {"cta": entry_ctas}
+    if business_id and not cta_id:  # Only get entry CTAs if not handling CTA navigation
+        entry_ctas = get_entry_point_ctas(business_id, user_input)
+        if entry_ctas and should_attach_ctas(final_response_text):
+            cta_payload = {"cta": entry_ctas}
     
     # 10. Save session state (after updating CTA context)
     save_session(session_key, session)
