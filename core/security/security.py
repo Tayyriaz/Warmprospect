@@ -1,14 +1,13 @@
 import os
 from typing import Optional
 from fastapi import Security, HTTPException, status
-from fastapi.security import APIKeyHeader, APIKeyQuery
+from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
 
 load_dotenv()
 
 API_KEY_NAME = "X-Admin-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
 
@@ -23,7 +22,7 @@ def _validate_api_key(value: Optional[str]):
     if not value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Missing API key. Please provide X-Admin-API-Key header or api_key query parameter.",
+            detail="Missing API key. Please provide X-Admin-API-Key header.",
         )
     if value != ADMIN_API_KEY:
         raise HTTPException(
@@ -49,14 +48,3 @@ async def get_api_key(api_key_header: Optional[str] = Security(api_key_header)):
     return _validate_api_key(api_key_header)
 
 
-async def get_api_key_header_or_query(
-    api_key_header: Optional[str] = Security(api_key_header),
-    api_key_query_param: Optional[str] = Security(api_key_query),
-):
-    """
-    Validate admin API key from header or query parameter.
-    Use for endpoints that may be called via EventSource (e.g. scraping-status?stream=true&api_key=...)
-    since EventSource cannot send custom headers.
-    """
-    key = api_key_header or api_key_query_param
-    return _validate_api_key(key)

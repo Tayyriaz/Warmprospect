@@ -7,12 +7,9 @@ import json
 import subprocess
 import sys
 import time
-import asyncio
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends, Security
-from fastapi.responses import StreamingResponse
-from core.security import get_api_key, get_api_key_header_or_query
-from core.security.security import api_key_header, api_key_query, _validate_api_key
+from typing import Dict, Any
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Depends
+from core.security import get_api_key
 from core.config.business_config import config_manager
 from core.utils.helpers import convert_config_to_camel
 
@@ -456,151 +453,13 @@ async def refresh_knowledge_base(business_id: str, background_tasks: BackgroundT
 @router.get("/admin/business/{business_id}/scraping-status")
 async def get_scraping_status(
     business_id: str, 
-    request: Request,
-    stream: bool = False,
-    api_key_header: Optional[str] = Security(api_key_header),
-    api_key_query: Optional[str] = Security(api_key_query)
+    api_key: str = Depends(get_api_key)
 ):
     """
     Get current scraping status for a business.
-    
-    Supports both JSON response and Server-Sent Events (SSE) streaming:
-    - Default: Returns JSON response (use X-Admin-API-Key header)
-    - Set ?stream=true or Accept: text/event-stream header for SSE streaming
-      (SSE requires api_key query parameter since EventSource cannot send custom headers)
-    
-    Authentication:
-    - Preferred: X-Admin-API-Key header (for regular requests)
-    - Fallback: api_key query parameter (required for SSE/EventSource)
+    Returns JSON response with status, message, and progress.
+    Use X-Admin-API-Key header for authentication.
     """
-    # Check if SSE is requested (via query param or Accept header)
-    accept_header = request.headers.get("accept", "")
-    use_sse = stream or "text/event-stream" in accept_header
-    
-    # For SSE, query parameter is required (EventSource limitation)
-    # For regular requests, prefer header for security
-    if use_sse:
-        api_key = api_key_query or api_key_header
-    else:
-        api_key = api_key_header or api_key_query
-    
-    # Validate API key
-    _validate_api_key(api_key)
-    
-    if use_sse:
-        # Return SSE stream
-        async def event_generator():
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            status_file = os.path.join(base_dir, "data", business_id, "scraping_status.json")
-            index_file = os.path.join(base_dir, "data", business_id, "index.faiss")
-            last_status = None
-            last_sent_time = 0
-            
-            # Helper function to read and process status
-            def read_status():
-                status_data = {
-                    "status": "not_started",
-                    "message": "No scraping in progress",
-                    "progress": 0
-                }
-                
-                db_config = config_manager.get_business(business_id)
-                categories_exist = db_config and db_config.get("categories") is not None
-                index_exists = os.path.exists(index_file)
-                
-                if os.path.exists(status_file):
-                    try:
-                        with open(status_file, "r", encoding="utf-8") as f:
-                            file_status = json.load(f)
-                            # Only copy status, message, progress, updated_at - no categories
-                            status_data.update({
-                                "status": file_status.get("status", "not_started"),
-                                "message": file_status.get("message", "No scraping in progress"),
-                                "progress": file_status.get("progress", 0),
-                                "updated_at": file_status.get("updated_at", time.time())
-                            })
-                            
-                            # Stale: status says "completed" but KB files were deleted
-                            if file_status.get("status") == "completed" and not index_exists:
-                                status_data["status"] = "not_started"
-                                status_data["message"] = "Knowledge base was removed. Click Re-scrape to rebuild."
-                                status_data["progress"] = 0
-                            # Auto-fix: stuck status when index exists
-                            elif index_exists:
-                                status_age = time.time() - file_status.get("updated_at", 0)
-                                is_recent_pending = file_status.get("status") == "pending" and status_age < 60
-                                status_message = file_status.get("message", "").lower()
-                                is_fresh_start = any(keyword in status_message for keyword in ["starting", "preparing", "beginning"])
-                                if categories_exist and file_status.get("status") in ["pending", "scraping", "categorizing", "indexing"] and not is_recent_pending and not is_fresh_start:
-                                    status_data["status"] = "completed"
-                                    status_data["message"] = "Knowledge base built successfully!"
-                                    status_data["progress"] = 100
-                    except Exception as e:
-                        print(f"[ERROR] Failed to read status file in SSE: {e}")
-                
-                # Add timestamp for "updated X seconds ago" display
-                current_time = time.time()
-                updated_at = status_data.get("updated_at", current_time)
-                status_data["updated_at"] = updated_at
-                status_data["updated_ago"] = int(current_time - updated_at)
-                
-                return status_data
-            
-            # Send initial connection message
-            yield f"data: {json.dumps({'type': 'connected', 'message': 'Connected to status stream'})}\n\n"
-            
-            # Send initial status immediately (don't wait for loop)
-            initial_status = read_status()
-            last_status = (initial_status.get("status"), initial_status.get("progress"))
-            last_sent_time = time.time()
-            yield f"data: {json.dumps(initial_status)}\n\n"
-            
-            # Stop streaming if already completed or failed
-            if initial_status.get("status") in ["completed", "failed"]:
-                return
-            
-            while True:
-                try:
-                    # Read status
-                    status_data = read_status()
-                    
-                    # Send update if status/progress changed OR heartbeat every 2s
-                    current_status_key = (status_data.get("status"), status_data.get("progress"))
-                    current_time = time.time()
-                    should_send = (
-                        current_status_key != last_status or
-                        (current_time - last_sent_time) >= 2
-                    )
-                    
-                    if should_send:
-                        last_status = current_status_key
-                        last_sent_time = current_time
-                        yield f"data: {json.dumps(status_data)}\n\n"
-                        
-                        # Stop streaming if completed or failed
-                        if status_data.get("status") in ["completed", "failed"]:
-                            break
-                    
-                    await asyncio.sleep(1)
-                    
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    print(f"[ERROR] SSE error: {e}")
-                    yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-                    await asyncio.sleep(1)
-        
-        return StreamingResponse(
-            event_generator(), 
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"  # Disable nginx buffering
-            }
-        )
-    
-    # Regular JSON response (existing logic)
     # Use absolute paths to avoid issues with working directory
     # Go up 3 levels: api/routes/admin.py -> api/routes -> api -> project root
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

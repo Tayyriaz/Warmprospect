@@ -1179,8 +1179,8 @@
       resetScrapingModal();
       
       modal.classList.add('active');
-      // Start SSE immediately when modal opens
-      startScrapingSSE(businessId);
+      // Start polling immediately when modal opens
+      startScrapingPoll(businessId);
     }
     
     function resetScrapingModal() {
@@ -1213,10 +1213,10 @@
       currentCategories = [];
       scrapingStartTime = Date.now();
       
-      // Close SSE connection if open
-      if (scrapingEventSource) {
-        scrapingEventSource.close();
-        scrapingEventSource = null;
+      // Stop polling if active
+      if (scrapingPollInterval) {
+        clearInterval(scrapingPollInterval);
+        scrapingPollInterval = null;
       }
     }
     
@@ -1238,10 +1238,10 @@
       const defaultActions = document.getElementById('modalActionsDefault');
       if (defaultActions) defaultActions.style.display = 'flex';
       
-      // Close SSE connection
-      if (scrapingEventSource) {
-        scrapingEventSource.close();
-        scrapingEventSource = null;
+      // Stop polling if active
+      if (scrapingPollInterval) {
+        clearInterval(scrapingPollInterval);
+        scrapingPollInterval = null;
       }
       
       // Reset tracking variables
@@ -1260,7 +1260,7 @@
     let lastStatus = null;
     let stuckWarningShown = false;
     
-    // Function to update UI directly from a status object (used by SSE)
+    // Function to update UI directly from a status object (used by polling)
     function updateScrapingStatusUI(status) {
       console.log('[UI] Updating UI with status:', status.status, 'progress:', status.progress);
       
@@ -1363,20 +1363,20 @@
           // Fetch categories from business config endpoint
           fetchCategoriesFromConfig(businessId);
           
-          // SSE connection will close automatically, but ensure it's closed
-          if (scrapingEventSource) {
-            scrapingEventSource.close();
-            scrapingEventSource = null;
+          // Stop polling when completed
+          if (scrapingPollInterval) {
+            clearInterval(scrapingPollInterval);
+            scrapingPollInterval = null;
           }
           break;
         case 'failed':
           statusText = '❌ Failed';
           messageText = status.message || 'Scraping failed. Please try again.';
           progress = 0;
-          // Close SSE connection on failure
-          if (scrapingEventSource) {
-            scrapingEventSource.close();
-            scrapingEventSource = null;
+          // Stop polling on failure
+          if (scrapingPollInterval) {
+            clearInterval(scrapingPollInterval);
+            scrapingPollInterval = null;
           }
           break;
         case 'not_started':
@@ -1439,6 +1439,42 @@
       })
         .then(res => res.json())
         .then(status => {
+          // Check for overall timeout (30 minutes)
+          if (scrapingStartTime && (Date.now() - scrapingStartTime) > 30 * 60 * 1000) {
+            const statusEl = document.getElementById('modalStatus');
+            const messageEl = document.getElementById('modalMessage');
+            statusEl.textContent = '⏱️ Timeout';
+            statusEl.style.color = '#dc2626';
+            messageEl.innerHTML = `
+              <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
+                ⚠️ Scraping has been running for over 30 minutes
+              </div>
+              <div style="color: #6b7280; font-size: 13px;">
+                The scraping process may have encountered an issue or the website is very large.
+              </div>
+              <div style="margin-top: 12px; padding: 12px; background: #fee2e2; border-radius: 6px; font-size: 13px; color: #991b1b;">
+                <strong>💡 Recommended Actions:</strong><br>
+                • Check server logs for errors<br>
+                • The website might be too large - consider limiting pages<br>
+                • Try refreshing the knowledge base
+              </div>
+            `;
+            
+            if (scrapingPollInterval) {
+              clearInterval(scrapingPollInterval);
+              scrapingPollInterval = null;
+            }
+            return;
+          }
+          
+          // Stop polling if completed or failed
+          if (status.status === 'completed' || status.status === 'failed') {
+            if (scrapingPollInterval) {
+              clearInterval(scrapingPollInterval);
+              scrapingPollInterval = null;
+              console.log('[POLL] Stopped polling - status:', status.status);
+            }
+          }
           const statusEl = document.getElementById('modalStatus');
           const messageEl = document.getElementById('modalMessage');
           const progressEl = document.getElementById('progressFill');
@@ -1546,22 +1582,11 @@
                 const rescraperBtn = document.getElementById('rescraperBtn');
                 if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
               }
-              
-              // SSE connection will close automatically, but ensure it's closed
-              if (scrapingEventSource) {
-                scrapingEventSource.close();
-                scrapingEventSource = null;
-              }
               break;
             case 'failed':
               statusText = '❌ Failed';
               messageText = status.message || 'Scraping failed. Please try again.';
               progress = 0;
-              // Close SSE connection on failure
-              if (scrapingEventSource) {
-                scrapingEventSource.close();
-                scrapingEventSource = null;
-              }
               break;
             case 'not_started':
               statusText = '⏳ Not Started';
@@ -1614,7 +1639,8 @@
           }
         })
         .catch(err => {
-          console.error('Error checking scraping status:', err);
+          console.error('[POLL] Error checking scraping status:', err);
+          // Don't stop polling on error - might be temporary network issue
           const statusEl = document.getElementById('modalStatus');
           const messageEl = document.getElementById('modalMessage');
           
@@ -1799,10 +1825,10 @@
           cat.enabled = enabledCategories.includes(cat.name);
         });
         
-        // Close SSE connection and close modal after a moment
-        if (scrapingEventSource) {
-          scrapingEventSource.close();
-          scrapingEventSource = null;
+        // Stop polling and close modal after a moment
+        if (scrapingPollInterval) {
+          clearInterval(scrapingPollInterval);
+          scrapingPollInterval = null;
         }
         
         setTimeout(() => {
@@ -1814,14 +1840,14 @@
       }
     }
     
-    let scrapingEventSource = null;
+    let scrapingPollInterval = null;
     let scrapingStartTime = null;
     
-    function startScrapingSSE(businessId) {
-      // Close any existing EventSource
-      if (scrapingEventSource) {
-        scrapingEventSource.close();
-        scrapingEventSource = null;
+    function startScrapingPoll(businessId) {
+      // Stop any existing polling
+      if (scrapingPollInterval) {
+        clearInterval(scrapingPollInterval);
+        scrapingPollInterval = null;
       }
       
       // Reset tracking variables
@@ -1837,115 +1863,15 @@
       document.getElementById('modalStatus').textContent = 'Loading...';
       document.getElementById('modalMessage').textContent = 'Starting scraping process...';
       
-      // Create EventSource for SSE (use same API key source as other admin requests)
-      const apiKey = getApiKeyFromInput();
-      if (!apiKey) {
-        showAlert('Please enter your Admin API Key in the field above.', 'error');
-        return;
-      }
+      // Fetch initial status immediately
+      updateScrapingStatus(businessId);
       
-      const sseUrl = `${API_BASE}/admin/business/${businessId}/scraping-status?stream=true&api_key=${encodeURIComponent(apiKey)}`;
-      console.log('[SSE] Starting SSE connection to:', sseUrl);
-      scrapingEventSource = new EventSource(sseUrl);
+      // Poll every 2 seconds
+      scrapingPollInterval = setInterval(() => {
+        updateScrapingStatus(businessId);
+      }, 2000);
       
-      // Log connection state changes
-      scrapingEventSource.addEventListener('open', () => {
-        console.log('[SSE] Connection opened successfully, readyState:', scrapingEventSource.readyState);
-      });
-      
-      scrapingEventSource.onmessage = function(event) {
-        console.log('[SSE] Received message:', event.data.substring(0, 100));
-        try {
-          const status = JSON.parse(event.data);
-          
-          // Handle connection message
-          if (status.type === 'connected') {
-            console.log('SSE connected:', status.message);
-            return;
-          }
-          
-          // Handle error message
-          if (status.type === 'error') {
-            console.error('SSE error:', status.message);
-            showAlert('Status stream error: ' + status.message, 'error');
-            return;
-          }
-          
-          // Update UI with status
-          updateScrapingStatusUI(status);
-          
-          // Check for overall timeout (30 minutes)
-          if (scrapingStartTime && (Date.now() - scrapingStartTime) > 30 * 60 * 1000) {
-            const statusEl = document.getElementById('modalStatus');
-            const messageEl = document.getElementById('modalMessage');
-            statusEl.textContent = '⏱️ Timeout';
-            statusEl.style.color = '#dc2626';
-            messageEl.innerHTML = `
-              <div style="color: #dc2626; font-weight: 600; margin-bottom: 8px;">
-                ⚠️ Scraping has been running for over 30 minutes
-              </div>
-              <div style="color: #6b7280; font-size: 13px;">
-                The scraping process may have encountered an issue or the website is very large.
-              </div>
-              <div style="margin-top: 12px; padding: 12px; background: #fee2e2; border-radius: 6px; font-size: 13px; color: #991b1b;">
-                <strong>💡 Recommended Actions:</strong><br>
-                • Check server logs for errors<br>
-                • The website might be too large - consider limiting pages<br>
-                • Try refreshing the knowledge base
-              </div>
-            `;
-            
-            if (scrapingEventSource) {
-              scrapingEventSource.close();
-              scrapingEventSource = null;
-            }
-          }
-          
-          // Stop streaming if completed or failed
-          if (status.status === 'completed' || status.status === 'failed') {
-            if (scrapingEventSource) {
-              scrapingEventSource.close();
-              scrapingEventSource = null;
-            }
-          }
-        } catch (err) {
-          console.error('Error parsing SSE message:', err);
-        }
-      };
-      
-      scrapingEventSource.onopen = function(event) {
-        console.log('SSE connection opened');
-      };
-      
-      scrapingEventSource.onerror = function(event) {
-        console.error('[SSE] Error event:', event);
-        console.error('[SSE] ReadyState:', scrapingEventSource?.readyState);
-        console.error('[SSE] URL:', scrapingEventSource?.url);
-        
-        // EventSource states: 0=CONNECTING, 1=OPEN, 2=CLOSED
-        if (scrapingEventSource && scrapingEventSource.readyState === EventSource.CLOSED) {
-          console.error('[SSE] Connection closed. Falling back to polling...');
-          // Fallback to polling if SSE fails
-          scrapingEventSource = null;
-          let pollCount = 0;
-          const pollInterval = setInterval(() => {
-            pollCount++;
-            if (!scrapingEventSource && pollCount < 100) { // Poll for up to 5 minutes (100 * 3s)
-              console.log('[POLL] Polling status (attempt', pollCount, ')...');
-              updateScrapingStatus(businessId);
-            } else {
-              clearInterval(pollInterval);
-            }
-          }, 3000);
-        } else if (scrapingEventSource && scrapingEventSource.readyState === EventSource.CONNECTING) {
-          console.log('[SSE] Still connecting...');
-        }
-      };
-    }
-    
-    // Keep the old function name for backward compatibility, but use SSE
-    function startScrapingPoll(businessId) {
-      startScrapingSSE(businessId);
+      console.log('[POLL] Started polling for business:', businessId);
     }
     
     async function triggerScraping(businessId, forceRescrape = false) {
@@ -1984,11 +1910,7 @@
           } else {
             // Start new scraping process
             showScrapingModal(businessId);
-            // showScrapingModal already calls startScrapingSSE, so we don't need to call it again
-            // But keep this for backward compatibility
-            if (!scrapingEventSource) {
-              startScrapingPoll(businessId);
-            }
+            // showScrapingModal already calls startScrapingPoll
             showAlert('🌐 Knowledge base scraping started!', 'success');
           }
         }
