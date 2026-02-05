@@ -354,6 +354,7 @@
           businessPrimaryGoal: config.businessPrimaryGoal || CHATBOT_CONFIG.businessPrimaryGoal,
           personalityPrompt: config.personalityPrompt || CHATBOT_CONFIG.personalityPrompt,
           greetingMessage: config.greetingMessage || CHATBOT_CONFIG.greetingMessage,
+          secondaryGreetingMessage: config.secondaryGreetingMessage || null,
           privacyStatement: config.privacyStatement || CHATBOT_CONFIG.privacyStatement,
           themeColor: config.themeColor || CHATBOT_CONFIG.themeColor,
           widgetPosition: config.widgetPosition || CHATBOT_CONFIG.widgetPosition,
@@ -870,6 +871,11 @@
         CHATBOT_CONFIG.greetingMessage ||
         "Hi! I'm your AI assistant. Ask anything about services, pricing or booking and I'll guide you.";
       addMessage(initialGreeting, "bot");
+      
+      // Display secondary greeting as text if available
+      if (CHATBOT_CONFIG.secondaryGreetingMessage) {
+        addMessage(CHATBOT_CONFIG.secondaryGreetingMessage, "bot");
+      }
       
       // CTAs are now handled dynamically via the CTA tree system from backend
     }
