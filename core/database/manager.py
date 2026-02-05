@@ -25,8 +25,8 @@ class BusinessConfigDB:
     def create_or_update_business(
         self,
         business_id: str,
-        business_name: str,
-        system_prompt: str,
+        business_name: str = None,
+        system_prompt: str = None,
         greeting_message: str = None,
         primary_goal: str = None,
         personality: str = None,
@@ -67,22 +67,37 @@ class BusinessConfigDB:
             ).first()
             
             if existing:
-                # Update existing
-                existing.business_name = business_name
-                existing.system_prompt = system_prompt
-                existing.greeting_message = greeting_message
-                existing.primary_goal = primary_goal
-                existing.personality = personality
-                existing.privacy_statement = privacy_statement
-                existing.theme_color = theme_color
-                existing.widget_position = widget_position
-                existing.website_url = website_url
-                existing.contact_email = contact_email
-                existing.contact_phone = contact_phone
-                existing.cta_tree = _serialize_json(cta_tree)
-                existing.voice_enabled = voice_enabled
-                existing.chatbot_button_text = chatbot_button_text
-                existing.business_logo = business_logo
+                # Update existing - only update fields that are explicitly provided (not None)
+                if business_name is not None:
+                    existing.business_name = business_name
+                if system_prompt is not None:
+                    existing.system_prompt = system_prompt
+                if greeting_message is not None:
+                    existing.greeting_message = greeting_message
+                if primary_goal is not None:
+                    existing.primary_goal = primary_goal
+                if personality is not None:
+                    existing.personality = personality
+                if privacy_statement is not None:
+                    existing.privacy_statement = privacy_statement
+                if theme_color is not None:
+                    existing.theme_color = theme_color
+                if widget_position is not None:
+                    existing.widget_position = widget_position
+                if website_url is not None:
+                    existing.website_url = website_url
+                if contact_email is not None:
+                    existing.contact_email = contact_email
+                if contact_phone is not None:
+                    existing.contact_phone = contact_phone
+                if cta_tree is not None:
+                    existing.cta_tree = _serialize_json(cta_tree)
+                if voice_enabled is not None:
+                    existing.voice_enabled = voice_enabled
+                if chatbot_button_text is not None:
+                    existing.chatbot_button_text = chatbot_button_text
+                if business_logo is not None:
+                    existing.business_logo = business_logo
                 if enabled_categories is not None and hasattr(existing, 'enabled_categories'):
                     existing.enabled_categories = _serialize_json(enabled_categories)
                 if categories is not None and hasattr(existing, 'categories'):
@@ -92,7 +107,12 @@ class BusinessConfigDB:
                 db.refresh(existing)
                 return existing.to_dict()
             else:
-                # Create new
+                # Create new - business_name and system_prompt are required for new businesses
+                if business_name is None:
+                    raise ValueError("business_name is required when creating a new business")
+                if system_prompt is None:
+                    raise ValueError("system_prompt is required when creating a new business")
+                
                 new_business = BusinessConfig(
                     business_id=business_id,
                     business_name=business_name,
