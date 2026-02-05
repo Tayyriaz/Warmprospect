@@ -1403,10 +1403,15 @@
         progressPercentEl.style.color = progress === 100 ? '#10b981' : '#667eea';
       }
       
-      // Clear progress details (no time display)
+      // Update progress details (elapsed time only)
       const progressDetailsEl = document.getElementById('progressDetails');
       if (progressDetailsEl) {
-        progressDetailsEl.innerHTML = '';
+        let detailsText = '';
+        if (scrapingStartTime) {
+          const elapsed = Math.floor((Date.now() - scrapingStartTime) / 1000);
+          detailsText = `Elapsed: ${formatElapsedTime(elapsed)}`;
+        }
+        progressDetailsEl.innerHTML = detailsText;
       }
       
       console.log('[UI] Updated progress bar to', progress + '%', 'status:', statusText);
