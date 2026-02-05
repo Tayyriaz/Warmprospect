@@ -1172,6 +1172,9 @@
     function showScrapingModal(businessId) {
       const modal = document.getElementById('scrapingModal');
       
+      // Set current business ID so re-scrape button works
+      currentBusinessId = businessId;
+      
       // Reset all modal elements
       resetScrapingModal();
       
@@ -1337,17 +1340,7 @@
         messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${timeAgoText})</span>`;
       }
       
-      // Auto-detect completed status: If categories exist but status is still pending/scraping, treat as completed
-      if (status.categories && status.categories.length > 0 && 
-          (status.status === 'pending' || status.status === 'scraping' || 
-           status.status === 'categorizing' || status.status === 'indexing')) {
-        // Categories exist, so scraping must be completed - update status
-        status.status = 'completed';
-        status.progress = 100;
-        if (!status.message || status.message.includes('Preparing') || status.message.includes('Initializing')) {
-          status.message = 'Knowledge base built successfully!';
-        }
-      }
+      // Note: Categories are no longer in status - check business config if needed
       
       switch(status.status) {
         case 'pending':
@@ -1367,19 +1360,8 @@
           progress = 100;
           messageText = status.message || 'Your chatbot is now ready to use with the scraped knowledge base!';
           
-          // Show categories if available
-          if (status.categories && status.categories.length > 0) {
-            currentCategories = status.categories;
-            window.totalPages = status.total_pages || 0;
-            displayCategories(status.categories, window.totalPages);
-            categoriesSection.style.display = 'block';
-            // Hide default modal actions when categories are shown
-            const defaultActions = document.getElementById('modalActionsDefault');
-            if (defaultActions) defaultActions.style.display = 'none';
-            // Show re-scrape button when completed
-            const rescraperBtn = document.getElementById('rescraperBtn');
-            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
-          }
+          // Fetch categories from business config endpoint
+          fetchCategoriesFromConfig(businessId);
           
           // SSE connection will close automatically, but ensure it's closed
           if (scrapingEventSource) {
@@ -1404,18 +1386,9 @@
           statusText = '⏳ ' + (status.status || 'Unknown');
       }
       
-      // Show categories if available (even during indexing or if auto-detected as completed)
-      if (status.categories && status.categories.length > 0) {
-        currentCategories = status.categories;
-        window.totalPages = status.total_pages || 0;
-        displayCategories(status.categories, window.totalPages);
-        categoriesSection.style.display = 'block';
-        // Hide default modal actions when categories are shown
-        const defaultActions = document.getElementById('modalActionsDefault');
-        if (defaultActions) defaultActions.style.display = 'none';
-        // Show re-scrape button when categories are shown (scraping completed)
-        const rescraperBtn = document.getElementById('rescraperBtn');
-        if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+      // Categories are no longer in status - fetch from business config if status is completed
+      if (status.status === 'completed') {
+        fetchCategoriesFromConfig(businessId);
       } else {
         // Show default modal actions when categories are not shown
         const defaultActions = document.getElementById('modalActionsDefault');
@@ -1537,17 +1510,7 @@
             messageText += ` <span style="color: #9ca3af; font-size: 12px;">(Updated ${timeAgoText})</span>`;
           }
           
-          // Auto-detect completed status: If categories exist but status is still pending/scraping, treat as completed
-          if (status.categories && status.categories.length > 0 && 
-              (status.status === 'pending' || status.status === 'scraping' || 
-               status.status === 'categorizing' || status.status === 'indexing')) {
-            // Categories exist, so scraping must be completed - update status
-            status.status = 'completed';
-            status.progress = 100;
-            if (!status.message || status.message.includes('Preparing') || status.message.includes('Initializing')) {
-              status.message = 'Knowledge base built successfully!';
-            }
-          }
+          // Note: Categories are no longer in status - check business config if needed
           
           switch(status.status) {
             case 'pending':
@@ -1607,18 +1570,9 @@
               statusText = '⏳ ' + (status.status || 'Unknown');
           }
           
-          // Show categories if available (even during indexing or if auto-detected as completed)
-          if (status.categories && status.categories.length > 0) {
-            currentCategories = status.categories;
-            window.totalPages = status.total_pages || 0;
-            displayCategories(status.categories, window.totalPages);
-            categoriesSection.style.display = 'block';
-            // Hide default modal actions when categories are shown
-            const defaultActions = document.getElementById('modalActionsDefault');
-            if (defaultActions) defaultActions.style.display = 'none';
-            // Show re-scrape button when categories are shown (scraping completed)
-            const rescraperBtn = document.getElementById('rescraperBtn');
-            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+          // Categories are no longer in status - fetch from business config if status is completed
+          if (status.status === 'completed') {
+            fetchCategoriesFromConfig(businessId);
           } else {
             // Show default modal actions when categories are not shown
             const defaultActions = document.getElementById('modalActionsDefault');
@@ -1682,6 +1636,45 @@
             </div>
           `;
         });
+    }
+    
+    // Fetch categories from business config endpoint
+    async function fetchCategoriesFromConfig(businessId) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/business/${businessId}`, {
+          headers: getAdminHeaders()
+        });
+        if (!res.ok) {
+          console.error('Failed to fetch business config:', res.status);
+          return;
+        }
+        const result = await res.json();
+        if (result.success && result.config && result.config.categories) {
+          const categoriesData = result.config.categories;
+          // Categories structure: {"data": [...], "total_pages": N}
+          const categories = categoriesData.data || [];
+          const totalPages = categoriesData.total_pages || 0;
+          
+          if (categories.length > 0) {
+            currentCategories = categories;
+            window.totalPages = totalPages;
+            displayCategories(categories, totalPages);
+            
+            const categoriesSection = document.getElementById('categoriesSection');
+            if (categoriesSection) {
+              categoriesSection.style.display = 'block';
+            }
+            // Hide default modal actions when categories are shown
+            const defaultActions = document.getElementById('modalActionsDefault');
+            if (defaultActions) defaultActions.style.display = 'none';
+            // Show re-scrape button when completed
+            const rescraperBtn = document.getElementById('rescraperBtn');
+            if (rescraperBtn) rescraperBtn.style.display = 'inline-block';
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching categories from config:', err);
+      }
     }
     
     function displayCategories(categories, totalPages) {
@@ -2006,13 +1999,19 @@
     }
     
     async function rescraperWebsite() {
-      if (!currentBusinessId) return;
+      if (!currentBusinessId) {
+        console.error('[Re-scrape] currentBusinessId is not set');
+        showAlert('❌ Error: Business ID not found. Please close and reopen the modal.', 'error');
+        return;
+      }
       if (!requireApiKey()) return;
+      
+      console.log('[Re-scrape] Starting re-scrape for business:', currentBusinessId);
       
       // Reset modal immediately for visual feedback
       resetScrapingModal();
       
-      // Trigger new scraping
+      // Trigger new scraping with force=true
       await triggerScraping(currentBusinessId, true);
     }
     

@@ -704,7 +704,7 @@ def build_kb_for_business(business_id: str, website_url: str):
         print(f"  - {cat}: {count} pages")
     
     categories_data = {
-        "categories": [
+        "data": [
             {"name": cat, "page_count": count, "enabled": True}
             for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
         ],
@@ -831,9 +831,7 @@ def build_kb_for_business(business_id: str, website_url: str):
                 "status": "completed",
                 "message": f"Knowledge base built! {len(pages)} pages, {len(meta_records)} chunks.",
                 "progress": 100,
-                "updated_at": time.time(),
-                "categories": categories_data.get("categories", []),
-                "total_pages": categories_data.get("total_pages", len(pages))
+                "updated_at": time.time()
             }
             with open(status_file, "w", encoding="utf-8") as f:
                 json.dump(status_data, f, indent=2)
