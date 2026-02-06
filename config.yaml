@@ -48,7 +48,7 @@ rag:
 
 models:
   # Embedding model for vector search
-  embed_model: "text-embedding-004"
+  embed_model: "gemini-embedding-001"
   
   # Model for page categorization
   categorization_model: "gemini-2.5-flash"

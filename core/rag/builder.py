@@ -69,7 +69,7 @@ RETRY_DELAY_BASE = float(_scraping_config.get("retry_delay_base", 1.0))  # Base 
 PLAYWRIGHT_WAIT_FOR = _scraping_config.get("playwright_wait_for", "domcontentloaded")  # domcontentloaded, load, networkidle
 CHUNK_SIZE = int(_rag_config.get("chunk_size", 800))
 CHUNK_OVERLAP = int(_rag_config.get("chunk_overlap", 100))
-EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", _models_config.get("embed_model", "text-embedding-004"))
+EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", _models_config.get("embed_model", "gemini-embedding-001"))
 CATEGORIZATION_MODEL = os.getenv("GEMINI_CATEGORIZATION_MODEL", _models_config.get("categorization_model", "gemini-2.5-flash"))
 
 

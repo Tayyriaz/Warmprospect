@@ -78,7 +78,7 @@ def get_retriever_for_business(business_id: Optional[str], force_reload: bool = 
             api_key=os.getenv("GEMINI_API_KEY", ""),
             index_path=index_path,
             meta_path=meta_path,
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             top_k=5,
             enabled_categories=enabled_categories,
         )

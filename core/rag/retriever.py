@@ -18,7 +18,7 @@ class ChatbotRetriever:
         api_key: str,
         index_path: str,  # Required: e.g. "data/<business_id>/index.faiss"
         meta_path: str,   # Required: e.g. "data/<business_id>/meta.jsonl"
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
         top_k: int = 8,
         enabled_categories: Optional[List[str]] = None,
     ) -> None:
