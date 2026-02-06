@@ -345,6 +345,15 @@ except Exception:
 # ============================================
 
 FRESH_DEPLOY=false
+SERVICE_EXISTS=false
+
+# Check if service file exists first (strong indicator of existing deployment)
+if [ -f "$SERVICE_FILE" ]; then
+    SERVICE_EXISTS=true
+    echo "✅ Service file exists: $SERVICE_FILE"
+else
+    echo "⚠️  Service file not found: $SERVICE_FILE"
+fi
 
 if [ ! -d "$PROJECT_PATH" ]; then
     FRESH_DEPLOY=true
@@ -354,27 +363,25 @@ elif [ ! -f "$PROJECT_PATH/.env" ]; then
     echo "🆕 Fresh deployment: .env file doesn't exist"
 else
     DB_STATUS=$(check_db_initialized "$PROJECT_PATH")
-    if [ "$DB_STATUS" = "false" ]; then
-        FRESH_DEPLOY=true
-        echo "🆕 Fresh deployment: Database tables don't exist"
-    elif [ "$DB_STATUS" = "unknown" ]; then
-        if [ ! -f "/etc/systemd/system/${SERVICE_NAME}" ]; then
-            FRESH_DEPLOY=true
-            echo "🆕 Fresh deployment: Service file doesn't exist (database check unavailable)"
-        else
-            echo "⚠️  Could not verify database status, but service exists. Assuming update."
-        fi
-    else
+    if [ "$DB_STATUS" = "true" ]; then
         echo "✅ Database is initialized. This appears to be an update."
+    elif [ "$DB_STATUS" = "false" ]; then
+        # Database check failed - use service file as tiebreaker
+        if [ "$SERVICE_EXISTS" = "true" ]; then
+            echo "⚠️  Database check failed, but service file exists. Assuming update (database may need migration)."
+        else
+            FRESH_DEPLOY=true
+            echo "🆕 Fresh deployment: Database tables don't exist and no service file found"
+        fi
+    elif [ "$DB_STATUS" = "unknown" ]; then
+        # Database check unavailable - use service file as tiebreaker
+        if [ "$SERVICE_EXISTS" = "true" ]; then
+            echo "⚠️  Could not verify database status, but service exists. Assuming update."
+        else
+            FRESH_DEPLOY=true
+            echo "🆕 Fresh deployment: Database check unavailable and no service file found"
+        fi
     fi
-fi
-
-SERVICE_EXISTS=false
-if [ -f "$SERVICE_FILE" ]; then
-    SERVICE_EXISTS=true
-    echo "✅ Service file exists: $SERVICE_FILE"
-else
-    echo "⚠️  Service file not found: $SERVICE_FILE"
 fi
 
 # ============================================

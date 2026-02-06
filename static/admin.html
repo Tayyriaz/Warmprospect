@@ -1706,12 +1706,6 @@
       document.getElementById('modalStatus').textContent = 'Loading...';
       document.getElementById('modalMessage').textContent = 'Starting scraping process...';
       
-<<<<<<< HEAD
-      // Create EventSource for SSE
-      const apiKey = getApiKeyFromInput();
-      if (!apiKey) {
-        showAlert('API key required', 'error');
-=======
       // Fetch initial status immediately
       updateScrapingStatus(businessId);
       
@@ -1727,7 +1721,6 @@
       if (!currentBusinessId) {
         console.error('[Scrape] currentBusinessId is not set');
         showAlert('❌ Error: Business ID not found. Please close and reopen the modal.', 'error');
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
         return;
       }
       if (!requireApiKey()) return;

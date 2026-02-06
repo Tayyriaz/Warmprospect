@@ -221,14 +221,9 @@ async def create_or_update_business(request: Request, background_tasks: Backgrou
             update_data["business_logo"] = data.get("businessLogo") or data.get("business_logo")
         if "enabledCategories" in data or "enabled_categories" in data:
             update_data["enabled_categories"] = data.get("enabledCategories") or data.get("enabled_categories")
-<<<<<<< HEAD
-        if "categories" in data:
-            update_data["categories"] = data.get("categories")
-=======
             # Clear retriever cache when enabled categories change
             from core.rag import clear_retriever_cache
             clear_retriever_cache(business_id)
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
         
         # Call with only provided fields - this ensures partial updates don't overwrite with None
         config = config_manager.create_or_update_business(**update_data)

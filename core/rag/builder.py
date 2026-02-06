@@ -63,14 +63,10 @@ MAX_PAGES = int(_scraping_config.get("max_pages", 500))
 MAX_SECONDS = int(_scraping_config.get("max_seconds", 600))
 MAX_LINKS_PER_PAGE = int(_scraping_config.get("max_links_per_page", 30))
 MAX_QUEUE_SIZE = int(_scraping_config.get("max_queue_size", 1000))
-<<<<<<< HEAD
 DELAY_BETWEEN_REQUESTS = float(_scraping_config.get("delay_between_requests", 0.2))  # Configurable delay
 MAX_RETRIES = int(_scraping_config.get("max_retries", 3))  # Retry failed requests
 RETRY_DELAY_BASE = float(_scraping_config.get("retry_delay_base", 1.0))  # Base delay for exponential backoff
 PLAYWRIGHT_WAIT_FOR = _scraping_config.get("playwright_wait_for", "domcontentloaded")  # domcontentloaded, load, networkidle
-=======
-REQUEST_DELAY = float(_scraping_config.get("request_delay", 2))
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
 CHUNK_SIZE = int(_rag_config.get("chunk_size", 800))
 CHUNK_OVERLAP = int(_rag_config.get("chunk_overlap", 100))
 EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", _models_config.get("embed_model", "text-embedding-004"))
@@ -117,13 +113,8 @@ def is_allowed(url: str, base_domain: str) -> bool:
     return parsed.hostname == base_domain or parsed.hostname.endswith("." + base_domain)
 
 
-<<<<<<< HEAD
 def _fetch_requests(url: str, retries: int = MAX_RETRIES) -> str:
     """Fetch HTML using requests (default) with retry logic."""
-=======
-def _fetch_requests(url: str, retry_count: int = 0) -> str:
-    """Fetch HTML using requests with rate limit retry logic."""
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -133,7 +124,6 @@ def _fetch_requests(url: str, retry_count: int = 0) -> str:
         "Upgrade-Insecure-Requests": "1",
     }
     verify_ssl = _scraping_config.get("verify_ssl", True)
-<<<<<<< HEAD
     
     last_error = None
     for attempt in range(retries):
@@ -174,47 +164,12 @@ def _fetch_playwright(browser, context, url: str, retries: int = MAX_RETRIES) ->
         url: URL to fetch
         retries: Number of retry attempts
     """
-=======
-    resp = requests.get(url, timeout=(10, 30), headers=headers, allow_redirects=True, verify=verify_ssl)
-    
-    # Handle rate limiting (429) with exponential backoff retry
-    if resp.status_code == 429:
-        if retry_count < 3:
-            wait_time = (2 ** retry_count) * 5  # 5s, 10s, 20s
-            print(f"  ⚠ Rate limited (429) for {url}, retrying in {wait_time}s...")
-            time.sleep(wait_time)
-            return _fetch_requests(url, retry_count + 1)
-        raise ValueError(f"Rate limited (429) after {retry_count} retries for {url}")
-    
-    resp.raise_for_status()
-    
-    # Handle gzip-compressed content
-    text = resp.text
-    if _looks_like_binary(text):
-        try:
-            text = gzip.decompress(resp.content).decode("utf-8", errors="replace")
-        except Exception:
-            pass
-    
-    # Validate HTML content
-    if _looks_like_binary(text) or "<" not in text or ">" not in text:
-        raise ValueError(
-            f"Response from {url} does not look like HTML (possibly binary or wrong encoding). "
-            "Refusing to store to avoid gibberish in knowledge base."
-        )
-    return text
-
-
-def _fetch_playwright(browser, url: str) -> str:
-    """Fetch HTML using Playwright browser. Handles JS-heavy pages and validates content."""
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
     ignore_https = not _scraping_config.get("verify_ssl", True)
     wait_for = PLAYWRIGHT_WAIT_FOR if PLAYWRIGHT_WAIT_FOR in ["domcontentloaded", "load", "networkidle"] else "domcontentloaded"
     
     last_error = None
     for attempt in range(retries):
         try:
-<<<<<<< HEAD
             page = context.new_page()
             try:
                 # Wait for page to load - networkidle is better for dynamic content but slower
@@ -228,6 +183,15 @@ def _fetch_playwright(browser, url: str) -> str:
             
             if not text or "<" not in text or ">" not in text:
                 raise ValueError(f"Response from {url} does not look like HTML.")
+            
+            # Check for error/loading pages
+            text_lower = text.lower()
+            if "429 too many requests" in text_lower or "too many requests" in text_lower:
+                raise ValueError(f"Rate limited (429) for {url}")
+            # If page is small and has many "loading" mentions, it's probably not loaded
+            if "loading" in text_lower and text_lower.count("loading") > 3 and len(text) < 5000:
+                raise ValueError(f"Page appears to still be loading for {url}")
+            
             return text
         except Exception as e:
             last_error = e
@@ -238,30 +202,6 @@ def _fetch_playwright(browser, url: str) -> str:
             else:
                 raise last_error
     raise last_error
-=======
-            # Wait for network idle + extra time for lazy-loaded content
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(2000)  # Wait for lazy-loaded content
-            text = page.content()
-        finally:
-            page.close()
-    finally:
-        context.close()
-    
-    # Validate HTML content
-    if not text or "<" not in text or ">" not in text:
-        raise ValueError(f"Response from {url} does not look like HTML.")
-    
-    # Check for error/loading pages
-    text_lower = text.lower()
-    if "429 too many requests" in text_lower or "too many requests" in text_lower:
-        raise ValueError(f"Rate limited (429) for {url}")
-    # If page is small and has many "loading" mentions, it's probably not loaded
-    if "loading" in text_lower and text_lower.count("loading") > 3 and len(text) < 5000:
-        raise ValueError(f"Page appears to still be loading for {url}")
-    
-    return text
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
 
 
 def fetch(url: str, fetcher=None) -> str:
@@ -298,7 +238,6 @@ def _looks_like_binary(s: str) -> bool:
 
 
 def extract(url: str, html: str) -> Page:
-<<<<<<< HEAD
     """Extract text content from HTML with improved content detection."""
     soup = BeautifulSoup(html, "html.parser")
     title = (soup.title.string or "").strip() if soup.title else ""
@@ -308,17 +247,6 @@ def extract(url: str, html: str) -> Page:
         tag.decompose()
     
     # Try to find main content area (prioritized selectors)
-=======
-    """Extract text content from HTML with fallback strategies."""
-    soup = BeautifulSoup(html, "html.parser")
-    title = (soup.title.string or "").strip() if soup.title else ""
-
-    # Remove non-content elements
-    for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
-        tag.decompose()
-    
-    # Try to find main content area
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
     main_content = None
     selectors = [
         "main",
@@ -338,27 +266,19 @@ def extract(url: str, html: str) -> Page:
         if main_content:
             break
     
-<<<<<<< HEAD
     # If no main content found, try body
     source = main_content if main_content else soup.find("body")
     if not source:
         source = soup
     
     # Extract text with better formatting
-=======
-    source = main_content or soup.find("body") or soup
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
     text = " ".join(source.get_text(separator=" ", strip=True).split())
     
     # Fallback strategies if text is too short
     if len(text) < 100:
         # Try paragraphs
-<<<<<<< HEAD
         paragraphs = soup.find_all("p")
         para_text = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-=======
-        para_text = " ".join(p.get_text(strip=True) for p in soup.find_all("p") if p.get_text(strip=True))
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
         if len(para_text) > len(text):
             text = para_text
         
@@ -368,16 +288,10 @@ def extract(url: str, html: str) -> Page:
             if len(heading_text) > len(text):
                 text = heading_text
         
-<<<<<<< HEAD
         # Try content divs with broader search
         if len(text) < 100:
             content_divs = soup.find_all("div", class_=re.compile(r"content|text|description|body|main|article|post|entry", re.I))
             div_text = " ".join([d.get_text(strip=True) for d in content_divs if d.get_text(strip=True)])
-=======
-        # Try content divs
-        if len(text) < 100:
-            div_text = " ".join(d.get_text(strip=True) for d in soup.find_all("div", class_=re.compile(r"content|text|description|body|main", re.I)) if d.get_text(strip=True))
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
             if len(div_text) > len(text):
                 text = div_text
         
@@ -388,11 +302,7 @@ def extract(url: str, html: str) -> Page:
             if len(list_text) > len(text):
                 text = list_text
     
-<<<<<<< HEAD
     # Final fallback to entire body
-=======
-    # Final fallback: entire body
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
     if len(text) < 50:
         body = soup.find("body")
         if body:
@@ -405,7 +315,6 @@ def extract(url: str, html: str) -> Page:
     return Page(url=url, title=title, text=text, checksum=checksum, fetched_at=time.time())
 
 
-<<<<<<< HEAD
 def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_depth: int = 3, visited: Set[str] = None) -> List[str]:
     """Fetch URLs from sitemap.xml. Recursively handles sitemap index files (WordPress, etc.)."""
     if visited is None:
@@ -419,7 +328,8 @@ def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_dep
     
     try:
         xml = fetch(sitemap_url, fetcher)
-    except Exception:
+    except Exception as e:
+        print(f"  ⚠ Could not fetch sitemap {sitemap_url}: {e}")
         return urls
     
     # Check if this is a sitemap index (contains <sitemap> tags) or a regular sitemap (contains <url> tags)
@@ -440,51 +350,6 @@ def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_dep
             urls.append(loc)
     
     return urls
-=======
-def fetch_sitemap_urls(sitemap_url: str, base_domain: str, fetcher=None, max_depth: int = 2) -> List[str]:
-    """
-    Fetch URLs from sitemap.xml. Handles sitemap index files and nested sitemaps.
-    Returns deduplicated list of URLs.
-    """
-    seen_sitemaps: Set[str] = set()
-    all_urls: List[str] = []
-    
-    def _fetch_sitemap(url: str, depth: int) -> List[str]:
-        """Recursively fetch sitemap URLs."""
-        if depth > max_depth or url in seen_sitemaps:
-            return []
-        seen_sitemaps.add(url)
-        
-        try:
-            xml = fetch(url, fetcher)
-        except Exception as e:
-            print(f"  ⚠ Could not fetch sitemap {url}: {e}")
-            return []
-        
-        # Check if this is a sitemap index
-        sitemap_refs = re.findall(r"<sitemap>.*?<loc>(.*?)</loc>.*?</sitemap>", xml, re.DOTALL)
-        if sitemap_refs:
-            print(f"  Found sitemap index with {len(sitemap_refs)} nested sitemaps")
-            urls = []
-            for nested_sitemap in sitemap_refs:
-                nested_sitemap = nested_sitemap.strip()
-                if nested_sitemap and is_allowed(nested_sitemap, base_domain):
-                    urls.extend(_fetch_sitemap(nested_sitemap, depth + 1))
-            return urls
-        
-        # Regular sitemap - extract URLs (handle with/without XML namespaces)
-        urls = []
-        for match in re.finditer(r"<loc[^>]*>(.*?)</loc>", xml):
-            loc = match.group(1).strip()
-            if loc and is_allowed(loc, base_domain):
-                urls.append(loc)
-        return urls
-    
-    all_urls = _fetch_sitemap(sitemap_url, 0)
-    # Remove duplicates while preserving order
-    seen = set()
-    return [url for url in all_urls if url not in seen and not seen.add(url)]
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
 
 
 def update_status(business_id: str, status: str, message: str = "", progress: int = 0):
@@ -640,17 +505,13 @@ def crawl(seed_urls: Iterable[str], base_domain: str, root_url: str, business_id
             else:
                 skipped_too_little += 1
                 print(f"  ⚠ Skipped (too little text): {url} ({len(page.text)} chars)")
-<<<<<<< HEAD
-            # Configurable delay between requests to respect rate limits
-            time.sleep(DELAY_BETWEEN_REQUESTS)
-=======
             
+            # Configurable delay between requests to respect rate limits
             # Adaptive delay: increase if actively getting rate limited
-            delay = REQUEST_DELAY
+            delay = DELAY_BETWEEN_REQUESTS
             if rate_limited_count > 0 and (rate_limited_count % 20) >= 5:
-                delay = min(REQUEST_DELAY * 1.5, 3)  # Increase by 50%, max 3s
+                delay = min(DELAY_BETWEEN_REQUESTS * 1.5, 3)  # Increase by 50%, max 3s
             time.sleep(delay)
->>>>>>> 7f4133cc5a34a2452c182b063dd42d2592d64b61
         except Exception as e:
             error_msg = f"{url}: {str(e)[:100]}"
             fetch_errors.append(error_msg)
